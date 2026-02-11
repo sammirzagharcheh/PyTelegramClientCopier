@@ -8,6 +8,7 @@ import aiosqlite
 from telethon import events
 from telethon.errors import ChatIdInvalidError
 from telethon.tl.custom.message import Message
+from telethon.tl.types import MessageMediaWebPage
 
 from app.services.mapping_service import ChannelMapping, MappingFilter
 
@@ -43,8 +44,9 @@ def _passes_filters(message: Message, filters: Iterable[MappingFilter]) -> bool:
 
     text = message.message or ""
     media_type = _message_media_type(message)
+    filter_list = list(filters)
 
-    for filter_rule in filters:
+    for filter_rule in filter_list:
         if filter_rule.media_types:
             allowed = {part.strip().lower() for part in filter_rule.media_types.split(",") if part.strip()}
             if allowed and media_type not in allowed:
@@ -159,14 +161,22 @@ def build_message_handler(
             last_err: Exception | None = None
             for dest_id in dest_ids:
                 try:
-                    if message.photo or message.video or message.voice:
-                        sent = await event.client.send_file(
-                            dest_id,
-                            message.media,
-                            caption=message.message or "",
-                            reply_to=reply_to_msg_id,
-                        )
-                    else:
+                    use_file = (
+                        (message.photo or message.video or message.voice)
+                        and message.media is not None
+                        and not isinstance(message.media, MessageMediaWebPage)
+                    )
+                    if use_file:
+                        try:
+                            sent = await event.client.send_file(
+                                dest_id,
+                                message.media,
+                                caption=message.message or "",
+                                reply_to=reply_to_msg_id,
+                            )
+                        except TypeError:
+                            use_file = False
+                    if not use_file:
                         sent = await event.client.send_message(
                             dest_id,
                             message.message or "",
@@ -176,6 +186,9 @@ def build_message_handler(
                 except ChatIdInvalidError as e:
                     last_err = e
                     continue
+                except Exception as e:
+                    last_err = e
+                    raise
             if sent is None and last_err:
                 logger.warning(
                     "Failed to send to dest_chat_id=%s (tried %s): %s",
