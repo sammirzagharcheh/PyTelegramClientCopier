@@ -8,6 +8,7 @@ Multi-tenant Telegram copier with admin controls, filtering, and media forwardin
    - `API_ID`
    - `API_HASH`
    - `JWT_SECRET` (optional, for auth; set in production)
+   - `BOT_TOKEN` (optional, for live Telegram test; from @BotFather)
    - `MONGO_URI` (optional)
    - `MONGO_DB` (optional)
    - `SQLITE_PATH` (optional)
@@ -56,6 +57,8 @@ Filters control which messages are copied from a source channel to a destination
 
 ### Live Telegram integration test
 
-- Set `API_ID`, `API_HASH`, `BOT_TOKEN`
-- Optional: set `TELEGRAM_TEST_CHAT_ID` to send a message
-- Run `pytest tests/integration/test_telethon_live.py`
+1. Add to `.env`:
+   - `API_ID` and `API_HASH` (from my.telegram.org)
+   - `BOT_TOKEN` (from @BotFather; create a bot and use its token)
+   - `TELEGRAM_TEST_CHAT_ID` (optional; chat ID to send a test message)
+2. Run: `pytest tests/integration/test_telethon_live.py`

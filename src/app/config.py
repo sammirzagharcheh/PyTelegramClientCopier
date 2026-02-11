@@ -12,6 +12,8 @@ class Settings(BaseSettings):
 
     api_id: int | None = None
     api_hash: str | None = None
+    bot_token: str | None = None
+    telegram_test_chat_id: str | None = None
     mongo_uri: str = "mongodb://localhost:27017"
     mongo_db: str = "telegram_copier"
     sqlite_path: str = "data/app.db"
