@@ -1,13 +1,28 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Iterable
 
 import aiosqlite
 from telethon import events
+from telethon.errors import ChatIdInvalidError
 from telethon.tl.custom.message import Message
 
 from app.services.mapping_service import ChannelMapping, MappingFilter
+
+logger = logging.getLogger(__name__)
+
+
+def _alternate_chat_id(chat_id: int) -> int | None:
+    """Return the alternate format for a Telegram chat ID (legacy vs full channel).
+    Channels use -100xxxxxxxxxx, legacy groups use -xxxxxxxxx. Both refer to the same chat.
+    """
+    if chat_id >= 0:
+        return None
+    if chat_id <= -1000000000000:
+        return chat_id + 1000000000000  # full -> legacy
+    return chat_id - 1000000000000  # legacy -> full
 
 
 def _message_media_type(message: Message) -> str:
@@ -84,7 +99,15 @@ def build_message_handler(
 ):
     mapping_by_source: dict[int, list[ChannelMapping]] = {}
     for mapping in mappings:
-        mapping_by_source.setdefault(mapping.source_chat_id, []).append(mapping)
+        cids: list[int] = [mapping.source_chat_id]
+        alt = _alternate_chat_id(mapping.source_chat_id)
+        if alt is not None:
+            cids.append(alt)
+        for cid in cids:
+            mapping_by_source.setdefault(cid, []).append(mapping)
+
+    configured_sources = list(mapping_by_source.keys())
+    logged_unknown: set[int] = set()
 
     async def _handler(event: events.NewMessage.Event) -> None:
         message = event.message
@@ -92,10 +115,29 @@ def build_message_handler(
             return
 
         source_chat_id = event.chat_id
-        if source_chat_id not in mapping_by_source:
+        candidates = [source_chat_id]
+        alt = _alternate_chat_id(source_chat_id)
+        if alt is not None:
+            candidates.append(alt)
+        matched: list[ChannelMapping] = []
+        for cid in candidates:
+            if cid in mapping_by_source:
+                matched.extend(mapping_by_source[cid])
+        if not matched:
+            if source_chat_id not in logged_unknown:
+                logged_unknown.add(source_chat_id)
+                logger.info(
+                    "Message from chat_id=%s has no mapping (configured: %s). "
+                    "Verify source chat ID matches your mapping.",
+                    source_chat_id, configured_sources,
+                )
             return
+        seen: set[int] = set()
 
-        for mapping in mapping_by_source[source_chat_id]:
+        for mapping in matched:
+            if mapping.id in seen:
+                continue
+            seen.add(mapping.id)
             if not _passes_filters(message, mapping.filters):
                 continue
 
@@ -110,21 +152,41 @@ def build_message_handler(
                 )
 
             sent = None
-            if message.photo or message.video or message.voice:
-                sent = await event.client.send_file(
-                    mapping.dest_chat_id,
-                    message.media,
-                    caption=message.message or "",
-                    reply_to=reply_to_msg_id,
-                )
-            else:
-                sent = await event.client.send_message(
-                    mapping.dest_chat_id,
-                    message.message or "",
-                    reply_to=reply_to_msg_id,
+            dest_ids = [mapping.dest_chat_id]
+            alt_dest = _alternate_chat_id(mapping.dest_chat_id)
+            if alt_dest is not None:
+                dest_ids.append(alt_dest)
+            last_err: Exception | None = None
+            for dest_id in dest_ids:
+                try:
+                    if message.photo or message.video or message.voice:
+                        sent = await event.client.send_file(
+                            dest_id,
+                            message.media,
+                            caption=message.message or "",
+                            reply_to=reply_to_msg_id,
+                        )
+                    else:
+                        sent = await event.client.send_message(
+                            dest_id,
+                            message.message or "",
+                            reply_to=reply_to_msg_id,
+                        )
+                    break
+                except ChatIdInvalidError as e:
+                    last_err = e
+                    continue
+            if sent is None and last_err:
+                logger.warning(
+                    "Failed to send to dest_chat_id=%s (tried %s): %s",
+                    mapping.dest_chat_id, dest_ids, last_err,
                 )
 
             if sent:
+                logger.info(
+                    "Forwarded msg %s from chat %s -> %s",
+                    message.id, source_chat_id, mapping.dest_chat_id,
+                )
                 await _save_dest_mapping(
                     db=db,
                     user_id=user_id,

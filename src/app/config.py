@@ -15,7 +15,13 @@ class Settings(BaseSettings):
     mongo_uri: str = "mongodb://localhost:27017"
     mongo_db: str = "telegram_copier"
     sqlite_path: str = "data/app.db"
+    sessions_dir: str = "data/sessions"
     log_level: str = "INFO"
+    jwt_secret: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 7
+    login_sessions_retention_days: int = 7
 
 
 settings = Settings()

@@ -64,6 +64,9 @@ async def init_sqlite() -> None:
     async with aiosqlite.connect(settings.sqlite_path) as db:
         await db.executescript(SCHEMA_SQL)
         await db.commit()
+        from app.db.migrations import run_migrations
+
+        await run_migrations(db)
 
 
 async def get_sqlite() -> aiosqlite.Connection:

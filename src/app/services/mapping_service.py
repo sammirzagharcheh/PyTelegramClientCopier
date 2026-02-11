@@ -24,13 +24,29 @@ class ChannelMapping:
     filters: list[MappingFilter]
 
 
-async def list_enabled_mappings(db: aiosqlite.Connection, user_id: int) -> Iterable[ChannelMapping]:
+async def list_enabled_mappings(
+    db: aiosqlite.Connection,
+    user_id: int,
+    telegram_account_id: int | None = None,
+) -> Iterable[ChannelMapping]:
+    """List enabled mappings for a user. If telegram_account_id is given, include only mappings
+    that have no account or that account (telegram_account_id IS NULL OR telegram_account_id = ?).
+    """
     mappings: list[ChannelMapping] = []
-    async with db.execute(
-        "SELECT id, user_id, source_chat_id, dest_chat_id, enabled "
-        "FROM channel_mappings WHERE user_id = ? AND enabled = 1",
-        (user_id,),
-    ) as cursor:
+    if telegram_account_id is not None:
+        q = (
+            "SELECT id, user_id, source_chat_id, dest_chat_id, enabled "
+            "FROM channel_mappings WHERE user_id = ? AND enabled = 1 "
+            "AND (telegram_account_id IS NULL OR telegram_account_id = ?)"
+        )
+        params = (user_id, telegram_account_id)
+    else:
+        q = (
+            "SELECT id, user_id, source_chat_id, dest_chat_id, enabled "
+            "FROM channel_mappings WHERE user_id = ? AND enabled = 1"
+        )
+        params = (user_id,)
+    async with db.execute(q, params) as cursor:
         rows = await cursor.fetchall()
     for mapping_id, u_id, source_id, dest_id, enabled in rows:
         filters = await _list_filters(db, user_id, mapping_id)
