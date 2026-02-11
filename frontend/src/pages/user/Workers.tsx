@@ -16,10 +16,11 @@ export function UserWorkers() {
     queryKey: ['workers'],
     queryFn: async () => (await api.get<Worker[]>('/workers')).data,
   });
-  const { data: accounts } = useQuery({
-    queryKey: ['accounts'],
-    queryFn: async () => (await api.get('/accounts')).data,
+  const { data: accountsData } = useQuery({
+    queryKey: ['accounts', 1, 100],
+    queryFn: async () => (await api.get<{ items: { id: number; name: string; type: string; session_path: string | null }[] }>('/accounts?page=1&page_size=100')).data,
   });
+  const accounts = accountsData?.items ?? [];
   const startMutation = useMutation({
     mutationFn: async (accountId: number) => {
       return (await api.post(`/workers/start?account_id=${accountId}`)).data;
@@ -33,7 +34,7 @@ export function UserWorkers() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['workers'] }),
   });
 
-  const userAccounts = (accounts ?? []).filter(
+  const userAccounts = accounts.filter(
     (a: { type: string; session_path: string | null }) => a.type === 'user' && a.session_path
   );
 

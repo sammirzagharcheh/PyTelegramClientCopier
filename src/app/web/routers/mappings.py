@@ -16,49 +16,59 @@ from app.web.schemas.mappings import (
 router = APIRouter(prefix="/mappings", tags=["mappings"])
 
 
-@router.get("", response_model=list[ChannelMappingResponse])
+@router.get("")
 async def list_mappings(
     db: Db,
     user: CurrentUser,
     user_id: int | None = None,
-) -> list[dict]:
-    """List channel mappings. Users see own; admins can filter by user_id."""
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    """List channel mappings. Users see own; admins can filter by user_id. Returns paginated {items, total, page, page_size, total_pages}."""
+    page_size = min(max(1, page_size), 100)
+    page = max(1, page)
+    offset = (page - 1) * page_size
+
     if user["role"] == "admin" and user_id is not None:
-        scope_id = user_id
-        query = """SELECT id, user_id, source_chat_id, dest_chat_id, name,
-                          source_chat_title, dest_chat_title, enabled,
-                          telegram_account_id, created_at
-                   FROM channel_mappings WHERE user_id = ? ORDER BY id"""
-        params: tuple = (scope_id,)
+        base = "FROM channel_mappings WHERE user_id = ?"
+        order = "ORDER BY id"
+        params: list = [user_id]
     elif user["role"] == "admin":
-        query = """SELECT id, user_id, source_chat_id, dest_chat_id, name,
-                          source_chat_title, dest_chat_title, enabled,
-                          telegram_account_id, created_at
-                   FROM channel_mappings ORDER BY user_id, id"""
-        params = ()
+        base = "FROM channel_mappings"
+        order = "ORDER BY user_id, id"
+        params = []
     else:
-        query = """SELECT id, user_id, source_chat_id, dest_chat_id, name,
-                          source_chat_title, dest_chat_title, enabled,
-                          telegram_account_id, created_at
-                   FROM channel_mappings WHERE user_id = ? ORDER BY id"""
-        params = (user["id"],)
-    async with db.execute(query, params) as cur:
+        base = "FROM channel_mappings WHERE user_id = ?"
+        order = "ORDER BY id"
+        params = [user["id"]]
+
+    async with db.execute(f"SELECT COUNT(*) {base}", params) as cur:
+        total = (await cur.fetchone())[0]
+
+    cols = "id, user_id, source_chat_id, dest_chat_id, name, source_chat_title, dest_chat_title, enabled, telegram_account_id, created_at"
+    params.extend([page_size, offset])
+    async with db.execute(
+        f"SELECT {cols} {base} {order} LIMIT ? OFFSET ?",
+        params,
+    ) as cur:
         rows = await cur.fetchall()
-    return [
+
+    items = [
         {
-            "id": r[0],
-            "user_id": r[1],
-            "source_chat_id": r[2],
-            "dest_chat_id": r[3],
-            "name": r[4],
-            "source_chat_title": r[5],
-            "dest_chat_title": r[6],
-            "enabled": bool(r[7]),
-            "telegram_account_id": r[8],
-            "created_at": r[9],
+            "id": r[0], "user_id": r[1], "source_chat_id": r[2], "dest_chat_id": r[3],
+            "name": r[4], "source_chat_title": r[5], "dest_chat_title": r[6],
+            "enabled": bool(r[7]), "telegram_account_id": r[8], "created_at": r[9],
         }
         for r in rows
     ]
+    total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+    }
 
 
 @router.post("", response_model=ChannelMappingResponse, status_code=status.HTTP_201_CREATED)

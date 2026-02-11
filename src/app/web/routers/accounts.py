@@ -21,37 +21,54 @@ async def list_accounts(
     db: Db,
     user: CurrentUser,
     user_id: int | None = None,
-) -> list[dict]:
-    """List telegram accounts. Users see own; admins can filter by user_id."""
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    """List telegram accounts. Users see own; admins can filter by user_id. Returns paginated {items, total, page, page_size, total_pages}."""
+    page_size = min(max(1, page_size), 100)
+    page = max(1, page)
+    offset = (page - 1) * page_size
+
     if user["role"] == "admin":
         if user_id is not None:
             scope_id = user_id
         else:
             scope_id = -1
         if scope_id == -1:
-            query = "SELECT id, user_id, name, type, session_path, phone, status, created_at FROM telegram_accounts ORDER BY user_id, id"
-            params: tuple = ()
+            base = "FROM telegram_accounts"
+            order = "ORDER BY user_id, id"
+            params: list = []
         else:
-            query = "SELECT id, user_id, name, type, session_path, phone, status, created_at FROM telegram_accounts WHERE user_id = ? ORDER BY id"
-            params = (scope_id,)
+            base = "FROM telegram_accounts WHERE user_id = ?"
+            order = "ORDER BY id"
+            params = [scope_id]
     else:
-        query = "SELECT id, user_id, name, type, session_path, phone, status, created_at FROM telegram_accounts WHERE user_id = ? ORDER BY id"
-        params = (user["id"],)
-    async with db.execute(query, params) as cur:
+        base = "FROM telegram_accounts WHERE user_id = ?"
+        order = "ORDER BY id"
+        params = [user["id"]]
+
+    async with db.execute(f"SELECT COUNT(*) {base}", params) as cur:
+        total = (await cur.fetchone())[0]
+
+    params.extend([page_size, offset])
+    async with db.execute(
+        f"SELECT id, user_id, name, type, session_path, phone, status, created_at {base} {order} LIMIT ? OFFSET ?",
+        params,
+    ) as cur:
         rows = await cur.fetchall()
-    return [
-        {
-            "id": r[0],
-            "user_id": r[1],
-            "name": r[2],
-            "type": r[3],
-            "session_path": r[4],
-            "phone": r[5],
-            "status": r[6],
-            "created_at": r[7],
-        }
+
+    items = [
+        {"id": r[0], "user_id": r[1], "name": r[2], "type": r[3], "session_path": r[4], "phone": r[5], "status": r[6], "created_at": r[7]}
         for r in rows
     ]
+    total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+    }
 
 
 @router.get("/{account_id}")

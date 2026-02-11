@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { Pagination } from '../../components/Pagination';
 
 type IndexEntry = {
   user_id: number;
@@ -9,10 +11,14 @@ type IndexEntry = {
   dest_msg_id: number;
 };
 
+type PaginatedIndex = { items: IndexEntry[]; total: number; page: number; page_size: number; total_pages: number };
+
 export function MessageIndex() {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const { data, isLoading } = useQuery({
-    queryKey: ['message-index'],
-    queryFn: async () => (await api.get<{ items: IndexEntry[] }>('/message-index')).data,
+    queryKey: ['message-index', page, pageSize],
+    queryFn: async () => (await api.get<PaginatedIndex>(`/message-index?page=${page}&page_size=${pageSize}`)).data,
   });
 
   if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
@@ -48,6 +54,16 @@ export function MessageIndex() {
         </table>
         {items.length === 0 && (
           <div className="p-8 text-center text-gray-500">No index entries yet.</div>
+        )}
+        {data && (
+          <Pagination
+            page={data.page}
+            pageSize={data.page_size}
+            total={data.total}
+            totalPages={data.total_pages}
+            onPageChange={setPage}
+            onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+          />
         )}
       </div>
     </div>

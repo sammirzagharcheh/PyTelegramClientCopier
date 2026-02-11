@@ -2,13 +2,13 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 
 export function AdminDashboard() {
-  const { data: users } = useQuery({
-    queryKey: ['admin', 'users'],
-    queryFn: async () => (await api.get('/admin/users')).data,
+  const { data: usersData } = useQuery({
+    queryKey: ['admin', 'users', 1, 1],
+    queryFn: async () => (await api.get<{ total: number }>('/admin/users?page=1&page_size=1')).data,
   });
-  const { data: mappings } = useQuery({
-    queryKey: ['mappings'],
-    queryFn: async () => (await api.get('/mappings')).data,
+  const { data: mappingsData } = useQuery({
+    queryKey: ['mappings', 1, 1],
+    queryFn: async () => (await api.get<{ total: number }>('/mappings?page=1&page_size=1')).data,
   });
 
   return (
@@ -17,11 +17,11 @@ export function AdminDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
           <h2 className="text-lg font-semibold mb-2">Users</h2>
-          <p className="text-3xl font-bold text-blue-600">{(users as unknown[])?.length ?? 0}</p>
+          <p className="text-3xl font-bold text-blue-600">{usersData?.total ?? 0}</p>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
           <h2 className="text-lg font-semibold mb-2">Total Mappings</h2>
-          <p className="text-3xl font-bold text-blue-600">{(mappings as unknown[])?.length ?? 0}</p>
+          <p className="text-3xl font-bold text-blue-600">{mappingsData?.total ?? 0}</p>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
           <h2 className="text-lg font-semibold mb-2">Workers</h2>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { AddAccountDialog } from '../../components/AddAccountDialog';
+import { Pagination } from '../../components/Pagination';
 
 type Account = {
   id: number;
@@ -12,14 +13,19 @@ type Account = {
   created_at: string | null;
 };
 
+type PaginatedAccounts = { items: Account[]; total: number; page: number; page_size: number; total_pages: number };
+
 export function Accounts() {
   const [showAdd, setShowAdd] = useState(false);
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const queryClient = useQueryClient();
-  const { data: accounts, isLoading } = useQuery({
-    queryKey: ['accounts'],
-    queryFn: async () => (await api.get<Account[]>('/accounts')).data,
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounts', page, pageSize],
+    queryFn: async () => (await api.get<PaginatedAccounts>(`/accounts?page=${page}&page_size=${pageSize}`)).data,
   });
+  const accounts = data?.items ?? [];
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -63,7 +69,7 @@ export function Accounts() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-            {(accounts ?? []).map((acc) => (
+            {accounts.map((acc) => (
               <tr key={acc.id}>
                 <td className="px-6 py-4 text-sm">{acc.id}</td>
                 <td className="px-6 py-4 text-sm">{acc.name || '—'}</td>
@@ -87,8 +93,18 @@ export function Accounts() {
             ))}
           </tbody>
         </table>
-        {(accounts ?? []).length === 0 && (
+        {accounts.length === 0 && (
           <div className="p-8 text-center text-gray-500">No accounts yet. Add one from the mappings flow.</div>
+        )}
+        {data && (
+          <Pagination
+            page={data.page}
+            pageSize={data.page_size}
+            total={data.total}
+            totalPages={data.total_pages}
+            onPageChange={setPage}
+            onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+          />
         )}
       </div>
 

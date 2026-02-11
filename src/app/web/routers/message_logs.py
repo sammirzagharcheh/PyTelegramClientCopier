@@ -115,11 +115,13 @@ async def list_message_logs(
                         it["source_chat_title"] = st
                     if not it.get("dest_chat_title"):
                         it["dest_chat_title"] = dt
+        total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
         return {
             "items": items,
             "total": total,
             "page": page,
             "page_size": page_size,
+            "total_pages": total_pages,
         }
     except (OperationFailure, ServerSelectionTimeoutError) as e:
         # #region agent log

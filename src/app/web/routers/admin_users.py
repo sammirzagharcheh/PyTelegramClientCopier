@@ -11,7 +11,7 @@ from app.web.schemas.users import UserCreate, UserResponse, UserUpdate
 router = APIRouter(prefix="/admin/users", tags=["admin-users"])
 
 
-@router.get("", response_model=list[UserResponse])
+@router.get("")
 async def list_users(
     db: Db,
     _admin: AdminUser,
@@ -19,32 +19,41 @@ async def list_users(
     page_size: int = 20,
     role: str | None = None,
     status_filter: str | None = None,
-) -> list[dict]:
-    """List users with optional filters."""
+) -> dict:
+    """List users with optional filters. Returns paginated {items, total, page, page_size, total_pages}."""
+    page_size = min(max(1, page_size), 100)
+    page = max(1, page)
     offset = (page - 1) * page_size
-    query = "SELECT id, email, name, role, status, created_at FROM users WHERE 1=1"
+
+    base = "FROM users WHERE 1=1"
     params: list = []
     if role:
-        query += " AND role = ?"
+        base += " AND role = ?"
         params.append(role)
     if status_filter:
-        query += " AND status = ?"
+        base += " AND status = ?"
         params.append(status_filter)
-    query += " ORDER BY id LIMIT ? OFFSET ?"
+
+    async with db.execute(f"SELECT COUNT(*) {base}", params) as cur:
+        total = (await cur.fetchone())[0]
+
+    query = f"SELECT id, email, name, role, status, created_at {base} ORDER BY id LIMIT ? OFFSET ?"
     params.extend([page_size, offset])
     async with db.execute(query, params) as cur:
         rows = await cur.fetchall()
-    return [
-        {
-            "id": r[0],
-            "email": r[1],
-            "name": r[2],
-            "role": r[3],
-            "status": r[4],
-            "created_at": r[5],
-        }
+
+    items = [
+        {"id": r[0], "email": r[1], "name": r[2], "role": r[3], "status": r[4], "created_at": r[5]}
         for r in rows
     ]
+    total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+    }
 
 
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)

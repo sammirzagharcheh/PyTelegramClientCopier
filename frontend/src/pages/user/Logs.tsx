@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { Pagination } from '../../components/Pagination';
 
 type Log = {
   user_id: number;
@@ -13,10 +15,14 @@ type Log = {
   status: string;
 };
 
+type PaginatedLogs = { items: Log[]; total: number; page: number; page_size: number; total_pages: number };
+
 export function Logs() {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['message-logs'],
-    queryFn: async () => (await api.get<{ items: Log[] }>('/message-logs')).data,
+    queryKey: ['message-logs', page, pageSize],
+    queryFn: async () => (await api.get<PaginatedLogs>(`/message-logs?page=${page}&page_size=${pageSize}`)).data,
   });
 
   if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
@@ -76,6 +82,16 @@ export function Logs() {
         </table>
         {items.length === 0 && (
           <div className="p-8 text-center text-gray-500">No logs yet.</div>
+        )}
+        {data && (
+          <Pagination
+            page={data.page}
+            pageSize={data.page_size}
+            total={data.total}
+            totalPages={data.total_pages}
+            onPageChange={setPage}
+            onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+          />
         )}
       </div>
     </div>

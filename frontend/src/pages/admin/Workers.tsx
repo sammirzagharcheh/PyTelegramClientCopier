@@ -18,10 +18,11 @@ export function Workers() {
     queryKey: ['workers'],
     queryFn: async () => (await api.get<Worker[]>('/workers')).data,
   });
-  const { data: accounts } = useQuery({
-    queryKey: ['accounts'],
-    queryFn: async () => (await api.get('/accounts')).data,
+  const { data: accountsData } = useQuery({
+    queryKey: ['accounts', 1, 100],
+    queryFn: async () => (await api.get<{ items: { id: number; name: string; user_id: number; type: string; session_path: string | null }[] }>('/accounts?page=1&page_size=100')).data,
   });
+  const accounts = accountsData?.items ?? [];
   const startMutation = useMutation({
     mutationFn: async ({ account_id, user_id }: { account_id: number; user_id?: number }) => {
       const params = new URLSearchParams({ account_id: String(account_id) });
@@ -49,7 +50,7 @@ export function Workers() {
 
   if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
 
-  const userAccounts = (accounts ?? []).filter((a: { user_id: number }) =>
+  const userAccounts = accounts.filter((a: { user_id: number }) =>
     user?.role === 'admin' ? true : a.user_id === user?.id
   );
 

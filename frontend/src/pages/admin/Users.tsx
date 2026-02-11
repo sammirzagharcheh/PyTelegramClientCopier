@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { CreateUserDialog } from '../../components/CreateUserDialog';
+import { Pagination } from '../../components/Pagination';
 
 type User = {
   id: number;
@@ -12,14 +13,20 @@ type User = {
   created_at: string | null;
 };
 
+type PaginatedUsers = { items: User[]; total: number; page: number; page_size: number; total_pages: number };
+
 export function AdminUsers() {
   const [showCreate, setShowCreate] = useState(false);
-  const { data: users, isLoading } = useQuery({
-    queryKey: ['admin', 'users'],
-    queryFn: async () => (await api.get<User[]>('/admin/users')).data,
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const { data, isLoading } = useQuery({
+    queryKey: ['admin', 'users', page, pageSize],
+    queryFn: async () => (await api.get<PaginatedUsers>(`/admin/users?page=${page}&page_size=${pageSize}`)).data,
   });
 
   if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
+
+  const users = data?.items ?? [];
 
   return (
     <div>
@@ -42,7 +49,7 @@ export function AdminUsers() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-            {(users ?? []).map((u) => (
+            {users.map((u) => (
               <tr key={u.id}>
                 <td className="px-6 py-4 text-sm">{u.id}</td>
                 <td className="px-6 py-4 text-sm">{u.email}</td>
@@ -57,8 +64,18 @@ export function AdminUsers() {
             ))}
           </tbody>
         </table>
-        {(users ?? []).length === 0 && (
+        {users.length === 0 && (
           <div className="p-8 text-center text-gray-500">No users yet.</div>
+        )}
+        {data && (
+          <Pagination
+            page={data.page}
+            pageSize={data.page_size}
+            total={data.total}
+            totalPages={data.total_pages}
+            onPageChange={setPage}
+            onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+          />
         )}
       </div>
     </div>

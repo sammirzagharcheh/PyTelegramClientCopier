@@ -56,6 +56,7 @@ async def list_message_index(
         count_params.append(dest_chat_id)
     async with db.execute(count_query, count_params) as cur:
         total = (await cur.fetchone())[0]
+    total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
     return {
         "items": [
             {
@@ -70,4 +71,5 @@ async def list_message_index(
         "total": total,
         "page": page,
         "page_size": page_size,
+        "total_pages": total_pages,
     }

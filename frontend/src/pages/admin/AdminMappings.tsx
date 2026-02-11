@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
+import { Pagination } from '../../components/Pagination';
 
 type Mapping = {
   id: number;
@@ -11,11 +13,16 @@ type Mapping = {
   enabled: boolean;
 };
 
+type PaginatedMappings = { items: Mapping[]; total: number; page: number; page_size: number; total_pages: number };
+
 export function AdminMappings() {
-  const { data: mappings, isLoading } = useQuery({
-    queryKey: ['mappings'],
-    queryFn: async () => (await api.get<Mapping[]>('/mappings')).data,
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const { data, isLoading } = useQuery({
+    queryKey: ['mappings', page, pageSize],
+    queryFn: async () => (await api.get<PaginatedMappings>(`/mappings?page=${page}&page_size=${pageSize}`)).data,
   });
+  const mappings = data?.items ?? [];
 
   if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
 
@@ -35,7 +42,7 @@ export function AdminMappings() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-            {(mappings ?? []).map((m) => (
+            {mappings.map((m) => (
               <tr key={m.id}>
                 <td className="px-6 py-4 text-sm">{m.user_id}</td>
                 <td className="px-6 py-4 text-sm">{m.name || `Mapping ${m.id}`}</td>
@@ -53,8 +60,18 @@ export function AdminMappings() {
             ))}
           </tbody>
         </table>
-        {(mappings ?? []).length === 0 && (
+        {mappings.length === 0 && (
           <div className="p-8 text-center text-gray-500">No mappings yet.</div>
+        )}
+        {data && (
+          <Pagination
+            page={data.page}
+            pageSize={data.page_size}
+            total={data.total}
+            totalPages={data.total_pages}
+            onPageChange={setPage}
+            onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+          />
         )}
       </div>
     </div>
