@@ -28,6 +28,25 @@ Multi-tenant Telegram copier with admin controls, filtering, and media forwardin
 - **Admin panel** (`/admin/*`): Manage users, view all mappings, logs, workers.
 - **User panel** (`/dashboard`, `/accounts`, `/mappings`, etc.): Manage your Telegram accounts, channel mappings, filters, and workers.
 
+## Filters
+
+Filters control which messages are copied from a source channel to a destination channel. Each mapping can have one or more filters. **All filters must pass** (AND logic): a message is copied only if it satisfies every filter rule.
+
+### Filter rule types
+
+| Rule | Description | Example |
+|------|-------------|---------|
+| **Include text** | Message must contain this text | `announcement` → only messages with "announcement" |
+| **Exclude text** | Message must NOT contain this text | `spam` → skip messages containing "spam" |
+| **Media types** | Only copy messages of these types | `text`, `voice`, `video`, `photo`, `other` |
+| **Regex pattern** | Message text must match this regex | `#\d+` → messages with hashtags followed by digits |
+
+### Examples
+
+1. **Copy only text announcements**: Include text `announcement`, Media types `text`.
+2. **Copy voice and video, exclude spam**: Media types `voice`, `video`; Exclude text `spam`.
+3. **Copy messages with order IDs**: Regex pattern `#\d+` (e.g. matches "order #123").
+
 ## Tests
 
 - `pytest`

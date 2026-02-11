@@ -131,3 +131,186 @@ async def test_handler_flow_replies_and_media(tmp_path):
     assert len(client.sent_files) == 1
     assert client.sent_files[0][0] == 20
 
+
+@pytest.mark.asyncio
+async def test_handler_rejected_by_include_text(tmp_path):
+    db_path = tmp_path / "test.db"
+    from app.config import settings
+
+    settings.sqlite_path = str(db_path)
+    await init_sqlite()
+    db = await get_sqlite()
+
+    mapping = ChannelMapping(
+        id=1,
+        user_id=1,
+        source_chat_id=10,
+        dest_chat_id=20,
+        enabled=True,
+        filters=[MappingFilter(include_text="required", exclude_text=None, media_types=None, regex_pattern=None)],
+        source_chat_title=None,
+        dest_chat_title=None,
+    )
+    mongo = DummyMongo()
+    client = DummyClient()
+    handler = build_message_handler(user_id=1, mappings=[mapping], db=db, mongo_db=mongo)
+
+    event = DummyEvent(chat_id=10, message=DummyMessage(1, "other text"), client=client)
+    await handler(event)
+
+    assert len(client.sent_messages) == 0
+    assert len(mongo.logs) == 0
+
+
+@pytest.mark.asyncio
+async def test_handler_rejected_by_exclude_text(tmp_path):
+    db_path = tmp_path / "test.db"
+    from app.config import settings
+
+    settings.sqlite_path = str(db_path)
+    await init_sqlite()
+    db = await get_sqlite()
+
+    mapping = ChannelMapping(
+        id=1,
+        user_id=1,
+        source_chat_id=10,
+        dest_chat_id=20,
+        enabled=True,
+        filters=[MappingFilter(include_text=None, exclude_text="spam", media_types=None, regex_pattern=None)],
+        source_chat_title=None,
+        dest_chat_title=None,
+    )
+    mongo = DummyMongo()
+    client = DummyClient()
+    handler = build_message_handler(user_id=1, mappings=[mapping], db=db, mongo_db=mongo)
+
+    event = DummyEvent(chat_id=10, message=DummyMessage(1, "this is spam here"), client=client)
+    await handler(event)
+
+    assert len(client.sent_messages) == 0
+    assert len(mongo.logs) == 0
+
+
+@pytest.mark.asyncio
+async def test_handler_rejected_by_media_types(tmp_path):
+    db_path = tmp_path / "test.db"
+    from app.config import settings
+
+    settings.sqlite_path = str(db_path)
+    await init_sqlite()
+    db = await get_sqlite()
+
+    mapping = ChannelMapping(
+        id=1,
+        user_id=1,
+        source_chat_id=10,
+        dest_chat_id=20,
+        enabled=True,
+        filters=[MappingFilter(include_text=None, exclude_text=None, media_types="text,voice", regex_pattern=None)],
+        source_chat_title=None,
+        dest_chat_title=None,
+    )
+    mongo = DummyMongo()
+    client = DummyClient()
+    handler = build_message_handler(user_id=1, mappings=[mapping], db=db, mongo_db=mongo)
+
+    event = DummyEvent(chat_id=10, message=DummyMessage(1, "photo", photo=True), client=client)
+    await handler(event)
+
+    assert len(client.sent_files) == 0
+    assert len(mongo.logs) == 0
+
+
+@pytest.mark.asyncio
+async def test_handler_rejected_by_regex(tmp_path):
+    db_path = tmp_path / "test.db"
+    from app.config import settings
+
+    settings.sqlite_path = str(db_path)
+    await init_sqlite()
+    db = await get_sqlite()
+
+    mapping = ChannelMapping(
+        id=1,
+        user_id=1,
+        source_chat_id=10,
+        dest_chat_id=20,
+        enabled=True,
+        filters=[MappingFilter(include_text=None, exclude_text=None, media_types=None, regex_pattern=r"#\d+")],
+        source_chat_title=None,
+        dest_chat_title=None,
+    )
+    mongo = DummyMongo()
+    client = DummyClient()
+    handler = build_message_handler(user_id=1, mappings=[mapping], db=db, mongo_db=mongo)
+
+    event = DummyEvent(chat_id=10, message=DummyMessage(1, "order 123"), client=client)
+    await handler(event)
+
+    assert len(client.sent_messages) == 0
+    assert len(mongo.logs) == 0
+
+
+@pytest.mark.asyncio
+async def test_handler_multiple_filters_second_fails(tmp_path):
+    db_path = tmp_path / "test.db"
+    from app.config import settings
+
+    settings.sqlite_path = str(db_path)
+    await init_sqlite()
+    db = await get_sqlite()
+
+    mapping = ChannelMapping(
+        id=1,
+        user_id=1,
+        source_chat_id=10,
+        dest_chat_id=20,
+        enabled=True,
+        filters=[
+            MappingFilter(include_text="hello", exclude_text=None, media_types=None, regex_pattern=None),
+            MappingFilter(include_text="missing", exclude_text=None, media_types=None, regex_pattern=None),
+        ],
+        source_chat_title=None,
+        dest_chat_title=None,
+    )
+    mongo = DummyMongo()
+    client = DummyClient()
+    handler = build_message_handler(user_id=1, mappings=[mapping], db=db, mongo_db=mongo)
+
+    event = DummyEvent(chat_id=10, message=DummyMessage(1, "hello world"), client=client)
+    await handler(event)
+
+    assert len(client.sent_messages) == 0
+    assert len(mongo.logs) == 0
+
+
+@pytest.mark.asyncio
+async def test_handler_no_filters_all_forwarded(tmp_path):
+    db_path = tmp_path / "test.db"
+    from app.config import settings
+
+    settings.sqlite_path = str(db_path)
+    await init_sqlite()
+    db = await get_sqlite()
+
+    mapping = ChannelMapping(
+        id=1,
+        user_id=1,
+        source_chat_id=10,
+        dest_chat_id=20,
+        enabled=True,
+        filters=[],
+        source_chat_title=None,
+        dest_chat_title=None,
+    )
+    mongo = DummyMongo()
+    client = DummyClient()
+    handler = build_message_handler(user_id=1, mappings=[mapping], db=db, mongo_db=mongo)
+
+    event = DummyEvent(chat_id=10, message=DummyMessage(1, "anything goes"), client=client)
+    await handler(event)
+
+    assert len(client.sent_messages) == 1
+    assert len(mongo.logs) == 1
+
