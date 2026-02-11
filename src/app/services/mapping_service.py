@@ -22,6 +22,8 @@ class ChannelMapping:
     dest_chat_id: int
     enabled: bool
     filters: list[MappingFilter]
+    source_chat_title: str | None
+    dest_chat_title: str | None
 
 
 async def list_enabled_mappings(
@@ -35,20 +37,20 @@ async def list_enabled_mappings(
     mappings: list[ChannelMapping] = []
     if telegram_account_id is not None:
         q = (
-            "SELECT id, user_id, source_chat_id, dest_chat_id, enabled "
+            "SELECT id, user_id, source_chat_id, dest_chat_id, enabled, source_chat_title, dest_chat_title "
             "FROM channel_mappings WHERE user_id = ? AND enabled = 1 "
             "AND (telegram_account_id IS NULL OR telegram_account_id = ?)"
         )
         params = (user_id, telegram_account_id)
     else:
         q = (
-            "SELECT id, user_id, source_chat_id, dest_chat_id, enabled "
+            "SELECT id, user_id, source_chat_id, dest_chat_id, enabled, source_chat_title, dest_chat_title "
             "FROM channel_mappings WHERE user_id = ? AND enabled = 1"
         )
         params = (user_id,)
     async with db.execute(q, params) as cursor:
         rows = await cursor.fetchall()
-    for mapping_id, u_id, source_id, dest_id, enabled in rows:
+    for mapping_id, u_id, source_id, dest_id, enabled, src_title, dest_title in rows:
         filters = await _list_filters(db, user_id, mapping_id)
         mappings.append(
             ChannelMapping(
@@ -58,6 +60,8 @@ async def list_enabled_mappings(
                 dest_chat_id=dest_id,
                 enabled=bool(enabled),
                 filters=filters,
+                source_chat_title=src_title or None,
+                dest_chat_title=dest_title or None,
             )
         )
     return mappings

@@ -5,6 +5,7 @@ import { useAuth } from '../../store/AuthContext';
 type Worker = {
   id: string;
   user_id: number;
+  account_id?: number;
   session_path: string;
   pid: number | null;
   running: boolean;
@@ -42,6 +43,9 @@ export function Workers() {
       user_id: user?.role === 'admin' && accountUserId ? accountUserId : undefined,
     });
   };
+
+  const isAccountRunning = (accountId: number) =>
+    (workers ?? []).some((w) => w.account_id === accountId && w.running);
 
   if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
 
@@ -90,8 +94,8 @@ export function Workers() {
                   <span>{a.name || `Account ${a.id}`} (user {a.user_id})</span>
                   <button
                     onClick={() => handleStart(a.id, a.user_id)}
-                    disabled={startMutation.isPending}
-                    className="px-3 py-1 text-sm rounded bg-blue-600 text-white disabled:opacity-50"
+                    disabled={startMutation.isPending || isAccountRunning(a.id)}
+                    className="px-3 py-1 text-sm rounded bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Start
                   </button>

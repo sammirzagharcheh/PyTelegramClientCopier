@@ -70,6 +70,65 @@ def _next_worker_id() -> str:
     return f"w{_worker_counter}"
 
 
+def _account_has_running_worker(account_id: int) -> bool:
+    """Check if any running worker exists for this account."""
+    for w in _workers.values():
+        if w.get("account_id") == account_id and _is_process_alive(w):
+            return True
+    return False
+
+
+async def _spawn_worker_for_account(
+    db: aiosqlite.Connection,
+    account_id: int,
+    user_id: int,
+    session_path: str,
+) -> bool:
+    """Spawn a worker process for an account. Returns True if spawned."""
+    if _account_has_running_worker(account_id):
+        return False
+    project_root = Path(__file__).resolve().parents[4]
+    session_abs = (project_root / session_path).resolve() if not Path(session_path).is_absolute() else Path(session_path)
+    worker_id = _next_worker_id()
+    cmd = [
+        sys.executable, "-m", "app.main",
+        "db", "run-worker",
+        str(user_id),
+        str(session_abs),
+        "--account-id", str(account_id),
+    ]
+    worker_log_dir = project_root / "data"
+    worker_log_dir.mkdir(parents=True, exist_ok=True)
+    stderr_path = worker_log_dir / f"worker_{account_id}_{worker_id}.log"
+    try:
+        stderr_handle = open(stderr_path, "w", encoding="utf-8")
+    except OSError:
+        stderr_handle = None
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(project_root),
+        stdout=subprocess.DEVNULL,
+        stderr=stderr_handle if stderr_handle else subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
+    )
+    pid = proc.pid
+    _workers[worker_id] = {
+        "id": worker_id,
+        "user_id": user_id,
+        "account_id": account_id,
+        "session_path": session_path,
+        "process": proc,
+        "pid": pid,
+    }
+    await db.execute(
+        "INSERT INTO worker_registry (worker_id, user_id, account_id, session_path, pid) VALUES (?, ?, ?, ?, ?)",
+        (worker_id, user_id, account_id, session_path, pid),
+    )
+    await db.commit()
+    return True
+
+
 async def stop_workers_for_account(account_id: int, db: aiosqlite.Connection) -> None:
     """Internal helper: stop and remove all workers for a given account_id."""
     to_stop = [wid for wid, w in _workers.items() if w.get("account_id") == account_id]
@@ -94,6 +153,7 @@ async def list_workers(user: CurrentUser, db: Db) -> list[dict]:
         {
             "id": w["id"],
             "user_id": w["user_id"],
+            "account_id": w.get("account_id"),
             "session_path": w["session_path"],
             "pid": w.get("pid") if _is_process_alive(w) else None,
             "running": _is_process_alive(w),
@@ -136,13 +196,11 @@ async def start_worker(
     await _prune_dead_workers(db)
     session_path = row[2]
     # Check in-memory registry
-    for w in _workers.values():
-        if w["user_id"] == target_user and w["session_path"] == session_path:
-            if _is_process_alive(w):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Worker already running for this account",
-                )
+    if _account_has_running_worker(account_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Worker already running for this account",
+        )
     # Check persistent registry (orphans from prior API run)
     async with db.execute(
         "SELECT pid FROM worker_registry WHERE account_id = ?", (account_id,)
@@ -157,44 +215,19 @@ async def start_worker(
             status_code=status.HTTP_409_CONFLICT,
             detail="Worker already running for this account",
         )
-    project_root = Path(__file__).resolve().parents[4]
-    session_abs = (project_root / session_path).resolve() if not Path(session_path).is_absolute() else Path(session_path)
-    worker_id = _next_worker_id()
-    cmd = [
-        sys.executable, "-m", "app.main",
-        "db", "run-worker",
-        str(target_user),
-        str(session_abs),
-        "--account-id", str(account_id),
-    ]
-    proc = subprocess.Popen(
-        cmd,
-        cwd=str(project_root),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        stdin=subprocess.DEVNULL,
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
-    )
-    pid = proc.pid
-    _workers[worker_id] = {
-        "id": worker_id,
-        "user_id": target_user,
-        "account_id": account_id,
-        "session_path": row[2],
-        "process": proc,
-        "pid": pid,
-    }
-    await db.execute(
-        "INSERT INTO worker_registry (worker_id, user_id, account_id, session_path, pid) VALUES (?, ?, ?, ?, ?)",
-        (worker_id, target_user, account_id, row[2], pid),
-    )
-    await db.commit()
+    spawned = await _spawn_worker_for_account(db, account_id, target_user, session_path)
+    if not spawned:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Worker already running for this account",
+        )
+    w = next(x for x in _workers.values() if x["account_id"] == account_id)
     return {
-        "id": worker_id,
+        "id": w["id"],
         "user_id": target_user,
         "account_id": account_id,
-        "session_path": row[2],
-        "pid": pid,
+        "session_path": session_path,
+        "pid": w["pid"],
     }
 
 
@@ -218,7 +251,8 @@ async def stop_worker(
 
 
 async def restore_workers_from_db(db: aiosqlite.Connection) -> None:
-    """Restore orphan workers from worker_registry after API restart."""
+    """Restore workers from worker_registry. Reattach orphans (alive PIDs); for dead PIDs
+    (e.g. after graceful shutdown), spawn new workers. Only accounts that had workers get them back."""
     global _worker_counter
     async with db.execute(
         "SELECT worker_id, user_id, account_id, session_path, pid FROM worker_registry"
@@ -230,6 +264,7 @@ async def restore_workers_from_db(db: aiosqlite.Connection) -> None:
             os.kill(pid, 0)
         except OSError:
             await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
+            await _spawn_worker_for_account(db, account_id, user_id, session_path)
             continue
         _workers[worker_id] = {
             "id": worker_id,
@@ -242,16 +277,15 @@ async def restore_workers_from_db(db: aiosqlite.Connection) -> None:
         if worker_id.startswith("w") and worker_id[1:].isdigit():
             max_num = max(max_num, int(worker_id[1:]))
     _worker_counter = max_num
-    if rows:
-        await db.commit()
+    await db.commit()
 
 
 async def terminate_all_workers(db: aiosqlite.Connection) -> None:
-    """Terminate all workers on API shutdown."""
+    """Terminate all workers on API shutdown. Keep worker_registry rows so restore can
+    spawn workers for these accounts on next startup."""
     to_stop = list(_workers.items())
     for wid, w in to_stop:
         _terminate_worker(w)
         del _workers[wid]
     if to_stop:
-        await db.execute("DELETE FROM worker_registry")
         await db.commit()

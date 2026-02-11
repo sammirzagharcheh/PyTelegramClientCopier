@@ -4,6 +4,7 @@ import { api } from '../../lib/api';
 type Worker = {
   id: string;
   user_id: number;
+  account_id?: number;
   session_path: string;
   pid: number | null;
   running: boolean;
@@ -35,6 +36,9 @@ export function UserWorkers() {
   const userAccounts = (accounts ?? []).filter(
     (a: { type: string; session_path: string | null }) => a.type === 'user' && a.session_path
   );
+
+  const isAccountRunning = (accountId: number) =>
+    (workers ?? []).some((w) => w.account_id === accountId && w.running);
 
   if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
 
@@ -75,8 +79,8 @@ export function UserWorkers() {
                 <span>{a.name || `Account ${a.id}`}</span>
                 <button
                   onClick={() => startMutation.mutate(a.id)}
-                  disabled={startMutation.isPending}
-                  className="px-3 py-1 text-sm rounded bg-blue-600 text-white disabled:opacity-50"
+                  disabled={startMutation.isPending || isAccountRunning(a.id)}
+                  className="px-3 py-1 text-sm rounded bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Start
                 </button>

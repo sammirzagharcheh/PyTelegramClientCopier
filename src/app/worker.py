@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
 from pathlib import Path
 
@@ -16,13 +17,14 @@ logger = logging.getLogger(__name__)
 
 
 def _worker_session_path(session_path: str) -> str:
-    """Use a copy of the session to avoid 'database is locked' when another
-    process or file sync holds the original. Returns path to worker's session copy.
+    """Use a unique copy of the session per worker process to avoid 'database is locked'
+    when another worker or file sync holds a shared copy. Returns path to worker's session copy.
     Falls back to original path if copy fails (e.g. source locked for read).
     """
     base = Path(__file__).resolve().parents[2]
     path = (base / session_path).resolve() if not Path(session_path).is_absolute() else Path(session_path).resolve()
-    worker_path = path.parent / f"{path.stem}_worker.session"
+    pid = os.getpid()
+    worker_path = path.parent / f"{path.stem}_worker_{pid}.session"
     try:
         shutil.copy2(path, worker_path)
         return str(worker_path)

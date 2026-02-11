@@ -57,11 +57,17 @@ class DummyMessage:
         self.reply_to = DummyReply(reply_to_msg_id) if reply_to_msg_id else None
 
 
+class DummyChat:
+    def __init__(self, title: str = "Test Channel"):
+        self.title = title
+
+
 class DummyEvent:
-    def __init__(self, chat_id, message, client):
+    def __init__(self, chat_id, message, client, chat=None):
         self.chat_id = chat_id
         self.message = message
         self.client = client
+        self.chat = chat or DummyChat()
 
 
 class DummyMongo:
@@ -89,6 +95,8 @@ async def test_handler_flow_replies_and_media(tmp_path):
         dest_chat_id=20,
         enabled=True,
         filters=[MappingFilter(include_text="hello", exclude_text=None, media_types="text,photo", regex_pattern=None)],
+        source_chat_title="Source Channel",
+        dest_chat_title="Dest Channel",
     )
     mongo = DummyMongo()
     client = DummyClient()
@@ -109,6 +117,8 @@ async def test_handler_flow_replies_and_media(tmp_path):
     assert len(client.sent_messages) == 1
     assert client.sent_messages[0][2] == 77
     assert mongo.logs[-1]["source_msg_id"] == 56
+    assert mongo.logs[-1].get("source_chat_title") == "Test Channel"
+    assert mongo.logs[-1].get("dest_chat_title") == "Dest Channel"
 
     # Incoming photo message (allowed by filter)
     event2 = DummyEvent(

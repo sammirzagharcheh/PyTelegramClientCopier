@@ -7,6 +7,8 @@ type Log = {
   source_msg_id: number;
   dest_chat_id: number;
   dest_msg_id: number;
+  source_chat_title?: string | null;
+  dest_chat_title?: string | null;
   timestamp: string;
   status: string;
 };
@@ -55,8 +57,20 @@ export function AdminLogs() {
             {items.map((log, i) => (
               <tr key={i}>
                 <td className="px-6 py-4 text-sm">{log.user_id}</td>
-                <td className="px-6 py-4 text-sm font-mono">{log.source_chat_id} / {log.source_msg_id}</td>
-                <td className="px-6 py-4 text-sm font-mono">{log.dest_chat_id} / {log.dest_msg_id}</td>
+                <td className="px-6 py-4 text-sm">
+                  {log.source_chat_title ? (
+                    <span title={`ID: ${log.source_chat_id}`}>{log.source_chat_title} <span className="font-mono text-gray-500">({log.source_chat_id} / {log.source_msg_id})</span></span>
+                  ) : (
+                    <span className="font-mono">{log.source_chat_id} / {log.source_msg_id}</span>
+                  )}
+                </td>
+                <td className="px-6 py-4 text-sm">
+                  {log.dest_chat_title ? (
+                    <span title={`ID: ${log.dest_chat_id}`}>{log.dest_chat_title} <span className="font-mono text-gray-500">({log.dest_chat_id} / {log.dest_msg_id})</span></span>
+                  ) : (
+                    <span className="font-mono">{log.dest_chat_id} / {log.dest_msg_id}</span>
+                  )}
+                </td>
                 <td className="px-6 py-4 text-sm">{log.timestamp}</td>
                 <td className="px-6 py-4 text-sm">{log.status}</td>
               </tr>

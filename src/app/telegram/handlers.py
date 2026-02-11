@@ -195,17 +195,44 @@ def build_message_handler(
                     dest_chat_id=mapping.dest_chat_id,
                     dest_msg_id=sent.id,
                 )
-                await mongo_db.message_logs.insert_one(
-                    {
+                try:
+                    source_title = (
+                        (getattr(event.chat, "title", None) if event.chat else None)
+                        or mapping.source_chat_title
+                        or ""
+                    )
+                    source_title = str(source_title) if source_title else ""
+                    # Fetch dest title from Telegram; mapping rarely has it (Add Mapping doesn't set it)
+                    dest_title = mapping.dest_chat_title or ""
+                    if not dest_title:
+                        for dest_id in (mapping.dest_chat_id, _alternate_chat_id(mapping.dest_chat_id)):
+                            if dest_id is None:
+                                continue
+                            try:
+                                dest_entity = await event.client.get_entity(dest_id)
+                                dest_title = getattr(dest_entity, "title", None) or getattr(dest_entity, "first_name", None) or ""
+                                if dest_title:
+                                    break
+                            except Exception:
+                                continue
+                    dest_title = str(dest_title) if dest_title else ""
+                except Exception:
+                    source_title = ""
+                    dest_title = ""
+                try:
+                    await mongo_db.message_logs.insert_one({
                         "user_id": user_id,
                         "source_chat_id": source_chat_id,
                         "source_msg_id": message.id,
                         "dest_chat_id": mapping.dest_chat_id,
                         "dest_msg_id": sent.id,
+                        "source_chat_title": source_title,
+                        "dest_chat_title": dest_title,
                         "timestamp": message.date,
                         "status": "ok",
-                    }
-                )
+                    })
+                except Exception as e:
+                    logger.warning("Failed to write message log (non-fatal): %s", e)
 
     return _handler
 

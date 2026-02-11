@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -21,16 +23,27 @@ from app.web.routers import (
     workers,
 )
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_sqlite()
     await purge_old_login_sessions(settings.login_sessions_retention_days)
-    db = await get_sqlite()
-    try:
-        await workers.restore_workers_from_db(db)
-    finally:
-        await db.close()
+
+    async def _delayed_restore():
+        """Restore workers a few seconds after startup so DB, Mongo, etc. are fully ready."""
+        await asyncio.sleep(3)
+        db = await get_sqlite()
+        try:
+            await workers.restore_workers_from_db(db)
+            logger.info("Worker restore completed")
+        except Exception as e:
+            logger.exception("Worker restore failed: %s", e)
+        finally:
+            await db.close()
+
+    asyncio.create_task(_delayed_restore())
     yield
     db = await get_sqlite()
     try:
