@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.db.cleanup import purge_old_login_sessions
-from app.db.sqlite import init_sqlite
+from app.db.sqlite import get_sqlite, init_sqlite
 from app.web.routers import (
     accounts,
     accounts_login,
@@ -26,8 +26,17 @@ from app.web.routers import (
 async def lifespan(app: FastAPI):
     await init_sqlite()
     await purge_old_login_sessions(settings.login_sessions_retention_days)
+    db = await get_sqlite()
+    try:
+        await workers.restore_workers_from_db(db)
+    finally:
+        await db.close()
     yield
-    # shutdown if needed
+    db = await get_sqlite()
+    try:
+        await workers.terminate_all_workers(db)
+    finally:
+        await db.close()
 
 
 def create_app() -> FastAPI:

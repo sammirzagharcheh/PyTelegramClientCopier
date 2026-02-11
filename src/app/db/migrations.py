@@ -79,6 +79,17 @@ MIGRATIONS = [
     """
     ALTER TABLE login_sessions ADD COLUMN phone_code_hash TEXT;
     """,
+    # v10: worker_registry for persistent worker tracking across API restarts
+    """
+    CREATE TABLE IF NOT EXISTS worker_registry (
+        worker_id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        account_id INTEGER NOT NULL,
+        session_path TEXT NOT NULL,
+        pid INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    """,
 ]
 
 

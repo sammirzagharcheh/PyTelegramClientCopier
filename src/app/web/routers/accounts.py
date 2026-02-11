@@ -216,7 +216,7 @@ async def delete_account(
     )
 
     # Stop any running workers for this account
-    stop_workers_for_account(account_id)
+    await stop_workers_for_account(account_id, db)
 
     await db.execute("DELETE FROM telegram_accounts WHERE id = ?", (account_id,))
     await db.commit()
