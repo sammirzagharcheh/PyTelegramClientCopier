@@ -127,11 +127,10 @@ install_deps() {
   # Node.js 20.x LTS
   if ! command -v node &>/dev/null || [[ $(node -v 2>/dev/null | cut -d. -f1 | tr -d 'v') -lt 18 ]]; then
     log_info "Installing Node.js 20.x..."
-    if [[ -n "$SUDO" ]]; then
-      curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-    else
-      curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    fi
+    local _ns="/tmp/nodesource-setup.sh"
+    curl -fsSL https://deb.nodesource.com/setup_20.x -o "$_ns"
+    $SUDO bash "$_ns"
+    rm -f "$_ns"
     $SUDO apt-get install -y -qq nodejs
   fi
   log_info "Node $(node -v) OK"
