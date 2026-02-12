@@ -284,7 +284,7 @@ fix_permissions() {
 
   # .env and backups: owner read/write only (secrets)
   [[ -f "$INSTALL_DIR/.env" ]] && $SUDO chmod 600 "$INSTALL_DIR/.env"
-  for f in "$INSTALL_DIR"/.env.backup.* 2>/dev/null; do
+  for f in "$INSTALL_DIR"/.env.backup.*; do
     [[ -f "$f" ]] && $SUDO chmod 600 "$f"
   done
 
