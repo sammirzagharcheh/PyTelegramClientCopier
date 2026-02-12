@@ -1,3 +1,4 @@
+import { LogIn } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
@@ -25,8 +26,13 @@ export function Login() {
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
-      <h1 className="text-2xl font-bold mb-6">Sign in</h1>
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 border-l-4 border-l-blue-500">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="rounded-lg bg-blue-100 dark:bg-blue-900/40 p-2.5 text-blue-600 dark:text-blue-400">
+          <LogIn className="h-6 w-6" strokeWidth={2} />
+        </div>
+        <h1 className="text-2xl font-bold">Sign in</h1>
+      </div>
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
           <div className="p-3 rounded-md bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm">

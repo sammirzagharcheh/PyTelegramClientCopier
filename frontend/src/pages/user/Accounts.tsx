@@ -1,7 +1,11 @@
+import { Inbox, Plus, Smartphone, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { AddAccountDialog } from '../../components/AddAccountDialog';
+import { PageHeader } from '../../components/PageHeader';
+import { SortableTh } from '../../components/SortableTh';
+import { StatusBadge } from '../../components/StatusBadge';
 import { Pagination } from '../../components/Pagination';
 
 type Account = {
@@ -20,10 +24,13 @@ export function Accounts() {
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [sortBy, setSortBy] = useState<string>('id');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
-    queryKey: ['accounts', page, pageSize],
-    queryFn: async () => (await api.get<PaginatedAccounts>(`/accounts?page=${page}&page_size=${pageSize}`)).data,
+    queryKey: ['accounts', page, pageSize, sortBy, sortOrder],
+    queryFn: async () =>
+      (await api.get<PaginatedAccounts>(`/accounts?page=${page}&page_size=${pageSize}&sort_by=${sortBy}&sort_order=${sortOrder}`)).data,
   });
   const accounts = data?.items ?? [];
 
@@ -50,42 +57,48 @@ export function Accounts() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Telegram Accounts</h1>
-        <button onClick={() => setShowAdd(true)} className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">
-          Add Account
-        </button>
-      </div>
+      <PageHeader
+        title="Telegram Accounts"
+        icon={Smartphone}
+        subtitle="Manage your connected Telegram accounts"
+        actions={
+          <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">
+            <Plus className="h-4 w-4" />
+            Add Account
+          </button>
+        }
+      />
       {showAdd && <AddAccountDialog onClose={() => setShowAdd(false)} />}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg">
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">ID</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Type</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Status</th>
+              <SortableTh label="ID" sortKey="id" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
+              <SortableTh label="Name" sortKey="name" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
+              <SortableTh label="Type" sortKey="type" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
+              <SortableTh label="Status" sortKey="status" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {accounts.map((acc) => (
-              <tr key={acc.id}>
+              <tr key={acc.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                 <td className="px-6 py-4 text-sm">{acc.id}</td>
                 <td className="px-6 py-4 text-sm">{acc.name || '—'}</td>
-                <td className="px-6 py-4 text-sm">{acc.type}</td>
                 <td className="px-6 py-4 text-sm">
-                  <span className={`px-2 py-1 rounded text-xs ${acc.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-                    {acc.status}
-                  </span>
+                  <StatusBadge status={acc.type} variant="type" />
+                </td>
+                <td className="px-6 py-4 text-sm">
+                  <StatusBadge status={acc.status} variant="status" />
                 </td>
               <td className="px-6 py-4 text-sm text-right">
                 <button
                   type="button"
                   onClick={() => handleDelete(acc)}
-                  className="px-3 py-1 rounded border border-red-500 text-red-600 text-xs hover:bg-red-50 dark:hover:bg-red-900/20"
+                  className="flex items-center gap-1 px-3 py-1 rounded border border-red-500 text-red-600 text-xs hover:bg-red-50 dark:hover:bg-red-900/20"
                   disabled={deleteMutation.isPending && accountToDelete?.id === acc.id}
                 >
+                  <Trash2 className="h-3 w-3" />
                   Delete
                 </button>
               </td>
@@ -94,7 +107,10 @@ export function Accounts() {
           </tbody>
         </table>
         {accounts.length === 0 && (
-          <div className="p-8 text-center text-gray-500">No accounts yet. Add one from the mappings flow.</div>
+          <div className="p-8 text-center text-gray-500 flex flex-col items-center gap-2">
+            <Inbox className="h-12 w-12 text-gray-400" />
+            <p>No accounts yet. Add one from the mappings flow.</p>
+          </div>
         )}
         {data && (
           <Pagination
@@ -114,7 +130,10 @@ export function Accounts() {
             className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-xl font-bold mb-4">Delete Telegram Account</h2>
+            <div className="flex items-center gap-2 mb-4">
+              <Trash2 className="h-5 w-5 text-red-600" />
+              <h2 className="text-xl font-bold">Delete Telegram Account</h2>
+            </div>
             <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
               Are you sure you want to delete the account <span className="font-semibold">{accountToDelete.name || accountToDelete.id}</span>?
               This will remove this Telegram account from the copier, delete its session file, disable any mappings that use it,

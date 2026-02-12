@@ -1,6 +1,8 @@
+import { Database, Filter, Inbox } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { PageHeader } from '../../components/PageHeader';
 import { Pagination } from '../../components/Pagination';
 
 type IndexEntry = {
@@ -41,8 +43,13 @@ export function AdminMessageIndex() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Message Index (All Users)</h1>
-      <div className="mb-4 flex items-center gap-4">
+      <PageHeader
+        title="Message Index (All Users)"
+        icon={Database}
+        subtitle="Source to destination message ID mapping for reply threading"
+      />
+      <div className="mb-6 flex flex-wrap items-center gap-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 px-4 py-3">
+        <Filter className="h-4 w-4 text-gray-500 dark:text-gray-400" />
         <label htmlFor="admin-message-index-user-filter" className="text-sm font-medium">Filter by user</label>
         <select
           id="admin-message-index-user-filter"
@@ -62,7 +69,7 @@ export function AdminMessageIndex() {
           ))}
         </select>
       </div>
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg">
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
@@ -73,7 +80,7 @@ export function AdminMessageIndex() {
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {items.map((e, i) => (
-              <tr key={i}>
+              <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                 <td className="px-6 py-4 text-sm">{e.user_id}</td>
                 <td className="px-6 py-4 text-sm font-mono">{e.source_chat_id} / {e.source_msg_id}</td>
                 <td className="px-6 py-4 text-sm font-mono">{e.dest_chat_id} / {e.dest_msg_id}</td>
@@ -82,7 +89,10 @@ export function AdminMessageIndex() {
           </tbody>
         </table>
         {items.length === 0 && (
-          <div className="p-8 text-center text-gray-500">No index entries yet.</div>
+          <div className="p-8 text-center text-gray-500 flex flex-col items-center gap-2">
+            <Inbox className="h-12 w-12 text-gray-400" />
+            <p>No index entries yet.</p>
+          </div>
         )}
         {data && (
           <Pagination

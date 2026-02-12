@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ChevronDown, ChevronUp, KeyRound } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api';
 
@@ -69,14 +70,21 @@ export function ChangePasswordSection({ defaultExpanded = false }: Props) {
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border-l-4 border-l-gray-300 dark:border-l-gray-600 transition-shadow hover:shadow-lg">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="flex justify-between items-center w-full text-left"
+        className="flex justify-between items-center w-full text-left gap-2"
       >
-        <h2 className="text-lg font-semibold">Change password</h2>
-        <span className="text-gray-500">{expanded ? '▼' : '▶'}</span>
+        <div className="flex items-center gap-2">
+          <KeyRound className="h-5 w-5 text-gray-500 dark:text-gray-400" strokeWidth={2} />
+          <h2 className="text-lg font-semibold">Change password</h2>
+        </div>
+        {expanded ? (
+          <ChevronUp className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+        ) : (
+          <ChevronDown className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+        )}
       </button>
       {expanded && (
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">

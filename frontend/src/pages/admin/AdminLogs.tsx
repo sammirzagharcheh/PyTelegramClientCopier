@@ -1,7 +1,10 @@
+import { Filter, Inbox, MessageSquare } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { PageHeader } from '../../components/PageHeader';
 import { Pagination } from '../../components/Pagination';
+import { StatusBadge } from '../../components/StatusBadge';
 
 type Log = {
   user_id: number;
@@ -47,7 +50,7 @@ export function AdminLogs() {
       'Failed to load message logs.';
     return (
       <div>
-        <h1 className="text-2xl font-bold mb-6">All Message Logs</h1>
+        <PageHeader title="All Message Logs" icon={MessageSquare} subtitle="Forwarded message history across all users" />
         <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800">
           <p className="font-medium">Could not load logs</p>
           <p className="mt-1 text-sm">{msg}</p>
@@ -61,8 +64,9 @@ export function AdminLogs() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">All Message Logs</h1>
-      <div className="mb-4 flex items-center gap-4">
+      <PageHeader title="All Message Logs" icon={MessageSquare} subtitle="Forwarded message history across all users" />
+      <div className="mb-6 flex flex-wrap items-center gap-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 px-4 py-3">
+        <Filter className="h-4 w-4 text-gray-500 dark:text-gray-400" />
         <label htmlFor="admin-logs-user-filter" className="text-sm font-medium">Filter by user</label>
         <select
           id="admin-logs-user-filter"
@@ -82,7 +86,7 @@ export function AdminLogs() {
           ))}
         </select>
       </div>
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg">
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
@@ -95,7 +99,7 @@ export function AdminLogs() {
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {items.map((log, i) => (
-              <tr key={i}>
+              <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                 <td className="px-6 py-4 text-sm">{log.user_id}</td>
                 <td className="px-6 py-4 text-sm">
                   {log.source_chat_title ? (
@@ -112,13 +116,18 @@ export function AdminLogs() {
                   )}
                 </td>
                 <td className="px-6 py-4 text-sm">{log.timestamp}</td>
-                <td className="px-6 py-4 text-sm">{log.status}</td>
+                <td className="px-6 py-4 text-sm">
+                  <StatusBadge status={log.status ?? ''} variant="status" />
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
         {items.length === 0 && (
-          <div className="p-8 text-center text-gray-500">No logs yet.</div>
+          <div className="p-8 text-center text-gray-500 flex flex-col items-center gap-2">
+            <Inbox className="h-12 w-12 text-gray-400" />
+            <p>No logs yet.</p>
+          </div>
         )}
         {data && (
           <Pagination

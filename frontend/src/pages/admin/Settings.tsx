@@ -1,6 +1,8 @@
+import { Settings as SettingsIcon } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { PageHeader } from '../../components/PageHeader';
 
 type SettingsData = {
   mongo_uri: string;
@@ -68,12 +70,13 @@ export function Settings() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Settings</h1>
-      <p className="text-gray-600 dark:text-gray-400 mb-6">
-        Configure MongoDB connection. Stored values override environment variables. The URI is masked when displayed.
-      </p>
+      <PageHeader
+        title="Settings"
+        icon={SettingsIcon}
+        subtitle="Configure MongoDB connection. Stored values override environment variables. The URI is masked when displayed."
+      />
 
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 max-w-2xl">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 max-w-2xl transition-shadow hover:shadow-lg">
         {error && (
           <div className="mb-4 p-3 rounded bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm">
             {error}

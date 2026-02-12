@@ -16,6 +16,9 @@ from app.web.routers.workers import stop_workers_for_account
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
 
+_ALLOWED_SORT = {"id", "name", "type", "status", "created_at", "user_id"}
+
+
 @router.get("")
 async def list_accounts(
     db: Db,
@@ -23,11 +26,16 @@ async def list_accounts(
     user_id: int | None = None,
     page: int = 1,
     page_size: int = 20,
+    sort_by: str = "id",
+    sort_order: str = "asc",
 ) -> dict:
     """List telegram accounts. Users see own; admins can filter by user_id. Returns paginated {items, total, page, page_size, total_pages}."""
     page_size = min(max(1, page_size), 100)
     page = max(1, page)
     offset = (page - 1) * page_size
+    col = sort_by if sort_by in _ALLOWED_SORT else "id"
+    direction = "DESC" if sort_order.lower() == "desc" else "ASC"
+    order = f"ORDER BY {col} {direction}"
 
     if user["role"] == "admin":
         if user_id is not None:
@@ -36,15 +44,12 @@ async def list_accounts(
             scope_id = -1
         if scope_id == -1:
             base = "FROM telegram_accounts"
-            order = "ORDER BY user_id, id"
             params: list = []
         else:
             base = "FROM telegram_accounts WHERE user_id = ?"
-            order = "ORDER BY id"
             params = [scope_id]
     else:
         base = "FROM telegram_accounts WHERE user_id = ?"
-        order = "ORDER BY id"
         params = [user["id"]]
 
     async with db.execute(f"SELECT COUNT(*) {base}", params) as cur:

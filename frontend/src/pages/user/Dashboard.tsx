@@ -1,7 +1,9 @@
+import { Smartphone, GitBranch } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { useAuth } from '../../store/AuthContext';
 import { ChangePasswordSection } from '../../components/ChangePasswordSection';
+import { StatCard } from '../../components/StatCard';
 
 export function UserDashboard() {
   const { user } = useAuth();
@@ -16,19 +18,27 @@ export function UserDashboard() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Dashboard</h1>
-      <p className="mb-6 text-gray-600 dark:text-gray-400">Welcome, {user?.name || user?.email}</p>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold mb-2">Telegram Accounts</h2>
-          <p className="text-3xl font-bold text-blue-600">{accountsData?.total ?? 0}</p>
-        </div>
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold mb-2">Channel Mappings</h2>
-          <p className="text-3xl font-bold text-blue-600">{mappingsData?.total ?? 0}</p>
-        </div>
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard</h1>
+        <p className="mt-1 text-gray-600 dark:text-gray-400">
+          Welcome back, {user?.name || user?.email}
+        </p>
       </div>
-      <div className="mt-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <StatCard
+          title="Telegram Accounts"
+          value={accountsData?.total ?? 0}
+          icon={Smartphone}
+          colorVariant="blue"
+        />
+        <StatCard
+          title="Channel Mappings"
+          value={mappingsData?.total ?? 0}
+          icon={GitBranch}
+          colorVariant="emerald"
+        />
+      </div>
+      <div className="mt-8">
         <ChangePasswordSection />
       </div>
     </div>

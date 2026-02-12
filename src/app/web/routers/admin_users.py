@@ -11,6 +11,9 @@ from app.web.schemas.users import UserCreate, UserResponse, UserUpdate
 router = APIRouter(prefix="/admin/users", tags=["admin-users"])
 
 
+_ALLOWED_SORT = {"id", "email", "name", "role", "status", "created_at"}
+
+
 @router.get("")
 async def list_users(
     db: Db,
@@ -19,11 +22,15 @@ async def list_users(
     page_size: int = 20,
     role: str | None = None,
     status_filter: str | None = None,
+    sort_by: str = "id",
+    sort_order: str = "asc",
 ) -> dict:
     """List users with optional filters. Returns paginated {items, total, page, page_size, total_pages}."""
     page_size = min(max(1, page_size), 100)
     page = max(1, page)
     offset = (page - 1) * page_size
+    col = sort_by if sort_by in _ALLOWED_SORT else "id"
+    direction = "DESC" if sort_order.lower() == "desc" else "ASC"
 
     base = "FROM users WHERE 1=1"
     params: list = []
@@ -37,7 +44,7 @@ async def list_users(
     async with db.execute(f"SELECT COUNT(*) {base}", params) as cur:
         total = (await cur.fetchone())[0]
 
-    query = f"SELECT id, email, name, role, status, created_at {base} ORDER BY id LIMIT ? OFFSET ?"
+    query = f"SELECT id, email, name, role, status, created_at {base} ORDER BY {col} {direction} LIMIT ? OFFSET ?"
     params.extend([page_size, offset])
     async with db.execute(query, params) as cur:
         rows = await cur.fetchall()

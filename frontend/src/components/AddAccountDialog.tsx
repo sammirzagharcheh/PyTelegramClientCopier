@@ -1,3 +1,4 @@
+import { Smartphone } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
@@ -293,7 +294,10 @@ export function AddAccountDialog({ onClose }: Props) {
         className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-xl font-bold mb-4">Add Telegram Account</h2>
+        <div className="flex items-center gap-2 mb-4">
+          <Smartphone className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+          <h2 className="text-xl font-bold">Add Telegram Account</h2>
+        </div>
         {error && (
           <div className="p-3 mb-4 rounded bg-red-50 dark:bg-red-900/20 text-red-600 text-sm">{error}</div>
         )}

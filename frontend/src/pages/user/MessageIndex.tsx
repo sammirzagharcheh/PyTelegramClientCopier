@@ -1,6 +1,8 @@
+import { Database, Inbox } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { PageHeader } from '../../components/PageHeader';
 import { Pagination } from '../../components/Pagination';
 
 type IndexEntry = {
@@ -27,11 +29,12 @@ export function MessageIndex() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Message Index</h1>
-      <p className="mb-4 text-gray-600 dark:text-gray-400 text-sm">
-        Maps source message IDs to destination message IDs for reply threading.
-      </p>
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+      <PageHeader
+        title="Message Index"
+        icon={Database}
+        subtitle="Maps source message IDs to destination message IDs for reply threading"
+      />
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg">
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
@@ -53,7 +56,10 @@ export function MessageIndex() {
           </tbody>
         </table>
         {items.length === 0 && (
-          <div className="p-8 text-center text-gray-500">No index entries yet.</div>
+          <div className="p-8 text-center text-gray-500 flex flex-col items-center gap-2">
+            <Inbox className="h-12 w-12 text-gray-400" />
+            <p>No index entries yet.</p>
+          </div>
         )}
         {data && (
           <Pagination

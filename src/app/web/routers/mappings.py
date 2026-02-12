@@ -16,6 +16,9 @@ from app.web.schemas.mappings import (
 router = APIRouter(prefix="/mappings", tags=["mappings"])
 
 
+_ALLOWED_SORT = {"id", "name", "source_chat_id", "dest_chat_id", "enabled", "created_at", "user_id"}
+
+
 @router.get("")
 async def list_mappings(
     db: Db,
@@ -23,23 +26,25 @@ async def list_mappings(
     user_id: int | None = None,
     page: int = 1,
     page_size: int = 20,
+    sort_by: str = "id",
+    sort_order: str = "asc",
 ) -> dict:
     """List channel mappings. Users see own; admins can filter by user_id. Returns paginated {items, total, page, page_size, total_pages}."""
     page_size = min(max(1, page_size), 100)
     page = max(1, page)
     offset = (page - 1) * page_size
+    col = sort_by if sort_by in _ALLOWED_SORT else "id"
+    direction = "DESC" if sort_order.lower() == "desc" else "ASC"
+    order = f"ORDER BY {col} {direction}"
 
     if user["role"] == "admin" and user_id is not None:
         base = "FROM channel_mappings WHERE user_id = ?"
-        order = "ORDER BY id"
         params: list = [user_id]
     elif user["role"] == "admin":
         base = "FROM channel_mappings"
-        order = "ORDER BY user_id, id"
         params = []
     else:
         base = "FROM channel_mappings WHERE user_id = ?"
-        order = "ORDER BY id"
         params = [user["id"]]
 
     async with db.execute(f"SELECT COUNT(*) {base}", params) as cur:

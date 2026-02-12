@@ -1,6 +1,8 @@
+import { Activity, Zap } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { useAuth } from '../../store/AuthContext';
+import { PageHeader } from '../../components/PageHeader';
 
 type Worker = {
   id: string;
@@ -56,16 +58,24 @@ export function Workers() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Workers</h1>
+      <PageHeader
+        title="Workers"
+        icon={Activity}
+        subtitle="Start and manage Telegram sync workers for all accounts"
+      />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold mb-4">Running Workers</h2>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 transition-shadow hover:shadow-lg">
+          <div className="flex items-center gap-2 mb-4">
+            <Activity className="h-5 w-5 text-amber-500" />
+            <h2 className="text-lg font-semibold">Running Workers</h2>
+          </div>
           <div className="space-y-2">
             {(workers ?? []).map((w) => (
               <div key={w.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded">
-                <div>
+                <div className="flex items-center gap-2 min-w-0">
+                  {w.running && <span className="h-2 w-2 shrink-0 rounded-full bg-green-500" title="Running" />}
                   <span className="font-mono text-sm">User {w.user_id}</span>
-                  <span className="text-gray-500 text-sm ml-2 truncate max-w-[200px] block">{w.session_path}</span>
+                  <span className="text-gray-500 text-sm truncate max-w-[200px]">{w.session_path}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   {w.running && <span className="text-green-600 text-sm">PID {w.pid}</span>}
@@ -84,8 +94,11 @@ export function Workers() {
             )}
           </div>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold mb-4">Start Worker</h2>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 transition-shadow hover:shadow-lg">
+          <div className="flex items-center gap-2 mb-4">
+            <Zap className="h-5 w-5 text-blue-500" />
+            <h2 className="text-lg font-semibold">Start Worker</h2>
+          </div>
           <p className="text-sm text-gray-500 mb-4">Select an account with a session file to start a worker.</p>
           <div className="space-y-2">
             {userAccounts

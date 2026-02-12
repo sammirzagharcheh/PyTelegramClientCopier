@@ -1,8 +1,10 @@
+import { ArrowLeft, Filter, GitBranch, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../../lib/api';
 import type { FilterFormValues } from '../../components/FilterForm';
+import { PageHeader } from '../../components/PageHeader';
 import {
   FilterForm,
   formatMediaDisplay,
@@ -119,14 +121,19 @@ export function MappingDetail() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">{mapping.name || `Mapping ${id}`}</h1>
-        <Link to="/mappings" className="text-blue-600 hover:underline text-sm">
-          Back to mappings
-        </Link>
-      </div>
+      <PageHeader
+        title={mapping.name || `Mapping ${id}`}
+        icon={GitBranch}
+        subtitle={`Source: ${sourceLabel} → Dest: ${destLabel}`}
+        actions={
+          <Link to="/mappings" className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
+            <ArrowLeft className="h-4 w-4" />
+            Back to mappings
+          </Link>
+        }
+      />
 
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6 transition-shadow hover:shadow-lg">
         <dl className="grid grid-cols-2 gap-4">
           <div>
             <dt className="text-sm text-gray-500">Source channel</dt>
@@ -160,13 +167,14 @@ export function MappingDetail() {
         <button
           type="button"
           onClick={() => setFilterModalOpen('add')}
-          className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm"
+          className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm"
         >
+          <Plus className="h-4 w-4" />
           Add filter
         </button>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg">
         <div className="divide-y divide-gray-200 dark:divide-gray-700">
           {(filters ?? []).map((f) => (
             <div key={f.id} className="p-4 flex items-start justify-between gap-4">
@@ -226,9 +234,9 @@ export function MappingDetail() {
             <button
               type="button"
               onClick={() => setFilterModalOpen('add')}
-              className="ml-2 text-blue-600 hover:underline"
+              className="ml-2 inline-flex items-center gap-1 text-blue-600 hover:underline"
             >
-              Add your first filter
+              <Plus className="h-4 w-4" /> Add your first filter
             </button>
           </div>
         )}
@@ -243,9 +251,12 @@ export function MappingDetail() {
             className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-xl font-bold mb-4">
-              {filterModalOpen === 'add' ? 'Add filter' : 'Edit filter'}
-            </h2>
+            <div className="flex items-center gap-2 mb-4">
+              <Filter className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              <h2 className="text-xl font-bold">
+                {filterModalOpen === 'add' ? 'Add filter' : 'Edit filter'}
+              </h2>
+            </div>
             <FilterForm
               key={filterModalOpen === 'add' ? 'new' : filterModalOpen}
               isSubmitting={createMutation.isPending || updateMutation.isPending}

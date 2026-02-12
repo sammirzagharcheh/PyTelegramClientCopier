@@ -1,6 +1,8 @@
+import { Users, Layers, Activity } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { ChangePasswordSection } from '../../components/ChangePasswordSection';
+import { StatCard } from '../../components/StatCard';
 
 export function AdminDashboard() {
   const { data: usersData } = useQuery({
@@ -11,25 +13,38 @@ export function AdminDashboard() {
     queryKey: ['mappings', 1, 1],
     queryFn: async () => (await api.get<{ total: number }>('/mappings?page=1&page_size=1')).data,
   });
+  const { data: workers } = useQuery({
+    queryKey: ['workers'],
+    queryFn: async () => (await api.get<unknown[]>('/workers')).data,
+  });
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Admin Dashboard</h1>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold mb-2">Users</h2>
-          <p className="text-3xl font-bold text-blue-600">{usersData?.total ?? 0}</p>
-        </div>
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold mb-2">Total Mappings</h2>
-          <p className="text-3xl font-bold text-blue-600">{mappingsData?.total ?? 0}</p>
-        </div>
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold mb-2">Workers</h2>
-          <p className="text-3xl font-bold text-blue-600">—</p>
-        </div>
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Admin Dashboard</h1>
+        <p className="mt-1 text-gray-600 dark:text-gray-400">Overview of your Telegram Copier instance</p>
       </div>
-      <div className="mt-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <StatCard
+          title="Users"
+          value={usersData?.total ?? 0}
+          icon={Users}
+          colorVariant="violet"
+        />
+        <StatCard
+          title="Total Mappings"
+          value={mappingsData?.total ?? 0}
+          icon={Layers}
+          colorVariant="emerald"
+        />
+        <StatCard
+          title="Workers"
+          value={workers?.length ?? 0}
+          icon={Activity}
+          colorVariant="amber"
+        />
+      </div>
+      <div className="mt-8">
         <ChangePasswordSection />
       </div>
     </div>
