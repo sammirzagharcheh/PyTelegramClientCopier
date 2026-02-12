@@ -8,10 +8,16 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.auth import create_access_token, create_refresh_token, decode_token
-from app.auth.password import verify_password
-from app.db.sqlite import get_sqlite
+from app.auth.password import hash_password, verify_password
 from app.web.deps import CurrentUser, Db
-from app.web.schemas.auth import LoginRequest, LoginResponse, RefreshRequest, RefreshResponse, UserMe
+from app.web.schemas.auth import (
+    ChangePasswordRequest,
+    LoginRequest,
+    LoginResponse,
+    RefreshRequest,
+    RefreshResponse,
+    UserMe,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -116,3 +122,34 @@ async def logout(data: RefreshRequest, db: Db) -> dict:
 async def me(user: CurrentUser) -> dict:
     """Get current user profile."""
     return user
+
+
+@router.post("/change-password")
+async def change_password(
+    data: ChangePasswordRequest,
+    user: CurrentUser,
+    db: Db,
+) -> dict:
+    """Change current user's password. Requires current password verification."""
+    async with db.execute(
+        "SELECT password_hash FROM users WHERE id = ?",
+        (user["id"],),
+    ) as cur:
+        row = await cur.fetchone()
+    if not row or row[0] is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password change not supported for this account",
+        )
+    if not verify_password(data.current_password, row[0]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+    new_hash = hash_password(data.new_password)
+    await db.execute(
+        "UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?",
+        (new_hash, user["id"]),
+    )
+    await db.commit()
+    return {"status": "ok"}

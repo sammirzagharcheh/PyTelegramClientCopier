@@ -10,6 +10,7 @@ from app.config import settings
 from app.db.mongo import get_mongo_db
 from app.db.sqlite import get_sqlite, init_sqlite
 from app.services.mapping_service import list_enabled_mappings
+from app.worker_log_handler import MongoWorkerLogHandler
 from app.telegram.client_manager import attach_handler, start_user_client
 from app.telegram.handlers import build_message_handler
 
@@ -49,6 +50,14 @@ async def run_worker(
         fh.setLevel(level)
         fh.setFormatter(logging.Formatter(fmt))
         logging.getLogger().addHandler(fh)
+    except Exception:
+        pass  # non-fatal
+
+    try:
+        mongo_handler = MongoWorkerLogHandler(user_id=user_id, account_id=telegram_account_id)
+        mongo_handler.setLevel(level)
+        mongo_handler.setFormatter(logging.Formatter("%(message)s"))
+        logging.getLogger().addHandler(mongo_handler)
     except Exception:
         pass  # non-fatal
 

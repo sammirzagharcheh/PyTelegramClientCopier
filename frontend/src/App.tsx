@@ -18,6 +18,8 @@ import { AdminMessageIndex } from './pages/admin/AdminMessageIndex';
 import { Workers } from './pages/admin/Workers';
 import { Settings } from './pages/admin/Settings';
 import { UserWorkers } from './pages/user/Workers';
+import { WorkerLogs } from './pages/user/WorkerLogs';
+import { AdminWorkerLogs } from './pages/admin/AdminWorkerLogs';
 
 const queryClient = new QueryClient();
 
@@ -49,6 +51,7 @@ function AppRoutes() {
         <Route path="mappings" element={<Mappings />} />
         <Route path="mappings/:id" element={<MappingDetail />} />
         <Route path="workers" element={<UserWorkers />} />
+        <Route path="worker-logs" element={<WorkerLogs />} />
         <Route path="logs" element={<Logs />} />
         <Route path="message-index" element={<MessageIndex />} />
       </Route>
@@ -59,6 +62,7 @@ function AppRoutes() {
         <Route path="logs" element={<AdminLogs />} />
         <Route path="message-index" element={<AdminMessageIndex />} />
         <Route path="workers" element={<Workers />} />
+        <Route path="worker-logs" element={<AdminWorkerLogs />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

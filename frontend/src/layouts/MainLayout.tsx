@@ -6,6 +6,7 @@ const navItems = [
   { to: '/accounts', label: 'Accounts' },
   { to: '/mappings', label: 'Mappings' },
   { to: '/workers', label: 'Workers' },
+  { to: '/worker-logs', label: 'Worker Logs' },
   { to: '/logs', label: 'Message Logs' },
   { to: '/message-index', label: 'Message Index' },
 ];
@@ -18,6 +19,7 @@ const adminNavItems = [
   { to: '/admin/logs', label: 'Logs' },
   { to: '/admin/message-index', label: 'Message Index' },
   { to: '/admin/workers', label: 'Workers' },
+  { to: '/admin/worker-logs', label: 'Worker Logs' },
 ];
 
 export function MainLayout() {

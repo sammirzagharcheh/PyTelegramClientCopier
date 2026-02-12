@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { useAuth } from '../../store/AuthContext';
+import { ChangePasswordSection } from '../../components/ChangePasswordSection';
 
 export function UserDashboard() {
   const { user } = useAuth();
@@ -26,6 +27,9 @@ export function UserDashboard() {
           <h2 className="text-lg font-semibold mb-2">Channel Mappings</h2>
           <p className="text-3xl font-bold text-blue-600">{mappingsData?.total ?? 0}</p>
         </div>
+      </div>
+      <div className="mt-6">
+        <ChangePasswordSection />
       </div>
     </div>
   );

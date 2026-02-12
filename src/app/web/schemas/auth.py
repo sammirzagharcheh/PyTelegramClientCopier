@@ -31,6 +31,11 @@ class RefreshResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
 class UserMe(BaseModel):
     id: int
     email: str

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { CreateUserDialog } from '../../components/CreateUserDialog';
+import { EditUserDialog } from '../../components/EditUserDialog';
 import { Pagination } from '../../components/Pagination';
 
 type User = {
@@ -17,6 +18,7 @@ type PaginatedUsers = { items: User[]; total: number; page: number; page_size: n
 
 export function AdminUsers() {
   const [showCreate, setShowCreate] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const { data, isLoading } = useQuery({
@@ -37,6 +39,7 @@ export function AdminUsers() {
         </button>
       </div>
       {showCreate && <CreateUserDialog onClose={() => setShowCreate(false)} />}
+      {editingUser && <EditUserDialog user={editingUser} onClose={() => setEditingUser(null)} />}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-700">
@@ -46,6 +49,7 @@ export function AdminUsers() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Name</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Role</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Status</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -59,6 +63,14 @@ export function AdminUsers() {
                   <span className={`px-2 py-1 rounded text-xs ${u.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
                     {u.status}
                   </span>
+                </td>
+                <td className="px-6 py-4 text-sm">
+                  <button
+                    onClick={() => setEditingUser(u)}
+                    className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-sm"
+                  >
+                    Edit
+                  </button>
                 </td>
               </tr>
             ))}

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { ChangePasswordSection } from '../../components/ChangePasswordSection';
 
 export function AdminDashboard() {
   const { data: usersData } = useQuery({
@@ -27,6 +28,9 @@ export function AdminDashboard() {
           <h2 className="text-lg font-semibold mb-2">Workers</h2>
           <p className="text-3xl font-bold text-blue-600">—</p>
         </div>
+      </div>
+      <div className="mt-6">
+        <ChangePasswordSection />
       </div>
     </div>
   );
