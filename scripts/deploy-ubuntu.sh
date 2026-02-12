@@ -155,22 +155,22 @@ clone_repo() {
   log_step "Cloning repository..."
   if [[ -d "$INSTALL_DIR/.git" ]]; then
     log_info "Repository exists, pulling latest..."
-    $SUDO -u "$APP_USER" git -C "$INSTALL_DIR" fetch origin
-    $SUDO -u "$APP_USER" git -C "$INSTALL_DIR" reset --hard origin/main
+    runuser -u "$APP_USER" -- git -C "$INSTALL_DIR" fetch origin
+    runuser -u "$APP_USER" -- git -C "$INSTALL_DIR" reset --hard origin/main
   else
-    $SUDO -u "$APP_USER" git clone --depth 1 "$REPO_URL" "$INSTALL_DIR"
+    runuser -u "$APP_USER" -- git clone --depth 1 "$REPO_URL" "$INSTALL_DIR"
   fi
 }
 
 setup_python() {
   log_step "Setting up Python environment..."
-  [[ ! -d "$INSTALL_DIR/.venv" ]] && $SUDO -u "$APP_USER" bash -c "cd $INSTALL_DIR && ${PYTHON_CMD:-python3} -m venv .venv"
-  $SUDO -u "$APP_USER" bash -c "cd $INSTALL_DIR && .venv/bin/pip install -e ."
+  [[ ! -d "$INSTALL_DIR/.venv" ]] && runuser -u "$APP_USER" -- bash -c "cd $INSTALL_DIR && ${PYTHON_CMD:-python3} -m venv .venv"
+  runuser -u "$APP_USER" -- bash -c "cd $INSTALL_DIR && .venv/bin/pip install -e ."
 }
 
 build_frontend() {
   log_step "Building frontend..."
-  $SUDO -u "$APP_USER" bash -c "cd $INSTALL_DIR/frontend && npm ci && npm run build"
+  runuser -u "$APP_USER" -- bash -c "cd $INSTALL_DIR/frontend && npm ci && npm run build"
 }
 
 # -----------------------------------------------------------------------------
@@ -195,9 +195,9 @@ setup_env() {
   local env_file="$INSTALL_DIR/.env"
   if [[ ! -f "$env_file" ]]; then
     if [[ -f "$INSTALL_DIR/.env.example" ]]; then
-      $SUDO -u "$APP_USER" cp "$INSTALL_DIR/.env.example" "$env_file"
+      runuser -u "$APP_USER" -- cp "$INSTALL_DIR/.env.example" "$env_file"
     else
-      $SUDO -u "$APP_USER" touch "$env_file"
+      runuser -u "$APP_USER" -- touch "$env_file"
     fi
   else
     local backup_ts
@@ -231,8 +231,8 @@ setup_env() {
     fi
     $SUDO chown "$APP_USER:" "$env_file"
     log_info "Initializing database and creating admin..."
-    $SUDO -u "$APP_USER" bash -c "cd $INSTALL_DIR && .venv/bin/tg-copier db init-db"
-    $SUDO -u "$APP_USER" bash -c "cd $INSTALL_DIR && .venv/bin/tg-copier db create-admin \"$admin_email\" \"$admin_pass\""
+    runuser -u "$APP_USER" -- bash -c "cd $INSTALL_DIR && .venv/bin/tg-copier db init-db"
+    runuser -u "$APP_USER" -- bash -c "cd $INSTALL_DIR && .venv/bin/tg-copier db create-admin \"$admin_email\" \"$admin_pass\""
     return
   fi
 
@@ -258,8 +258,8 @@ setup_env() {
 
     if [[ -n "$admin_email" && -n "$admin_pass" ]]; then
       log_info "Initializing database and creating admin..."
-      $SUDO -u "$APP_USER" bash -c "cd $INSTALL_DIR && .venv/bin/tg-copier db init-db"
-      $SUDO -u "$APP_USER" bash -c "cd $INSTALL_DIR && .venv/bin/tg-copier db create-admin \"$admin_email\" \"$admin_pass\""
+      runuser -u "$APP_USER" -- bash -c "cd $INSTALL_DIR && .venv/bin/tg-copier db init-db"
+      runuser -u "$APP_USER" -- bash -c "cd $INSTALL_DIR && .venv/bin/tg-copier db create-admin \"$admin_email\" \"$admin_pass\""
     fi
   else
     log_warn "Non-interactive: configure $env_file manually, then run:"
