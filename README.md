@@ -50,19 +50,41 @@ Filters control which messages are copied from a source channel to a destination
 
 ## VPS Deployment (Ubuntu)
 
-Use the deployment script to deploy on an Ubuntu VPS with nginx:
+Deploy on a fresh Ubuntu 20.04/22.04/24.04 VPS. The script installs nginx, Python 3.11+, Node.js 20, clones the repo, builds the frontend, configures systemd, and sets up nginx as a reverse proxy.
+
+### One-line deploy (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sammirzagharcheh/PyTelegramClientCopier/main/scripts/deploy-ubuntu.sh | sudo bash
+curl -fsSL "https://raw.githubusercontent.com/sammirzagharcheh/PyTelegramClientCopier/main/scripts/deploy-ubuntu.sh" | sudo bash
 ```
 
-Or clone the repo and run:
+**Alternative (clone and run)** – always uses the latest script:
 
 ```bash
-sudo bash scripts/deploy-ubuntu.sh
+git clone https://github.com/sammirzagharcheh/PyTelegramClientCopier.git /tmp/tgc
+sudo bash /tmp/tgc/scripts/deploy-ubuntu.sh
 ```
 
-Environment variables (optional):
+> **Troubleshooting:** If you see `-u: command not found` or `-E: command not found` when using `curl | sudo bash`, the raw script may be cached. Use the clone-and-run alternative above, or pipe through: `sed 's/\$SUDO -u "\$APP_USER"/runuser -u "\$APP_USER" --/g'`
+
+### After deploy: configure .env and create admin
+
+If the script ran non-interactively (no TTY), configure `.env` and create the admin user:
+
+```bash
+sudo nano /opt/telegram-copier/.env
+```
+
+Set: `API_ID`, `API_HASH` (from [my.telegram.org](https://my.telegram.org)), and `JWT_SECRET` (e.g. `openssl rand -hex 32`). Then initialize the DB and create the admin (run as app user `tgcopier` for correct file ownership):
+
+```bash
+sudo -u tgcopier bash -c "cd /opt/telegram-copier && .venv/bin/tg-copier db init-db"
+sudo -u tgcopier bash -c "cd /opt/telegram-copier && .venv/bin/tg-copier db create-admin your@email.com yourpassword"
+sudo systemctl restart telegram-copier
+```
+
+### Environment variables (optional)
+
 - `INSTALL_DIR` – Installation directory (default: `/opt/telegram-copier`)
 - `DOMAIN` – Domain name for nginx (e.g. `copier.example.com`)
 - `USE_SSL=true` – Enable Let's Encrypt HTTPS
@@ -73,19 +95,23 @@ Environment variables (optional):
 - `API_ID`, `API_HASH`, `JWT_SECRET` – For non-interactive setup
 - `ADMIN_EMAIL`, `ADMIN_PASSWORD` – Admin credentials for non-interactive setup
 
-Example with HTTPS:
+### Examples
+
+With HTTPS:
 ```bash
-DOMAIN=copier.example.com USE_SSL=true CERTBOT_EMAIL=you@example.com sudo bash scripts/deploy-ubuntu.sh
+DOMAIN=copier.example.com USE_SSL=true CERTBOT_EMAIL=you@example.com \
+  curl -fsSL "https://raw.githubusercontent.com/sammirzagharcheh/PyTelegramClientCopier/main/scripts/deploy-ubuntu.sh" | sudo bash
 ```
 
-Example non-interactive (CI/automation):
+Non-interactive (CI/automation):
 ```bash
-API_ID=123 API_HASH=abc JWT_SECRET=xxx ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=secret NON_INTERACTIVE=true sudo bash scripts/deploy-ubuntu.sh
+API_ID=123 API_HASH=abc JWT_SECRET=xxx ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=secret \
+  NON_INTERACTIVE=true curl -fsSL "https://raw.githubusercontent.com/sammirzagharcheh/PyTelegramClientCopier/main/scripts/deploy-ubuntu.sh" | sudo bash
 ```
 
-Example update only (after initial deploy):
+Update only (after initial deploy):
 ```bash
-UPDATE_ONLY=true sudo bash scripts/deploy-ubuntu.sh
+UPDATE_ONLY=true curl -fsSL "https://raw.githubusercontent.com/sammirzagharcheh/PyTelegramClientCopier/main/scripts/deploy-ubuntu.sh" | sudo bash
 ```
 
 ### Production checklist
