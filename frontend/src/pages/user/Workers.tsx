@@ -19,8 +19,9 @@ export function UserWorkers() {
     queryFn: async () => (await api.get<Worker[]>('/workers')).data,
   });
   const { data: accountsData } = useQuery({
-    queryKey: ['accounts', 1, 100],
+    queryKey: ['accounts', 'list'],
     queryFn: async () => (await api.get<{ items: { id: number; name: string; type: string; session_path: string | null }[] }>('/accounts?page=1&page_size=100')).data,
+    staleTime: 5 * 60 * 1000,
   });
   const accounts = accountsData?.items ?? [];
   const startMutation = useMutation({

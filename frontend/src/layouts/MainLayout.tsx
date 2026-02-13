@@ -1,7 +1,10 @@
+import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
+  ChevronDown,
   Database,
   GitBranch,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   MessageSquare,
@@ -12,6 +15,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { ChangePasswordDialog } from '../components/ChangePasswordDialog';
 import { useAuth } from '../store/AuthContext';
 
 type NavItem = { to: string; label: string; icon: LucideIcon };
@@ -42,10 +46,31 @@ export function MainLayout() {
   const navigate = useNavigate();
   const isAdmin = user?.role === 'admin';
   const items = isAdmin ? adminNavItems : navItems;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    if (menuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [menuOpen]);
 
   const handleLogout = async () => {
+    setMenuOpen(false);
     await logout();
     navigate('/login');
+  };
+
+  const handleChangePasswordClick = () => {
+    setMenuOpen(false);
+    setChangePasswordOpen(true);
   };
 
   return (
@@ -80,18 +105,42 @@ export function MainLayout() {
         </nav>
       </aside>
       <div className="flex-1 flex flex-col">
-        <header className="h-14 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-6 bg-white dark:bg-gray-800">
-          <span className="text-sm text-gray-500">
-            {user?.email} ({user?.role})
-          </span>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 px-4 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
-          >
-            <LogOut className="h-4 w-4" />
-            Logout
-          </button>
+        <header className="h-14 border-b border-gray-200 dark:border-gray-700 flex items-center justify-end px-6 bg-white dark:bg-gray-800">
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors"
+            >
+              <span>{user?.email}</span>
+              <span className="text-gray-400 dark:text-gray-500">({user?.role})</span>
+              <ChevronDown className="h-4 w-4" />
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 mt-1 w-48 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-600 z-50">
+                <button
+                  type="button"
+                  onClick={handleChangePasswordClick}
+                  className="flex items-center gap-2 w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  <KeyRound className="h-4 w-4" />
+                  Change password
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="flex items-center gap-2 w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Logout
+                </button>
+              </div>
+            )}
+          </div>
         </header>
+        {changePasswordOpen && (
+          <ChangePasswordDialog onClose={() => setChangePasswordOpen(false)} />
+        )}
         <main className="flex-1 p-6 overflow-auto">
           <Outlet />
         </main>

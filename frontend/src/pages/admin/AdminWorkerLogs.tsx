@@ -32,8 +32,9 @@ export function AdminWorkerLogs() {
   const [levelFilter, setLevelFilter] = useState<string>('');
 
   const { data: usersData } = useQuery({
-    queryKey: ['admin', 'users', 1, 100],
+    queryKey: ['admin', 'users', 'list'],
     queryFn: async () => (await api.get<PaginatedUsers>(`/admin/users?page=1&page_size=100`)).data,
+    staleTime: 5 * 60 * 1000,
   });
   const users = usersData?.items ?? [];
 

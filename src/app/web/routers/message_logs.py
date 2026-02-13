@@ -102,16 +102,19 @@ async def list_message_logs(
             })
         if need_fallback:
             title_map: dict[tuple[int, int, int], tuple[str | None, str | None]] = {}
-            for uid, src_id, dest_id in need_fallback:
-                async with db.execute(
-                    "SELECT source_chat_title, dest_chat_title FROM channel_mappings "
-                    "WHERE user_id = ? AND source_chat_id = ? AND dest_chat_id = ? LIMIT 1",
-                    (uid, src_id, dest_id),
-                ) as cur:
-                    row = await cur.fetchone()
-                if row:
-                    st, dt = row[0] or None, row[1] or None
-                    title_map[(uid, src_id, dest_id)] = (st, dt)
+            keys_list = list(need_fallback)
+            placeholders = ",".join(["(?,?,?)"] * len(keys_list))
+            params = [x for t in keys_list for x in t]
+            async with db.execute(
+                f"SELECT user_id, source_chat_id, dest_chat_id, source_chat_title, dest_chat_title "
+                f"FROM channel_mappings WHERE (user_id, source_chat_id, dest_chat_id) IN "
+                f"(VALUES {placeholders})",
+                params,
+            ) as cur:
+                async for row in cur:
+                    uid, src_id, dest_id = row[0], row[1], row[2]
+                    st, dt = row[3] or None, row[4] or None
+                    title_map[(int(uid), int(src_id), int(dest_id))] = (st, dt)
             for it in items:
                 key = (it["user_id"], it["source_chat_id"], it["dest_chat_id"])
                 if key in title_map and (not it.get("source_chat_title") or not it.get("dest_chat_title")):

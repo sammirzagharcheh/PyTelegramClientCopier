@@ -90,6 +90,16 @@ MIGRATIONS = [
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     """,
+    # v11: performance indexes for common query patterns
+    """
+    CREATE INDEX IF NOT EXISTS ix_users_id_status ON users(id, status);
+    CREATE INDEX IF NOT EXISTS ix_telegram_accounts_user_id ON telegram_accounts(user_id);
+    CREATE INDEX IF NOT EXISTS ix_telegram_accounts_user_status ON telegram_accounts(user_id, status);
+    CREATE INDEX IF NOT EXISTS ix_channel_mappings_user_id ON channel_mappings(user_id);
+    CREATE INDEX IF NOT EXISTS ix_channel_mappings_user_src_dest ON channel_mappings(user_id, source_chat_id, dest_chat_id);
+    CREATE INDEX IF NOT EXISTS ix_mapping_filters_mapping_id ON mapping_filters(mapping_id);
+    CREATE INDEX IF NOT EXISTS ix_dest_message_index_user_id ON dest_message_index(user_id);
+    """,
 ]
 
 
