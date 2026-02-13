@@ -21,10 +21,11 @@ async def list_message_index(
 ) -> dict:
     """List dest_message_index entries. Users see own; admins can filter by user_id."""
     offset = (page - 1) * page_size
+    current_user_id = int(user["id"])
     if user["role"] == "admin" and user_id is not None:
-        actual_user = user_id
+        actual_user = int(user_id)
     elif user["role"] != "admin":
-        actual_user = user["id"]
+        actual_user = current_user_id
     else:
         actual_user = None
     query = """SELECT user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id
@@ -56,6 +57,9 @@ async def list_message_index(
         count_params.append(dest_chat_id)
     async with db.execute(count_query, count_params) as cur:
         total = (await cur.fetchone())[0]
+    # Non-admin: server-side post-filter to never return other users' data
+    if user["role"] != "admin":
+        rows = [r for r in rows if r[0] is not None and int(r[0]) == current_user_id]
     total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
     return {
         "items": [

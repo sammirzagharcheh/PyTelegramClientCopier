@@ -3,9 +3,15 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { AddAccountDialog } from '../../components/AddAccountDialog';
+import { EditAccountDialog } from '../../components/EditAccountDialog';
+import { ViewAccountDialog } from '../../components/ViewAccountDialog';
+import { AccountTypeBadge } from '../../components/AccountTypeBadge';
+import { AccountStatusBadge } from '../../components/AccountStatusBadge';
+import { AccountTableActions } from '../../components/AccountTableActions';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { useToast } from '../../components/Toast';
 import { PageHeader } from '../../components/PageHeader';
 import { SortableTh } from '../../components/SortableTh';
-import { StatusBadge } from '../../components/StatusBadge';
 import { Pagination } from '../../components/Pagination';
 
 type Account = {
@@ -21,12 +27,16 @@ type PaginatedAccounts = { items: Account[]; total: number; page: number; page_s
 
 export function Accounts() {
   const [showAdd, setShowAdd] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [viewingAccountId, setViewingAccountId] = useState<number | null>(null);
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [sortBy, setSortBy] = useState<string>('id');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const queryClient = useQueryClient();
+  const { show: showToast } = useToast();
+
   const { data, isLoading } = useQuery({
     queryKey: ['accounts', page, pageSize, sortBy, sortOrder],
     queryFn: async () =>
@@ -41,17 +51,9 @@ export function Accounts() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       setAccountToDelete(null);
+      showToast('Account deleted');
     },
   });
-
-  const handleDelete = (acc: Account) => {
-    setAccountToDelete(acc);
-  };
-
-  const confirmDelete = () => {
-    if (!accountToDelete) return;
-    deleteMutation.mutate(accountToDelete.id);
-  };
 
   if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
 
@@ -69,6 +71,39 @@ export function Accounts() {
         }
       />
       {showAdd && <AddAccountDialog onClose={() => setShowAdd(false)} />}
+      {editingAccount && (
+        <EditAccountDialog account={editingAccount} onClose={() => setEditingAccount(null)} />
+      )}
+      {viewingAccountId && (
+        <ViewAccountDialog accountId={viewingAccountId} onClose={() => setViewingAccountId(null)} />
+      )}
+      {accountToDelete && (
+        <ConfirmDialog
+          title="Delete Telegram Account"
+          message={
+            <>
+              Are you sure you want to delete the account{' '}
+              <span className="font-semibold">{accountToDelete.name || accountToDelete.id}</span>? This
+              will remove this Telegram account from the copier, delete its session file, disable any
+              mappings that use it, and stop any running workers for this account. Existing message
+              logs are kept.
+              {deleteMutation.isError && (
+                <p className="mt-3 text-sm text-red-600">
+                  Failed to delete account.{' '}
+                  {(deleteMutation.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+                    'Please try again.'}
+                </p>
+              )}
+            </>
+          }
+          confirmLabel="Delete account"
+          variant="danger"
+          icon={<Trash2 className="h-5 w-5 text-red-600" />}
+          onConfirm={() => deleteMutation.mutate(accountToDelete.id)}
+          onCancel={() => setAccountToDelete(null)}
+          isPending={deleteMutation.isPending}
+        />
+      )}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg">
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-700">
@@ -77,7 +112,7 @@ export function Accounts() {
               <SortableTh label="Name" sortKey="name" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
               <SortableTh label="Type" sortKey="type" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
               <SortableTh label="Status" sortKey="status" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Actions</th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase w-32 min-w-[120px]">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -86,22 +121,18 @@ export function Accounts() {
                 <td className="px-6 py-4 text-sm">{acc.id}</td>
                 <td className="px-6 py-4 text-sm">{acc.name || '—'}</td>
                 <td className="px-6 py-4 text-sm">
-                  <StatusBadge status={acc.type} variant="type" />
+                  <AccountTypeBadge type={acc.type} />
                 </td>
                 <td className="px-6 py-4 text-sm">
-                  <StatusBadge status={acc.status} variant="status" />
+                  <AccountStatusBadge status={acc.status} />
                 </td>
-              <td className="px-6 py-4 text-sm text-right">
-                <button
-                  type="button"
-                  onClick={() => handleDelete(acc)}
-                  className="flex items-center gap-1 px-3 py-1 rounded border border-red-500 text-red-600 text-xs hover:bg-red-50 dark:hover:bg-red-900/20"
-                  disabled={deleteMutation.isPending && accountToDelete?.id === acc.id}
-                >
-                  <Trash2 className="h-3 w-3" />
-                  Delete
-                </button>
-              </td>
+                <td className="px-6 py-4 text-sm text-right">
+                  <AccountTableActions
+                    onEdit={() => setEditingAccount(acc)}
+                    onView={() => setViewingAccountId(acc.id)}
+                    onDelete={() => setAccountToDelete(acc)}
+                  />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -123,48 +154,6 @@ export function Accounts() {
           />
         )}
       </div>
-
-      {accountToDelete && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setAccountToDelete(null)}>
-          <div
-            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2 mb-4">
-              <Trash2 className="h-5 w-5 text-red-600" />
-              <h2 className="text-xl font-bold">Delete Telegram Account</h2>
-            </div>
-            <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-              Are you sure you want to delete the account <span className="font-semibold">{accountToDelete.name || accountToDelete.id}</span>?
-              This will remove this Telegram account from the copier, delete its session file, disable any mappings that use it,
-              and stop any running workers for this account. Existing message logs are kept.
-            </p>
-            {deleteMutation.isError && (
-              <p className="mb-3 text-sm text-red-600">
-                Failed to delete account. {(deleteMutation.error as any)?.response?.data?.detail ?? 'Please try again.'}
-              </p>
-            )}
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setAccountToDelete(null)}
-                className="px-4 py-2 rounded border border-gray-300"
-                disabled={deleteMutation.isPending}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmDelete}
-                disabled={deleteMutation.isPending}
-                className="px-4 py-2 rounded bg-red-600 text-white disabled:opacity-50"
-              >
-                {deleteMutation.isPending ? 'Deleting…' : 'Delete account'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

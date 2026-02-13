@@ -2,6 +2,7 @@ import { Filter, Inbox, MessageSquare } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { formatLocalDateTime } from '../../lib/formatDateTime';
 import { PageHeader } from '../../components/PageHeader';
 import { Pagination } from '../../components/Pagination';
 import { StatusBadge } from '../../components/StatusBadge';
@@ -115,7 +116,7 @@ export function AdminLogs() {
                     <span className="font-mono">{log.dest_chat_id} / {log.dest_msg_id}</span>
                   )}
                 </td>
-                <td className="px-6 py-4 text-sm">{log.timestamp}</td>
+                <td className="px-6 py-4 text-sm" title={log.timestamp}>{formatLocalDateTime(log.timestamp)}</td>
                 <td className="px-6 py-4 text-sm">
                   <StatusBadge status={log.status ?? ''} variant="status" />
                 </td>

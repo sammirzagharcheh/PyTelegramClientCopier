@@ -1,34 +1,42 @@
-import { GitBranch } from 'lucide-react';
+import { Pencil, Smartphone } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { MappingFormFields } from './MappingFormFields';
 import { useToast } from './Toast';
 
+export type Account = {
+  id: number;
+  user_id: number;
+  name: string | null;
+  type: string;
+  status: string;
+  created_at: string | null;
+};
+
 type Props = {
+  account: Account;
   onClose: () => void;
 };
 
-export function AddMappingDialog({ onClose }: Props) {
-  const [name, setName] = useState('');
-  const [sourceChatId, setSourceChatId] = useState('');
-  const [destChatId, setDestChatId] = useState('');
+export function EditAccountDialog({ account, onClose }: Props) {
+  const [name, setName] = useState(account.name ?? '');
+  const [status, setStatus] = useState(account.status || 'active');
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
   const { show: showToast } = useToast();
+
   const mutation = useMutation({
     mutationFn: async () => {
       return (
-        await api.post('/mappings', {
+        await api.patch(`/accounts/${account.id}`, {
           name: name || undefined,
-          source_chat_id: parseInt(sourceChatId, 10),
-          dest_chat_id: parseInt(destChatId, 10),
+          status: status || undefined,
         })
       ).data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['mappings'] });
-      showToast('Mapping created. Workers restarting to apply changes.');
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      showToast('Account updated');
       onClose();
     },
     onError: (err: unknown) => {
@@ -43,7 +51,7 @@ export function AddMappingDialog({ onClose }: Props) {
           typeof err.response.data === 'object' &&
           'detail' in err.response.data
           ? String((err.response.data as { detail: unknown }).detail)
-          : 'Failed to create mapping'
+          : 'Failed to update account'
       );
     },
   });
@@ -51,14 +59,10 @@ export function AddMappingDialog({ onClose }: Props) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    const src = parseInt(sourceChatId, 10);
-    const dst = parseInt(destChatId, 10);
-    if (isNaN(src) || isNaN(dst)) {
-      setError('Invalid chat IDs');
-      return;
-    }
     mutation.mutate();
   };
+
+  const inputClass = 'w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700';
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
@@ -67,21 +71,38 @@ export function AddMappingDialog({ onClose }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 mb-4">
-          <GitBranch className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-          <h2 className="text-xl font-bold">Add Channel Mapping</h2>
+          <Pencil className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+          <h2 className="text-xl font-bold">Edit Telegram Account</h2>
         </div>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 flex items-center gap-2">
+          <Smartphone className="h-4 w-4" />
+          Type: {account.type} (read-only)
+        </p>
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <div className="p-3 rounded bg-red-50 dark:bg-red-900/20 text-red-600 text-sm">{error}</div>
           )}
-          <MappingFormFields
-            name={name}
-            sourceChatId={sourceChatId}
-            destChatId={destChatId}
-            onNameChange={setName}
-            onSourceChatIdChange={setSourceChatId}
-            onDestChatIdChange={setDestChatId}
-          />
+          <div>
+            <label className="block text-sm font-medium mb-1">Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className={inputClass}
+              placeholder="Account name"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Status</label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className={inputClass}
+            >
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
           <div className="flex gap-2 justify-end">
             <button type="button" onClick={onClose} className="px-4 py-2 rounded border border-gray-300">
               Cancel
@@ -91,7 +112,7 @@ export function AddMappingDialog({ onClose }: Props) {
               disabled={mutation.isPending}
               className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
             >
-              Create
+              {mutation.isPending ? 'Saving…' : 'Save'}
             </button>
           </div>
         </form>

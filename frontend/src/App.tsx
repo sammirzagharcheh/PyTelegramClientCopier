@@ -20,6 +20,7 @@ import { Settings } from './pages/admin/Settings';
 import { UserWorkers } from './pages/user/Workers';
 import { WorkerLogs } from './pages/user/WorkerLogs';
 import { AdminWorkerLogs } from './pages/admin/AdminWorkerLogs';
+import { ToastProvider } from './components/Toast';
 
 const queryClient = new QueryClient();
 
@@ -75,7 +76,9 @@ export default function App() {
     <BrowserRouter>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <AppRoutes />
+          <ToastProvider>
+            <AppRoutes />
+          </ToastProvider>
         </AuthProvider>
       </QueryClientProvider>
     </BrowserRouter>

@@ -2,6 +2,8 @@ import { Filter, Inbox, ScrollText } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { formatLocalDateTime } from '../../lib/formatDateTime';
+import { useAuth } from '../../store/AuthContext';
 import { PageHeader } from '../../components/PageHeader';
 import { Pagination } from '../../components/Pagination';
 import { LogLevelBadge } from '../../components/LogLevelBadge';
@@ -23,6 +25,7 @@ type PaginatedWorkerLogs = {
 };
 
 export function WorkerLogs() {
+  const { user } = useAuth();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [levelFilter, setLevelFilter] = useState<string>('');
@@ -34,9 +37,10 @@ export function WorkerLogs() {
   if (levelFilter) params.set('level', levelFilter);
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['worker-logs', page, pageSize, levelFilter],
+    queryKey: ['worker-logs', page, pageSize, levelFilter, user?.id],
     queryFn: async () =>
       (await api.get<PaginatedWorkerLogs>(`/worker-logs?${params}`)).data,
+    enabled: user != null,
   });
 
   if (isLoading)
@@ -57,7 +61,11 @@ export function WorkerLogs() {
     );
   }
 
-  const items = (data?.items ?? []) as WorkerLog[];
+  const rawItems = (data?.items ?? []) as WorkerLog[];
+  const items =
+    user?.role !== 'admin' && user?.id != null
+      ? rawItems.filter((log) => Number(log.user_id) === Number(user.id))
+      : rawItems;
 
   return (
     <div>
@@ -104,7 +112,7 @@ export function WorkerLogs() {
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {items.map((log, i) => (
               <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td className="px-6 py-4 text-sm whitespace-nowrap">{log.timestamp}</td>
+                <td className="px-6 py-4 text-sm whitespace-nowrap" title={log.timestamp}>{formatLocalDateTime(log.timestamp)}</td>
                 <td className="px-6 py-4 text-sm">
                   {log.account_id != null ? String(log.account_id) : '—'}
                 </td>

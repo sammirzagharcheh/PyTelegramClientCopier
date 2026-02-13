@@ -1,25 +1,38 @@
-import { GitBranch } from 'lucide-react';
+import { Pencil } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { MappingFormFields } from './MappingFormFields';
 import { useToast } from './Toast';
 
+export type Mapping = {
+  id: number;
+  user_id: number;
+  source_chat_id: number;
+  dest_chat_id: number;
+  name: string | null;
+  source_chat_title?: string | null;
+  dest_chat_title?: string | null;
+  enabled: boolean;
+};
+
 type Props = {
+  mapping: Mapping;
   onClose: () => void;
 };
 
-export function AddMappingDialog({ onClose }: Props) {
-  const [name, setName] = useState('');
-  const [sourceChatId, setSourceChatId] = useState('');
-  const [destChatId, setDestChatId] = useState('');
+export function EditMappingDialog({ mapping, onClose }: Props) {
+  const [name, setName] = useState(mapping.name ?? '');
+  const [sourceChatId, setSourceChatId] = useState(String(mapping.source_chat_id));
+  const [destChatId, setDestChatId] = useState(String(mapping.dest_chat_id));
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
   const { show: showToast } = useToast();
+
   const mutation = useMutation({
     mutationFn: async () => {
       return (
-        await api.post('/mappings', {
+        await api.patch(`/mappings/${mapping.id}`, {
           name: name || undefined,
           source_chat_id: parseInt(sourceChatId, 10),
           dest_chat_id: parseInt(destChatId, 10),
@@ -28,7 +41,8 @@ export function AddMappingDialog({ onClose }: Props) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
-      showToast('Mapping created. Workers restarting to apply changes.');
+      queryClient.invalidateQueries({ queryKey: ['mapping', String(mapping.id)] });
+      showToast('Mapping updated. Workers restarting to apply changes.');
       onClose();
     },
     onError: (err: unknown) => {
@@ -43,7 +57,7 @@ export function AddMappingDialog({ onClose }: Props) {
           typeof err.response.data === 'object' &&
           'detail' in err.response.data
           ? String((err.response.data as { detail: unknown }).detail)
-          : 'Failed to create mapping'
+          : 'Failed to update mapping'
       );
     },
   });
@@ -67,8 +81,8 @@ export function AddMappingDialog({ onClose }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 mb-4">
-          <GitBranch className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-          <h2 className="text-xl font-bold">Add Channel Mapping</h2>
+          <Pencil className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+          <h2 className="text-xl font-bold">Edit Channel Mapping</h2>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
@@ -91,7 +105,7 @@ export function AddMappingDialog({ onClose }: Props) {
               disabled={mutation.isPending}
               className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
             >
-              Create
+              {mutation.isPending ? 'Saving…' : 'Save'}
             </button>
           </div>
         </form>

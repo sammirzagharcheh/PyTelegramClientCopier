@@ -41,8 +41,13 @@ async def list_worker_logs(
     try:
         mongo_db = get_mongo_db()
         match: dict = {}
-        if user["role"] != "admin" or user_id is not None:
-            match["user_id"] = user_id if user["role"] == "admin" and user_id is not None else user["id"]
+        current_user_id = int(user["id"])
+        # Non-admin: always restrict to own data
+        if user["role"] != "admin":
+            match["user_id"] = current_user_id
+        # Admin: restrict only when user_id query param is provided
+        elif user_id is not None:
+            match["user_id"] = int(user_id)
         if account_id is not None:
             match["account_id"] = account_id
         if level is not None:
@@ -78,6 +83,10 @@ async def list_worker_logs(
                 "message": doc.get("message"),
                 "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
             })
+        # Non-admin: server-side post-filter to never return other users' data
+        if user["role"] != "admin":
+            items = [it for it in items if it.get("user_id") is not None and int(it["user_id"]) == current_user_id]
+            total = await mongo_db.worker_logs.count_documents(match)
         total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
         return {
             "items": items,

@@ -2,6 +2,8 @@ import { Inbox, MessageSquare } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { formatLocalDateTime } from '../../lib/formatDateTime';
+import { useAuth } from '../../store/AuthContext';
 import { PageHeader } from '../../components/PageHeader';
 import { Pagination } from '../../components/Pagination';
 import { StatusBadge } from '../../components/StatusBadge';
@@ -21,11 +23,13 @@ type Log = {
 type PaginatedLogs = { items: Log[]; total: number; page: number; page_size: number; total_pages: number };
 
 export function Logs() {
+  const { user } = useAuth();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['message-logs', page, pageSize],
+    queryKey: ['message-logs', page, pageSize, user?.id],
     queryFn: async () => (await api.get<PaginatedLogs>(`/message-logs?page=${page}&page_size=${pageSize}`)).data,
+    enabled: user != null,
   });
 
   if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
@@ -45,7 +49,11 @@ export function Logs() {
     );
   }
 
-  const items = (data?.items ?? []) as Log[];
+  const rawItems = (data?.items ?? []) as Log[];
+  const items =
+    user?.role !== 'admin' && user?.id != null
+      ? rawItems.filter((log) => Number(log.user_id) === Number(user.id))
+      : rawItems;
 
   return (
     <div>
@@ -77,7 +85,7 @@ export function Logs() {
                     <span className="font-mono">{log.dest_chat_id} / {log.dest_msg_id}</span>
                   )}
                 </td>
-                <td className="px-6 py-4 text-sm">{log.timestamp}</td>
+                <td className="px-6 py-4 text-sm" title={log.timestamp}>{formatLocalDateTime(log.timestamp)}</td>
                 <td className="px-6 py-4 text-sm">
                   <StatusBadge status={log.status ?? ''} variant="status" />
                 </td>

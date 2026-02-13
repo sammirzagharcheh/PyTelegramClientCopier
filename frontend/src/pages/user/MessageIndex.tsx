@@ -2,6 +2,7 @@ import { Database, Inbox } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { useAuth } from '../../store/AuthContext';
 import { PageHeader } from '../../components/PageHeader';
 import { Pagination } from '../../components/Pagination';
 
@@ -16,16 +17,22 @@ type IndexEntry = {
 type PaginatedIndex = { items: IndexEntry[]; total: number; page: number; page_size: number; total_pages: number };
 
 export function MessageIndex() {
+  const { user } = useAuth();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const { data, isLoading } = useQuery({
-    queryKey: ['message-index', page, pageSize],
+    queryKey: ['message-index', page, pageSize, user?.id],
     queryFn: async () => (await api.get<PaginatedIndex>(`/message-index?page=${page}&page_size=${pageSize}`)).data,
+    enabled: user != null,
   });
 
   if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
 
-  const items = (data?.items ?? []) as IndexEntry[];
+  const rawItems = (data?.items ?? []) as IndexEntry[];
+  const items =
+    user?.role !== 'admin' && user?.id != null
+      ? rawItems.filter((e) => Number(e.user_id) === Number(user.id))
+      : rawItems;
 
   return (
     <div>

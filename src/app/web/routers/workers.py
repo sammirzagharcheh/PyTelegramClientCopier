@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import signal
 import subprocess
@@ -14,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.web.deps import CurrentUser, Db
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/workers", tags=["workers"])
 
 # In-memory registry: worker_id -> {user_id, account_id, session_path, process?, pid, ...}
@@ -139,6 +141,44 @@ async def stop_workers_for_account(account_id: int, db: aiosqlite.Connection) ->
         await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (wid,))
     if to_stop:
         await db.commit()
+
+
+async def restart_workers_for_mapping(
+    db: aiosqlite.Connection,
+    mapping_user_id: int,
+    mapping_telegram_account_id: int | None,
+) -> None:
+    """Restart workers affected by a mapping change. Non-fatal on errors."""
+    try:
+        await _prune_dead_workers(db)
+        if mapping_telegram_account_id is not None:
+            account_ids = [mapping_telegram_account_id]
+        else:
+            async with db.execute(
+                "SELECT id FROM telegram_accounts WHERE user_id = ? AND status = 'active' "
+                "AND session_path IS NOT NULL AND session_path != ''",
+                (mapping_user_id,),
+            ) as cur:
+                rows = await cur.fetchall()
+            account_ids = [r[0] for r in rows]
+        for account_id in account_ids:
+            if not _account_has_running_worker(account_id):
+                continue
+            async with db.execute(
+                "SELECT user_id, session_path FROM telegram_accounts WHERE id = ? AND status = 'active'",
+                (account_id,),
+            ) as cur:
+                acc_row = await cur.fetchone()
+            if not acc_row or not acc_row[1]:
+                continue
+            user_id, session_path = acc_row[0], acc_row[1]
+            await stop_workers_for_account(account_id, db)
+            try:
+                await _spawn_worker_for_account(db, account_id, user_id, session_path)
+            except Exception as e:
+                logger.warning("Failed to restart worker for account %s after mapping change: %s", account_id, e)
+    except Exception as e:
+        logger.warning("restart_workers_for_mapping failed: %s", e)
 
 
 @router.get("")

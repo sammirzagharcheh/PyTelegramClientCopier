@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.web.deps import CurrentUser, Db
+from app.web.routers.workers import restart_workers_for_mapping
 from app.web.schemas.mappings import (
     ChannelMappingCreate,
     ChannelMappingUpdate,
@@ -110,7 +111,7 @@ async def create_mapping(
         (mid,),
     ) as cur:
         row = await cur.fetchone()
-    return {
+    result = {
         "id": row[0],
         "user_id": row[1],
         "source_chat_id": row[2],
@@ -122,6 +123,11 @@ async def create_mapping(
         "telegram_account_id": row[8],
         "created_at": row[9],
     }
+    try:
+        await restart_workers_for_mapping(db, row[1], row[8])
+    except Exception:
+        pass
+    return result
 
 
 @router.get("/{mapping_id}", response_model=ChannelMappingResponse)
@@ -206,7 +212,7 @@ async def update_mapping(
         (mapping_id,),
     ) as cur:
         row = await cur.fetchone()
-    return {
+    result = {
         "id": row[0],
         "user_id": row[1],
         "source_chat_id": row[2],
@@ -218,6 +224,16 @@ async def update_mapping(
         "telegram_account_id": row[8],
         "created_at": row[9],
     }
+    runtime_changed = any(
+        x is not None
+        for x in (data.enabled, data.source_chat_id, data.dest_chat_id)
+    )
+    if runtime_changed:
+        try:
+            await restart_workers_for_mapping(db, row[1], row[8])
+        except Exception:
+            pass
+    return result
 
 
 @router.delete("/{mapping_id}")
@@ -228,7 +244,7 @@ async def delete_mapping(
 ) -> dict:
     """Delete channel mapping."""
     async with db.execute(
-        "SELECT id, user_id FROM channel_mappings WHERE id = ?",
+        "SELECT id, user_id, telegram_account_id FROM channel_mappings WHERE id = ?",
         (mapping_id,),
     ) as cur:
         row = await cur.fetchone()
@@ -236,7 +252,12 @@ async def delete_mapping(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mapping not found")
     if user["role"] != "admin" and row[1] != user["id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    mapping_user_id, mapping_telegram_account_id = row[1], row[2]
     await db.execute("DELETE FROM mapping_filters WHERE mapping_id = ?", (mapping_id,))
     await db.execute("DELETE FROM channel_mappings WHERE id = ?", (mapping_id,))
     await db.commit()
+    try:
+        await restart_workers_for_mapping(db, mapping_user_id, mapping_telegram_account_id)
+    except Exception:
+        pass
     return {"status": "ok"}

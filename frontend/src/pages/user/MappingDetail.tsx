@@ -1,9 +1,13 @@
-import { ArrowLeft, Filter, GitBranch, Plus } from 'lucide-react';
+import { ArrowLeft, Filter, GitBranch, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import type { FilterFormValues } from '../../components/FilterForm';
+import { EditMappingDialog } from '../../components/EditMappingDialog';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { MappingEnableToggle } from '../../components/MappingEnableToggle';
+import { useToast } from '../../components/Toast';
 import { PageHeader } from '../../components/PageHeader';
 import {
   FilterForm,
@@ -32,9 +36,13 @@ function describeFilter(f: Filter): string[] {
 
 export function MappingDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { show: showToast } = useToast();
   const [filterModalOpen, setFilterModalOpen] = useState<'add' | number | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const [editingMapping, setEditingMapping] = useState<boolean>(false);
+  const [mappingToDelete, setMappingToDelete] = useState<boolean>(false);
 
   const { data: mapping } = useQuery({
     queryKey: ['mapping', id],
@@ -90,13 +98,37 @@ export function MappingDetail() {
     },
   });
 
-  const deleteMutation = useMutation({
+  const filterDeleteMutation = useMutation({
     mutationFn: async (filterId: number) => {
       await api.delete(`/mappings/${id}/filters/${filterId}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mapping', id, 'filters'] });
       setDeleteConfirm(null);
+    },
+  });
+
+  const mappingDeleteMutation = useMutation({
+    mutationFn: async () => {
+      await api.delete(`/mappings/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mappings'] });
+      setMappingToDelete(false);
+      showToast('Mapping deleted. Workers restarting to apply changes.');
+      navigate('/mappings');
+    },
+  });
+
+  const enableMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      return (await api.patch(`/mappings/${id}`, { enabled })).data;
+    },
+    onSuccess: (enabled) => {
+      queryClient.invalidateQueries({ queryKey: ['mapping', id] });
+      showToast(
+        (enabled ? 'Mapping enabled' : 'Mapping disabled') + '. Workers restarting to apply changes.'
+      );
     },
   });
 
@@ -109,6 +141,19 @@ export function MappingDetail() {
   };
 
   const editingFilter = typeof filterModalOpen === 'number' ? filters?.find((f) => f.id === filterModalOpen) : null;
+
+  const mappingForEdit = mapping
+    ? {
+        id: mapping.id,
+        user_id: mapping.user_id,
+        source_chat_id: mapping.source_chat_id,
+        dest_chat_id: mapping.dest_chat_id,
+        name: mapping.name,
+        source_chat_title: mapping.source_chat_title,
+        dest_chat_title: mapping.dest_chat_title,
+        enabled: mapping.enabled,
+      }
+    : null;
 
   if (!mapping) return null;
 
@@ -126,12 +171,52 @@ export function MappingDetail() {
         icon={GitBranch}
         subtitle={`Source: ${sourceLabel} → Dest: ${destLabel}`}
         actions={
-          <Link to="/mappings" className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
-            <ArrowLeft className="h-4 w-4" />
-            Back to mappings
-          </Link>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setEditingMapping(true)}
+              className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
+            >
+              <Pencil className="h-4 w-4" />
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={() => setMappingToDelete(true)}
+              className="flex items-center gap-2 text-sm text-red-600 hover:underline"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </button>
+            <Link to="/mappings" className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
+              <ArrowLeft className="h-4 w-4" />
+              Back to mappings
+            </Link>
+          </div>
         }
       />
+
+      {editingMapping && mappingForEdit && (
+        <EditMappingDialog mapping={mappingForEdit} onClose={() => setEditingMapping(false)} />
+      )}
+      {mappingToDelete && (
+        <ConfirmDialog
+          title="Delete Channel Mapping"
+          message={
+            <>
+              Are you sure you want to delete the mapping{' '}
+              <span className="font-semibold">{mapping.name || `Mapping ${id}`}</span>? This will also
+              remove all associated filters. This action cannot be undone.
+            </>
+          }
+          confirmLabel="Delete mapping"
+          variant="danger"
+          icon={<Trash2 className="h-5 w-5 text-red-600" />}
+          onConfirm={() => mappingDeleteMutation.mutate()}
+          onCancel={() => setMappingToDelete(false)}
+          isPending={mappingDeleteMutation.isPending}
+        />
+      )}
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6 transition-shadow hover:shadow-lg">
         <dl className="grid grid-cols-2 gap-4">
@@ -146,13 +231,11 @@ export function MappingDetail() {
           <div>
             <dt className="text-sm text-gray-500">Status</dt>
             <dd>
-              <span
-                className={`px-2 py-1 rounded text-xs ${
-                  mapping.enabled ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-400'
-                }`}
-              >
-                {mapping.enabled ? 'Enabled' : 'Disabled'}
-              </span>
+              <MappingEnableToggle
+                enabled={mapping.enabled}
+                onToggle={() => enableMutation.mutate(!mapping.enabled)}
+                isPending={enableMutation.isPending}
+              />
             </dd>
           </div>
         </dl>
@@ -201,8 +284,8 @@ export function MappingDetail() {
                   <div className="flex gap-1">
                     <button
                       type="button"
-                      onClick={() => deleteMutation.mutate(f.id)}
-                      disabled={deleteMutation.isPending}
+                      onClick={() => filterDeleteMutation.mutate(f.id)}
+                      disabled={filterDeleteMutation.isPending}
                       className="px-3 py-1 text-sm rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
                     >
                       Confirm
