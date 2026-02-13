@@ -133,10 +133,15 @@ Before going live:
 
 ## Tests
 
+**Backend (Python):**
 - `pytest`
 - `pytest tests/unit`
+- `pytest tests/api`
 - `pytest tests/integration`
 - `pytest tests/functional`
+
+**Frontend (Vitest):**
+- `cd frontend && npm run test`
 
 ### Live Telegram integration test
 
