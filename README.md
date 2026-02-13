@@ -114,6 +114,13 @@ Update only (after initial deploy):
 UPDATE_ONLY=true curl -fsSL "https://raw.githubusercontent.com/sammirzagharcheh/PyTelegramClientCopier/main/scripts/deploy-ubuntu.sh" | sudo bash
 ```
 
+Quick update (run on VPS after SSH):
+```bash
+ssh user@your-vps-ip
+sudo bash /opt/telegram-copier/scripts/update-vps.sh
+```
+The script pulls latest, rebuilds, and restarts. Alternatively, use `UPDATE_ONLY=true` with the deploy script (see above) to fetch the latest script from GitHub.
+
 ### Production checklist
 
 Before going live:
