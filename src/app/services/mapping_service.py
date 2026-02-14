@@ -14,6 +14,58 @@ class MappingFilter:
     regex_pattern: str | None
 
 
+WEEKDAY_COLS = [
+    "mon_start_utc", "mon_end_utc",
+    "tue_start_utc", "tue_end_utc",
+    "wed_start_utc", "wed_end_utc",
+    "thu_start_utc", "thu_end_utc",
+    "fri_start_utc", "fri_end_utc",
+    "sat_start_utc", "sat_end_utc",
+    "sun_start_utc", "sun_end_utc",
+]
+
+
+@dataclass(slots=True)
+class Schedule:
+    """Time-of-day schedule per weekday. All times in UTC HH:MM. None = unrestricted for that slot."""
+
+    mon_start_utc: str | None
+    mon_end_utc: str | None
+    tue_start_utc: str | None
+    tue_end_utc: str | None
+    wed_start_utc: str | None
+    wed_end_utc: str | None
+    thu_start_utc: str | None
+    thu_end_utc: str | None
+    fri_start_utc: str | None
+    fri_end_utc: str | None
+    sat_start_utc: str | None
+    sat_end_utc: str | None
+    sun_start_utc: str | None
+    sun_end_utc: str | None
+
+    def get_for_weekday(self, weekday: int) -> tuple[str | None, str | None]:
+        """weekday: 0=Monday, 6=Sunday. Returns (start_utc, end_utc)."""
+        idx = weekday * 2
+        start = (
+            self.mon_start_utc, self.tue_start_utc, self.wed_start_utc, self.thu_start_utc,
+            self.fri_start_utc, self.sat_start_utc, self.sun_start_utc,
+        )[weekday]
+        end = (
+            self.mon_end_utc, self.tue_end_utc, self.wed_end_utc, self.thu_end_utc,
+            self.fri_end_utc, self.sat_end_utc, self.sun_end_utc,
+        )[weekday]
+        return (start, end)
+
+    def is_empty(self) -> bool:
+        """True if no day has any restriction."""
+        for i in range(7):
+            s, e = self.get_for_weekday(i)
+            if s is not None or e is not None:
+                return False
+        return True
+
+
 @dataclass(slots=True)
 class ChannelMapping:
     id: int
@@ -24,6 +76,7 @@ class ChannelMapping:
     filters: list[MappingFilter]
     source_chat_title: str | None
     dest_chat_title: str | None
+    schedule: Schedule | None = None
 
 
 async def list_enabled_mappings(
@@ -50,8 +103,11 @@ async def list_enabled_mappings(
         params = (user_id,)
     async with db.execute(q, params) as cursor:
         rows = await cursor.fetchall()
+    user_schedule = await _load_user_schedule(db, user_id)
+
     for mapping_id, u_id, source_id, dest_id, enabled, src_title, dest_title in rows:
         filters = await _list_filters(db, user_id, mapping_id)
+        schedule = await _load_mapping_schedule(db, mapping_id, user_id, user_schedule)
         mappings.append(
             ChannelMapping(
                 id=mapping_id,
@@ -62,9 +118,55 @@ async def list_enabled_mappings(
                 filters=filters,
                 source_chat_title=src_title or None,
                 dest_chat_title=dest_title or None,
+                schedule=schedule,
             )
         )
     return mappings
+
+
+def _row_to_schedule(row: tuple) -> Schedule | None:
+    """Convert a 14-tuple (mon_start, mon_end, ..., sun_start, sun_end) to Schedule."""
+    if not row or all(x is None for x in row):
+        return None
+    return Schedule(
+        mon_start_utc=row[0], mon_end_utc=row[1],
+        tue_start_utc=row[2], tue_end_utc=row[3],
+        wed_start_utc=row[4], wed_end_utc=row[5],
+        thu_start_utc=row[6], thu_end_utc=row[7],
+        fri_start_utc=row[8], fri_end_utc=row[9],
+        sat_start_utc=row[10], sat_end_utc=row[11],
+        sun_start_utc=row[12], sun_end_utc=row[13],
+    )
+
+
+async def _load_user_schedule(db: aiosqlite.Connection, user_id: int) -> Schedule | None:
+    cols = ", ".join(WEEKDAY_COLS)
+    async with db.execute(
+        f"SELECT {cols} FROM user_schedules WHERE user_id = ?",
+        (user_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    if not row:
+        return None
+    return _row_to_schedule(row)
+
+
+async def _load_mapping_schedule(
+    db: aiosqlite.Connection,
+    mapping_id: int,
+    user_id: int,
+    user_schedule: Schedule | None,
+) -> Schedule | None:
+    """Use mapping override if exists, else user schedule."""
+    cols = ", ".join(WEEKDAY_COLS)
+    async with db.execute(
+        f"SELECT {cols} FROM mapping_schedules WHERE mapping_id = ?",
+        (mapping_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    if row and any(x is not None for x in row):
+        return _row_to_schedule(row)
+    return user_schedule
 
 
 async def _list_filters(db: aiosqlite.Connection, user_id: int, mapping_id: int) -> list[MappingFilter]:

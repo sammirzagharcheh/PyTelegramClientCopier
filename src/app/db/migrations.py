@@ -100,6 +100,32 @@ MIGRATIONS = [
     CREATE INDEX IF NOT EXISTS ix_mapping_filters_mapping_id ON mapping_filters(mapping_id);
     CREATE INDEX IF NOT EXISTS ix_dest_message_index_user_id ON dest_message_index(user_id);
     """,
+    # v12: user_schedules, mapping_schedules, users.timezone
+    """
+    CREATE TABLE IF NOT EXISTS user_schedules (
+        user_id INTEGER PRIMARY KEY,
+        mon_start_utc TEXT, mon_end_utc TEXT,
+        tue_start_utc TEXT, tue_end_utc TEXT,
+        wed_start_utc TEXT, wed_end_utc TEXT,
+        thu_start_utc TEXT, thu_end_utc TEXT,
+        fri_start_utc TEXT, fri_end_utc TEXT,
+        sat_start_utc TEXT, sat_end_utc TEXT,
+        sun_start_utc TEXT, sun_end_utc TEXT,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    );
+    CREATE TABLE IF NOT EXISTS mapping_schedules (
+        mapping_id INTEGER PRIMARY KEY,
+        mon_start_utc TEXT, mon_end_utc TEXT,
+        tue_start_utc TEXT, tue_end_utc TEXT,
+        wed_start_utc TEXT, wed_end_utc TEXT,
+        thu_start_utc TEXT, thu_end_utc TEXT,
+        fri_start_utc TEXT, fri_end_utc TEXT,
+        sat_start_utc TEXT, sat_end_utc TEXT,
+        sun_start_utc TEXT, sun_end_utc TEXT,
+        FOREIGN KEY(mapping_id) REFERENCES channel_mappings(id)
+    );
+    ALTER TABLE users ADD COLUMN timezone TEXT;
+    """,
 ]
 
 

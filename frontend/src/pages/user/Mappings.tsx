@@ -21,6 +21,7 @@ type Mapping = {
   source_chat_title?: string | null;
   dest_chat_title?: string | null;
   enabled: boolean;
+  schedule_summary?: string;
 };
 
 type PaginatedMappings = { items: Mapping[]; total: number; page: number; page_size: number; total_pages: number };
@@ -145,6 +146,7 @@ export function Mappings() {
               <SortableTh label="Source" sortKey="source_chat_id" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
               <SortableTh label="Dest" sortKey="dest_chat_id" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
               <SortableTh label="Status" sortKey="enabled" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Schedule</th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase w-32 min-w-[120px]">Actions</th>
             </tr>
           </thead>
@@ -164,6 +166,11 @@ export function Mappings() {
                     onToggle={() => enableMutation.mutate({ id: m.id, enabled: !m.enabled })}
                     isPending={enableMutation.isPending && enableMutation.variables?.id === m.id}
                   />
+                </td>
+                <td className="px-6 py-4 text-sm">
+                  <span className="text-gray-600 dark:text-gray-400" title="Copy schedule">
+                    {m.schedule_summary ?? '24/7'}
+                  </span>
                 </td>
                 <td className="px-6 py-4 text-sm text-right">
                   <MappingTableActions

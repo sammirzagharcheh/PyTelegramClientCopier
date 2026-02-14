@@ -22,6 +22,7 @@ from app.web.routers import (
     mappings,
     message_index,
     message_logs,
+    schedules,
     stats,
     worker_logs,
     workers,
@@ -77,6 +78,7 @@ def create_app() -> FastAPI:
     app.include_router(accounts.router, prefix="/api")
     app.include_router(accounts_login.router, prefix="/api")
     app.include_router(mappings.router, prefix="/api")
+    app.include_router(schedules.router, prefix="/api")
     app.include_router(filters.router, prefix="/api")
     app.include_router(message_index.router, prefix="/api")
     app.include_router(message_logs.router, prefix="/api")

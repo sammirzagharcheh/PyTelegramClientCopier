@@ -18,6 +18,7 @@ import { AdminMessageIndex } from './pages/admin/AdminMessageIndex';
 import { Workers } from './pages/admin/Workers';
 import { Settings } from './pages/admin/Settings';
 import { UserWorkers } from './pages/user/Workers';
+import { Schedule } from './pages/user/Schedule';
 import { WorkerLogs } from './pages/user/WorkerLogs';
 import { AdminWorkerLogs } from './pages/admin/AdminWorkerLogs';
 import { ToastProvider } from './components/Toast';
@@ -56,11 +57,13 @@ function AppRoutes() {
         <Route path="worker-logs" element={<WorkerLogs />} />
         <Route path="logs" element={<Logs />} />
         <Route path="message-index" element={<MessageIndex />} />
+        <Route path="schedule" element={<Schedule />} />
       </Route>
       <Route path="/admin" element={<ProtectedRoute adminOnly><MainLayout /></ProtectedRoute>}>
         <Route index element={<AdminDashboard />} />
         <Route path="users" element={<AdminUsers />} />
         <Route path="mappings" element={<AdminMappings />} />
+        <Route path="mappings/:id" element={<MappingDetail />} />
         <Route path="logs" element={<AdminLogs />} />
         <Route path="message-index" element={<AdminMessageIndex />} />
         <Route path="workers" element={<Workers />} />

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import logging
 import re
 from typing import Iterable
@@ -10,7 +11,7 @@ from telethon.errors import ChatIdInvalidError
 from telethon.tl.custom.message import Message
 from telethon.tl.types import MessageMediaWebPage
 
-from app.services.mapping_service import ChannelMapping, MappingFilter
+from app.services.mapping_service import ChannelMapping, MappingFilter, Schedule
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,31 @@ def _message_media_type(message: Message) -> str:
     if message.text or message.message:
         return "text"
     return "other"
+
+
+def _passes_schedule(now_utc: datetime.datetime, schedule: Schedule | None) -> bool:
+    """Check if now_utc falls within the schedule for its weekday. All times in UTC HH:MM."""
+    if schedule is None or schedule.is_empty():
+        return True
+    # Python weekday: 0=Monday, 6=Sunday
+    weekday = now_utc.weekday()
+    start_utc, end_utc = schedule.get_for_weekday(weekday)
+    if start_utc is None and end_utc is None:
+        return True
+    try:
+        now_t = now_utc.time()
+        start_t = datetime.datetime.strptime(start_utc or "00:00", "%H:%M").time()
+        end_t = datetime.datetime.strptime(end_utc or "23:59", "%H:%M").time()
+    except (ValueError, TypeError):
+        return True
+    if start_utc is None:
+        return now_t <= end_t
+    if end_utc is None:
+        return now_t >= start_t
+    if start_t <= end_t:
+        return start_t <= now_t <= end_t
+    # Overnight range (e.g. 22:00–02:00)
+    return now_t >= start_t or now_t <= end_t
 
 
 def _passes_filters(message: Message, filters: Iterable[MappingFilter]) -> bool:
@@ -141,6 +167,14 @@ def build_message_handler(
                 continue
             seen.add(mapping.id)
             if not _passes_filters(message, mapping.filters):
+                continue
+            msg_time = message.date
+            if msg_time.tzinfo is None:
+                msg_time = msg_time.replace(tzinfo=datetime.timezone.utc)
+            else:
+                msg_time = msg_time.astimezone(datetime.timezone.utc)
+            if not _passes_schedule(msg_time, mapping.schedule):
+                logger.debug("Skipped (outside schedule) msg_id=%s mapping_id=%s", message.id, mapping.id)
                 continue
 
             reply_to_msg_id = None

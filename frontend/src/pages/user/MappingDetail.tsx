@@ -1,20 +1,23 @@
-import { ArrowLeft, Filter, GitBranch, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Clock, Filter, GitBranch, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../lib/api';
 import type { FilterFormValues } from '../../components/FilterForm';
 import { EditMappingDialog } from '../../components/EditMappingDialog';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { MappingEnableToggle } from '../../components/MappingEnableToggle';
+import { MappingScheduleForm } from '../../components/MappingScheduleForm';
 import { useToast } from '../../components/Toast';
 import { PageHeader } from '../../components/PageHeader';
+import { useAuth } from '../../store/AuthContext';
 import {
   FilterForm,
   formatMediaDisplay,
   mediaArrayToString,
   stringToMediaArray,
 } from '../../components/FilterForm';
+import { formatScheduleSummary } from '../../lib/formatDateTime';
 
 type Filter = {
   id: number;
@@ -37,8 +40,12 @@ function describeFilter(f: Filter): string[] {
 export function MappingDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const { show: showToast } = useToast();
+  const isAdminView = location.pathname.startsWith('/admin/mappings/');
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const [filterModalOpen, setFilterModalOpen] = useState<'add' | number | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [editingMapping, setEditingMapping] = useState<boolean>(false);
@@ -53,6 +60,16 @@ export function MappingDetail() {
     queryKey: ['mapping', id, 'filters'],
     queryFn: async () => (await api.get<Filter[]>(`/mappings/${id}/filters`)).data,
     enabled: !!id,
+  });
+  const { data: mappingSchedule } = useQuery({
+    queryKey: ['mapping', id, 'schedule'],
+    queryFn: async () => (await api.get<Record<string, string | null>>(`/mappings/${id}/schedule`)).data,
+    enabled: !!id,
+  });
+  const { data: userSchedule } = useQuery({
+    queryKey: ['user-schedule'],
+    queryFn: async () => (await api.get<Record<string, string | null>>('/users/me/schedule')).data,
+    enabled: !!id && !!user && mapping?.user_id === user.id,
   });
 
   const createMutation = useMutation({
@@ -132,6 +149,30 @@ export function MappingDetail() {
     },
   });
 
+  const scheduleSaveMutation = useMutation({
+    mutationFn: async (payload: Record<string, string | null>) => {
+      await api.put(`/mappings/${id}/schedule`, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mapping', id, 'schedule'] });
+      queryClient.invalidateQueries({ queryKey: ['mappings'] });
+      showToast('Schedule saved. Workers restarting to apply changes.');
+    },
+    onError: () => showToast('Failed to save schedule'),
+  });
+
+  const scheduleDeleteMutation = useMutation({
+    mutationFn: async () => {
+      await api.delete(`/mappings/${id}/schedule`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mapping', id, 'schedule'] });
+      queryClient.invalidateQueries({ queryKey: ['mappings'] });
+      showToast('Using default schedule. Workers restarting to apply changes.');
+    },
+    onError: () => showToast('Failed to remove schedule override'),
+  });
+
   const handleFilterSubmit = (values: FilterFormValues) => {
     if (filterModalOpen === 'add') {
       createMutation.mutate(values);
@@ -188,7 +229,10 @@ export function MappingDetail() {
               <Trash2 className="h-4 w-4" />
               Delete
             </button>
-            <Link to="/mappings" className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
+            <Link
+              to={isAdminView ? '/admin/mappings' : '/mappings'}
+              className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
+            >
               <ArrowLeft className="h-4 w-4" />
               Back to mappings
             </Link>
@@ -239,6 +283,107 @@ export function MappingDetail() {
             </dd>
           </div>
         </dl>
+      </div>
+
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold mb-1">Schedule</h2>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          When to copy messages for this mapping. Use default (global) or set a custom schedule.
+        </p>
+      </div>
+
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg mb-6">
+        {(() => {
+          const hasCustomSchedule =
+            mappingSchedule && Object.values(mappingSchedule).some((v) => v != null && v !== '');
+          const ownsMapping = user && mapping.user_id === user.id;
+
+          if (hasCustomSchedule) {
+            return (
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Custom schedule for this mapping
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => scheduleDeleteMutation.mutate()}
+                    disabled={scheduleDeleteMutation.isPending}
+                    className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    Switch to default
+                  </button>
+                </div>
+                <MappingScheduleForm
+                  initialSchedule={mappingSchedule}
+                  timezone={tz}
+                  onSave={(payload) => scheduleSaveMutation.mutate(payload)}
+                  isSaving={scheduleSaveMutation.isPending}
+                  saveLabel="Save schedule"
+                  showDescription={false}
+                />
+              </div>
+            );
+          }
+
+          return (
+            <div className="p-6">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-gray-500" />
+                  <span className="text-sm">
+                    {ownsMapping && userSchedule
+                      ? formatScheduleSummary(userSchedule)
+                      : 'Default'}
+                  </span>
+                </div>
+                {ownsMapping && (
+                  <Link to="/schedule" className="text-sm text-blue-600 hover:underline">
+                    Configure global schedule
+                  </Link>
+                )}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const hasUserSchedule =
+                      userSchedule && Object.values(userSchedule).some((v) => v != null && v !== '');
+                    const payload = hasUserSchedule
+                      ? userSchedule!
+                      : {
+                          mon_start_utc: '09:00',
+                          mon_end_utc: '17:00',
+                          tue_start_utc: '09:00',
+                          tue_end_utc: '17:00',
+                          wed_start_utc: '09:00',
+                          wed_end_utc: '17:00',
+                          thu_start_utc: '09:00',
+                          thu_end_utc: '17:00',
+                          fri_start_utc: '09:00',
+                          fri_end_utc: '17:00',
+                          sat_start_utc: null,
+                          sat_end_utc: null,
+                          sun_start_utc: null,
+                          sun_end_utc: null,
+                        };
+                    await api.put(`/mappings/${id}/schedule`, payload);
+                    queryClient.invalidateQueries({ queryKey: ['mapping', id, 'schedule'] });
+                    queryClient.invalidateQueries({ queryKey: ['mappings'] });
+                    showToast('Now using custom schedule. Edit below and save.');
+                  }}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                  Switch to custom
+                </button>
+              </div>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                {ownsMapping
+                  ? 'Uses your global schedule from the Schedule page.'
+                  : "Uses the mapping owner's default schedule."}
+              </p>
+            </div>
+          );
+        })()}
       </div>
 
       <div className="mb-4">

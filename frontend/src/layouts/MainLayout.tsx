@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
   ChevronDown,
+  Clock,
   Database,
   GitBranch,
   KeyRound,
@@ -28,6 +29,7 @@ const navItems: NavItem[] = [
   { to: '/worker-logs', label: 'Worker Logs', icon: ScrollText },
   { to: '/logs', label: 'Message Logs', icon: MessageSquare },
   { to: '/message-index', label: 'Message Index', icon: Database },
+  { to: '/schedule', label: 'Schedule', icon: Clock },
 ];
 
 const adminNavItems: NavItem[] = [

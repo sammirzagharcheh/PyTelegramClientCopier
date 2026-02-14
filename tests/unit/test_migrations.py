@@ -39,3 +39,24 @@ async def test_migration_v11_creates_indexes(tmp_path):
 
     for idx_name in V11_INDEXES:
         assert idx_name in index_names, f"Expected index {idx_name} from migration v11"
+
+
+@pytest.mark.asyncio
+async def test_migration_v12_creates_schedule_tables(tmp_path):
+    """Migration v12 creates user_schedules, mapping_schedules and users.timezone column."""
+    settings.sqlite_path = str(tmp_path / "migrations_v12_test.db")
+    tmp_path.mkdir(parents=True, exist_ok=True)
+
+    await init_sqlite()
+
+    async with aiosqlite.connect(settings.sqlite_path) as db:
+        async with db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('user_schedules', 'mapping_schedules')"
+        ) as cur:
+            tables = {r[0] for r in await cur.fetchall()}
+        assert "user_schedules" in tables
+        assert "mapping_schedules" in tables
+
+        async with db.execute("PRAGMA table_info(users)") as cur:
+            cols = {r[1] for r in await cur.fetchall()}
+        assert "timezone" in cols
