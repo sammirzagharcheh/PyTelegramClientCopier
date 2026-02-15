@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { formatLocalDateTime } from '../../lib/formatDateTime';
+import { useAuth } from '../../store/AuthContext';
 import { PageHeader } from '../../components/PageHeader';
 import { Pagination } from '../../components/Pagination';
 import { LogLevelBadge } from '../../components/LogLevelBadge';
@@ -26,6 +27,7 @@ type PaginatedWorkerLogs = {
 type PaginatedUsers = { items: User[]; total: number };
 
 export function AdminWorkerLogs() {
+  const { user } = useAuth();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [userId, setUserId] = useState<number | null>(null);
@@ -141,7 +143,7 @@ export function AdminWorkerLogs() {
             {items.map((log, i) => (
               <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                 <td className="px-6 py-4 text-sm">{log.user_id}</td>
-                <td className="px-6 py-4 text-sm whitespace-nowrap" title={log.timestamp}>{formatLocalDateTime(log.timestamp)}</td>
+                <td className="px-6 py-4 text-sm whitespace-nowrap" title={log.timestamp}>{formatLocalDateTime(log.timestamp, user?.timezone ?? undefined)}</td>
                 <td className="px-6 py-4 text-sm">
                   {log.account_id != null ? String(log.account_id) : '—'}
                 </td>

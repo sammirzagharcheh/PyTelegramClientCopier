@@ -51,7 +51,7 @@ async def get_current_user(
             detail="Invalid token",
         )
     async with db.execute(
-        "SELECT id, email, name, role, status FROM users WHERE id = ? AND status = 'active'",
+        "SELECT id, email, name, role, status, timezone FROM users WHERE id = ? AND status = 'active'",
         (user_id,),
     ) as cur:
         row = await cur.fetchone()
@@ -66,6 +66,7 @@ async def get_current_user(
         "name": row[2],
         "role": row[3],
         "status": row[4],
+        "timezone": row[5] if len(row) > 5 else None,
     }
 
 

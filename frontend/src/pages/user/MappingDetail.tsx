@@ -45,7 +45,7 @@ export function MappingDetail() {
   const queryClient = useQueryClient();
   const { show: showToast } = useToast();
   const isAdminView = location.pathname.startsWith('/admin/mappings/');
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const tz = user?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const [filterModalOpen, setFilterModalOpen] = useState<'add' | number | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [editingMapping, setEditingMapping] = useState<boolean>(false);

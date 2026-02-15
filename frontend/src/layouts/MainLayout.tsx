@@ -5,6 +5,7 @@ import {
   Clock,
   Database,
   GitBranch,
+  Globe,
   KeyRound,
   LayoutDashboard,
   LogOut,
@@ -17,6 +18,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { ChangePasswordDialog } from '../components/ChangePasswordDialog';
+import { TimezonePreferencesDialog } from '../components/TimezonePreferencesDialog';
 import { useAuth } from '../store/AuthContext';
 
 type NavItem = { to: string; label: string; icon: LucideIcon };
@@ -50,6 +52,7 @@ export function MainLayout() {
   const items = isAdmin ? adminNavItems : navItems;
   const [menuOpen, setMenuOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [timezoneOpen, setTimezoneOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -73,6 +76,11 @@ export function MainLayout() {
   const handleChangePasswordClick = () => {
     setMenuOpen(false);
     setChangePasswordOpen(true);
+  };
+
+  const handleTimezoneClick = () => {
+    setMenuOpen(false);
+    setTimezoneOpen(true);
   };
 
   return (
@@ -122,6 +130,14 @@ export function MainLayout() {
               <div className="absolute right-0 mt-1 w-48 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-600 z-50">
                 <button
                   type="button"
+                  onClick={handleTimezoneClick}
+                  className="flex items-center gap-2 w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  <Globe className="h-4 w-4" />
+                  Timezone
+                </button>
+                <button
+                  type="button"
                   onClick={handleChangePasswordClick}
                   className="flex items-center gap-2 w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                 >
@@ -142,6 +158,9 @@ export function MainLayout() {
         </header>
         {changePasswordOpen && (
           <ChangePasswordDialog onClose={() => setChangePasswordOpen(false)} />
+        )}
+        {timezoneOpen && (
+          <TimezonePreferencesDialog onClose={() => setTimezoneOpen(false)} />
         )}
         <main className="flex-1 p-6 overflow-auto">
           <Outlet />

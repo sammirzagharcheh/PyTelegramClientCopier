@@ -85,7 +85,7 @@ export function Logs() {
                     <span className="font-mono">{log.dest_chat_id} / {log.dest_msg_id}</span>
                   )}
                 </td>
-                <td className="px-6 py-4 text-sm" title={log.timestamp}>{formatLocalDateTime(log.timestamp)}</td>
+                <td className="px-6 py-4 text-sm" title={log.timestamp}>{formatLocalDateTime(log.timestamp, user?.timezone ?? undefined)}</td>
                 <td className="px-6 py-4 text-sm">
                   <StatusBadge status={log.status ?? ''} variant="status" />
                 </td>
