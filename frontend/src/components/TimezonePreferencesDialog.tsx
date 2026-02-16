@@ -35,7 +35,7 @@ export function TimezonePreferencesDialog({ onClose }: Props) {
       const { data } = await api.patch<{ timezone?: string | null }>('/auth/me', payload);
       return data;
     },
-    onSuccess: async (data) => {
+    onSuccess: async () => {
       await refreshUser();
       showToast('Timezone preference saved');
       onClose();

@@ -28,7 +28,7 @@ describe('SearchableTimezoneSelect', () => {
         timezones={timezones}
       />
     );
-    const combobox = screen.getByRole('combobox');
+    const combobox = screen.getByRole('combobox') as HTMLInputElement;
     expect(combobox.value).toContain('America/New_York');
     expect(combobox.value).toMatch(/\(UTC[+-]\d{1,2}:\d{2}\)$/);
   });
