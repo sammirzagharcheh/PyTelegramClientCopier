@@ -112,7 +112,7 @@ export function WorkerLogs() {
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {items.map((log, i) => (
               <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td className="px-6 py-4 text-sm whitespace-nowrap" title={log.timestamp}>{formatLocalDateTime(log.timestamp)}</td>
+                <td className="px-6 py-4 text-sm whitespace-nowrap" title={log.timestamp}>{formatLocalDateTime(log.timestamp, user?.timezone ?? undefined)}</td>
                 <td className="px-6 py-4 text-sm">
                   {log.account_id != null ? String(log.account_id) : '—'}
                 </td>

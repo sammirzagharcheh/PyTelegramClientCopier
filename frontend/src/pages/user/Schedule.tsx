@@ -4,11 +4,13 @@ import { api } from '../../lib/api';
 import { PageHeader } from '../../components/PageHeader';
 import { useToast } from '../../components/Toast';
 import { MappingScheduleForm } from '../../components/MappingScheduleForm';
+import { useAuth } from '../../store/AuthContext';
 
 export function Schedule() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const { show: showToast } = useToast();
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const tz = user?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const { data: schedule, isLoading } = useQuery({
     queryKey: ['user-schedule'],

@@ -42,3 +42,8 @@ class UserMe(BaseModel):
     name: str | None
     role: str
     status: str
+    timezone: str | None = None
+
+
+class UpdateProfileRequest(BaseModel):
+    timezone: str | None = None

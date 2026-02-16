@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { formatLocalDateTime } from '../../lib/formatDateTime';
+import { useAuth } from '../../store/AuthContext';
 import { PageHeader } from '../../components/PageHeader';
 import { Pagination } from '../../components/Pagination';
 import { StatusBadge } from '../../components/StatusBadge';
@@ -24,6 +25,7 @@ type PaginatedLogs = { items: Log[]; total: number; page: number; page_size: num
 type PaginatedUsers = { items: User[]; total: number };
 
 export function AdminLogs() {
+  const { user } = useAuth();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [userId, setUserId] = useState<number | null>(null);
@@ -117,7 +119,7 @@ export function AdminLogs() {
                     <span className="font-mono">{log.dest_chat_id} / {log.dest_msg_id}</span>
                   )}
                 </td>
-                <td className="px-6 py-4 text-sm" title={log.timestamp}>{formatLocalDateTime(log.timestamp)}</td>
+                <td className="px-6 py-4 text-sm" title={log.timestamp}>{formatLocalDateTime(log.timestamp, user?.timezone ?? undefined)}</td>
                 <td className="px-6 py-4 text-sm">
                   <StatusBadge status={log.status ?? ''} variant="status" />
                 </td>

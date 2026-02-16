@@ -51,4 +51,5 @@ export type User = {
   name: string | null;
   role: string;
   status: string;
+  timezone?: string | null;
 };

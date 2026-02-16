@@ -2,6 +2,7 @@ import { Smartphone, X } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { formatLocalDateTime } from '../lib/formatDateTime';
+import { useAuth } from '../store/AuthContext';
 import { AccountTypeBadge } from './AccountTypeBadge';
 import { AccountStatusBadge } from './AccountStatusBadge';
 
@@ -22,6 +23,7 @@ type Props = {
 };
 
 export function ViewAccountDialog({ accountId, onClose }: Props) {
+  const { user } = useAuth();
   const { data: account, isLoading } = useQuery({
     queryKey: ['account', accountId],
     queryFn: async () => (await api.get<AccountDetail>(`/accounts/${accountId}`)).data,
@@ -77,7 +79,7 @@ export function ViewAccountDialog({ accountId, onClose }: Props) {
             <div>
               <dt className="text-sm text-gray-500 dark:text-gray-400">Created</dt>
               <dd className="text-sm" title={account.created_at ?? undefined}>
-                {formatLocalDateTime(account.created_at)}
+                {formatLocalDateTime(account.created_at, user?.timezone ?? undefined)}
               </dd>
             </div>
           </dl>

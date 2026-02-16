@@ -1,7 +1,14 @@
-export function formatLocalDateTime(value: string | null | undefined): string {
+export function formatLocalDateTime(value: string | null | undefined, timezone?: string): string {
   if (value == null || value === '') return '—';
   const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
+  if (Number.isNaN(d.getTime())) return value;
+  try {
+    return timezone
+      ? d.toLocaleString(undefined, { timeZone: timezone })
+      : d.toLocaleString();
+  } catch {
+    return d.toLocaleString();
+  }
 }
 
 /**

@@ -44,6 +44,24 @@ describe('formatLocalDateTime', () => {
     const invalid = 'invalid'
     expect(formatLocalDateTime(invalid)).toBe(invalid)
   })
+
+  it('formats with timezone when provided', () => {
+    const iso = '2025-02-13T12:34:56.789Z'
+    const result = formatLocalDateTime(iso, 'America/New_York')
+    expect(result).toMatch(/\d/) // contains digits
+    expect(result).not.toBe(iso)
+  })
+
+  it('returns em dash for null when timezone provided', () => {
+    expect(formatLocalDateTime(null, 'UTC')).toBe('—')
+  })
+
+  it('behaves like default when timezone is undefined', () => {
+    const iso = '2025-02-13T12:34:56.789Z'
+    const result = formatLocalDateTime(iso, undefined)
+    const parsed = new Date(iso)
+    expect(result).toBe(parsed.toLocaleString())
+  })
 })
 
 describe('utcTimeToLocal', () => {

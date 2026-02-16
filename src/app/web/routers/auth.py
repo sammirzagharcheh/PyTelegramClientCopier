@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -16,6 +17,7 @@ from app.web.schemas.auth import (
     LoginResponse,
     RefreshRequest,
     RefreshResponse,
+    UpdateProfileRequest,
     UserMe,
 )
 
@@ -122,6 +124,48 @@ async def logout(data: RefreshRequest, db: Db) -> dict:
 async def me(user: CurrentUser) -> dict:
     """Get current user profile."""
     return user
+
+
+@router.patch("/me", response_model=UserMe)
+async def update_me(
+    data: UpdateProfileRequest,
+    user: CurrentUser,
+    db: Db,
+) -> dict:
+    """Update current user profile (e.g. timezone preference)."""
+    if data.timezone is not None:
+        try:
+            ZoneInfo(data.timezone)
+        except ZoneInfoNotFoundError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid timezone",
+            )
+        await db.execute(
+            "UPDATE users SET timezone = ? WHERE id = ?",
+            (data.timezone, user["id"]),
+        )
+    else:
+        await db.execute(
+            "UPDATE users SET timezone = NULL WHERE id = ?",
+            (user["id"],),
+        )
+    await db.commit()
+    async with db.execute(
+        "SELECT id, email, name, role, status, timezone FROM users WHERE id = ? AND status = 'active'",
+        (user["id"],),
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="User not found")
+    return {
+        "id": row[0],
+        "email": row[1],
+        "name": row[2],
+        "role": row[3],
+        "status": row[4],
+        "timezone": row[5] if len(row) > 5 else None,
+    }
 
 
 @router.post("/change-password")
