@@ -52,3 +52,30 @@ def test_start_worker_with_stale_registry_succeeds(api_client, user_token):
     assert data["user_id"] == 1
     assert "id" in data
     assert data["pid"] == 12345
+    assert "started_at" in data
+    assert data["started_at"] is not None
+
+
+def test_list_workers_returns_started_at(api_client, user_token):
+    """GET /workers includes started_at for each running worker."""
+    fake_proc = MagicMock()
+    fake_proc.pid = 12345
+    fake_proc.poll.return_value = None
+
+    with patch("app.web.routers.workers.subprocess.Popen", return_value=fake_proc):
+        api_client.post(
+            "/api/workers/start",
+            params={"account_id": 1},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+    r = api_client.get(
+        "/api/workers",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert r.status_code == 200
+    workers_list = r.json()
+    assert len(workers_list) >= 1
+    w = next(ww for ww in workers_list if ww.get("account_id") == 1 and ww.get("running"))
+    assert "started_at" in w
+    assert w["started_at"] is not None

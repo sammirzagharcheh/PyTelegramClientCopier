@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timezone
 import signal
 import subprocess
 import sys
@@ -134,6 +135,7 @@ async def _spawn_worker_for_account(
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
     )
     pid = proc.pid
+    started_at = datetime.now(timezone.utc).isoformat()
     _workers[worker_id] = {
         "id": worker_id,
         "user_id": user_id,
@@ -141,6 +143,7 @@ async def _spawn_worker_for_account(
         "session_path": session_path,
         "process": proc,
         "pid": pid,
+        "started_at": started_at,
     }
     await db.execute(
         "INSERT INTO worker_registry (worker_id, user_id, account_id, session_path, pid) VALUES (?, ?, ?, ?, ?)",
@@ -217,6 +220,7 @@ async def list_workers(user: CurrentUser, db: Db) -> list[dict]:
             "session_path": w["session_path"],
             "pid": w.get("pid") if _is_process_alive(w) else None,
             "running": _is_process_alive(w),
+            "started_at": w.get("started_at"),
         }
         for w in items
     ]
@@ -293,6 +297,7 @@ async def start_worker(
         "account_id": account_id,
         "session_path": session_path,
         "pid": w["pid"],
+        "started_at": w.get("started_at"),
     }
 
 
@@ -320,17 +325,23 @@ async def restore_workers_from_db(db: aiosqlite.Connection) -> None:
     (e.g. after graceful shutdown), spawn new workers. Only accounts that had workers get them back."""
     global _worker_counter
     async with db.execute(
-        "SELECT worker_id, user_id, account_id, session_path, pid FROM worker_registry"
+        "SELECT worker_id, user_id, account_id, session_path, pid, created_at FROM worker_registry"
     ) as cur:
         rows = await cur.fetchall()
     max_num = 0
-    for worker_id, user_id, account_id, session_path, pid in rows:
+    for row in rows:
+        worker_id, user_id, account_id, session_path, pid = row[0], row[1], row[2], row[3], row[4]
+        created_at = row[5]
         try:
             os.kill(pid, 0)
         except OSError:
             await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
             await _spawn_worker_for_account(db, account_id, user_id, session_path)
             continue
+        # Normalize SQLite datetime to ISO UTC for frontend
+        started_at = created_at
+        if created_at and "T" not in created_at and "Z" not in created_at and "+" not in created_at:
+            started_at = created_at.replace(" ", "T") + "Z"
         _workers[worker_id] = {
             "id": worker_id,
             "user_id": user_id,
@@ -338,6 +349,7 @@ async def restore_workers_from_db(db: aiosqlite.Connection) -> None:
             "session_path": session_path,
             "process": None,
             "pid": pid,
+            "started_at": started_at,
         }
         if worker_id.startswith("w") and worker_id[1:].isdigit():
             max_num = max(max_num, int(worker_id[1:]))

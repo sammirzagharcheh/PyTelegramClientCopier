@@ -77,5 +77,7 @@ async def test_restore_spawns_workers_for_dead_registry_entries(db_with_active_a
     assert len(workers._workers) == 1
     w = list(workers._workers.values())[0]
     assert w["account_id"] == 1
+    assert "started_at" in w
+    assert w["started_at"] is not None
 
     await workers.terminate_all_workers(db)

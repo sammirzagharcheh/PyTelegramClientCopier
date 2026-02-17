@@ -1,6 +1,7 @@
 import { Activity, Zap } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { formatUptime } from '../../lib/formatUptime';
 import { PageHeader } from '../../components/PageHeader';
 
 type Worker = {
@@ -10,6 +11,7 @@ type Worker = {
   session_path: string;
   pid: number | null;
   running: boolean;
+  started_at?: string | null;
 };
 
 export function UserWorkers() {
@@ -17,6 +19,7 @@ export function UserWorkers() {
   const { data: workers, isLoading } = useQuery({
     queryKey: ['workers'],
     queryFn: async () => (await api.get<Worker[]>('/workers')).data,
+    refetchInterval: 60_000,
   });
   const { data: accountsData } = useQuery({
     queryKey: ['accounts', 'list'],
@@ -67,7 +70,11 @@ export function UserWorkers() {
                   <span className="text-sm truncate max-w-[200px]">{w.session_path}</span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  {w.running && <span className="text-green-600 text-sm font-medium">Running</span>}
+                  {w.running && (
+                    <span className="text-green-600 text-sm font-medium">
+                      Running · {formatUptime(w.started_at)}
+                    </span>
+                  )}
                   <button
                     onClick={() => stopMutation.mutate(w.id)}
                     disabled={!w.running}
