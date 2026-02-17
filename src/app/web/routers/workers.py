@@ -147,6 +147,7 @@ async def _spawn_worker_for_account(
         (worker_id, user_id, account_id, session_path, pid),
     )
     await db.commit()
+    logger.info("Spawned worker %s for account_id=%s pid=%s", worker_id, account_id, pid)
     return True
 
 

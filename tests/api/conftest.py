@@ -45,6 +45,11 @@ def api_client(tmp_path):
                 "INSERT INTO channel_mappings (user_id, source_chat_id, dest_chat_id, enabled) VALUES (?, ?, ?, ?)",
                 (3, 30, 40, 1),
             )
+            session_path = str(tmp_path / "user1.session")
+            await db.execute(
+                "INSERT INTO telegram_accounts (user_id, type, session_path, status) VALUES (?, ?, ?, ?)",
+                (1, "user", session_path, "active"),
+            )
             await db.commit()
             await db.close()
 

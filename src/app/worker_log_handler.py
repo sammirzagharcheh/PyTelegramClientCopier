@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from datetime import datetime, timezone
 from typing import Any
 
@@ -45,5 +46,8 @@ class MongoWorkerLogHandler(logging.Handler):
             }
             db.worker_logs.insert_one(doc)
             client.close()
-        except Exception:
-            pass  # Graceful no-op if MongoDB unavailable
+        except Exception as e:
+            print(
+                f"[MongoWorkerLogHandler] Failed to write log to MongoDB: {e}",
+                file=sys.stderr,
+            )

@@ -61,28 +61,37 @@ async def run_worker(
     except Exception:
         pass  # non-fatal
 
-    await init_sqlite()
-    mongo_db = get_mongo_db()
-    db = await get_sqlite()
-    mappings = list(
-        await list_enabled_mappings(db, user_id, telegram_account_id=telegram_account_id)
-    )
+    try:
+        await init_sqlite()
+        mongo_db = get_mongo_db()
+        db = await get_sqlite()
+        mappings = list(
+            await list_enabled_mappings(db, user_id, telegram_account_id=telegram_account_id)
+        )
 
-    source_ids = sorted({m.source_chat_id for m in mappings})
-    logger.info(
-        "Worker starting: user_id=%s account_id=%s mappings=%d source_chat_ids=%s",
-        user_id, telegram_account_id, len(mappings), source_ids,
-    )
-    if not mappings:
-        logger.warning("No mappings loaded - worker will not forward any messages")
+        source_ids = sorted({m.source_chat_id for m in mappings})
+        logger.info(
+            "Worker starting: user_id=%s account_id=%s mappings=%d source_chat_ids=%s",
+            user_id, telegram_account_id, len(mappings), source_ids,
+        )
+        if not mappings:
+            logger.warning("No mappings loaded - worker will not forward any messages")
 
-    worker_session = _worker_session_path(session_path)
-    logger.debug("Using worker session copy: %s", worker_session)
-    client = await start_user_client(worker_session)
-    handler = build_message_handler(user_id=user_id, mappings=mappings, db=db, mongo_db=mongo_db)
-    attach_handler(client, handler)
+        worker_session = _worker_session_path(session_path)
+        logger.debug("Using worker session copy: %s", worker_session)
+        client = await start_user_client(worker_session)
+        logger.info("Connected to Telegram: user_id=%s account_id=%s", user_id, telegram_account_id)
+        handler = build_message_handler(user_id=user_id, mappings=mappings, db=db, mongo_db=mongo_db)
+        attach_handler(client, handler)
 
-    await client.run_until_disconnected()
+        await client.run_until_disconnected()
+        logger.info("Worker disconnected: user_id=%s account_id=%s (Telegram client closed)", user_id, telegram_account_id)
+    except Exception as e:
+        logger.exception(
+            "Worker exited with uncaught exception: user_id=%s account_id=%s: %s",
+            user_id, telegram_account_id, e,
+        )
+        raise
 
 
 def run_worker_sync(
