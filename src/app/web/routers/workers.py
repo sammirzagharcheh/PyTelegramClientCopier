@@ -66,6 +66,25 @@ async def _prune_dead_workers(db: aiosqlite.Connection) -> None:
         await db.commit()
 
 
+async def _prune_orphaned_registry_rows(db: aiosqlite.Connection) -> None:
+    """Remove worker_registry rows whose PIDs are no longer running (e.g. worker crashed, API
+    restarted). This prevents 'Worker already running' when the process is actually dead."""
+    async with db.execute(
+        "SELECT worker_id, pid FROM worker_registry"
+    ) as cur:
+        rows = await cur.fetchall()
+    deleted = 0
+    for worker_id, pid in rows:
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
+            deleted += 1
+    if deleted:
+        await db.commit()
+        logger.info("Pruned %d orphaned worker_registry row(s)", deleted)
+
+
 def _next_worker_id() -> str:
     global _worker_counter
     _worker_counter += 1
@@ -234,6 +253,7 @@ async def start_worker(
             detail="Account has no session path (bot accounts cannot run workers)",
         )
     await _prune_dead_workers(db)
+    await _prune_orphaned_registry_rows(db)
     session_path = row[2]
     # Check in-memory registry
     if _account_has_running_worker(account_id):
@@ -241,20 +261,24 @@ async def start_worker(
             status_code=status.HTTP_409_CONFLICT,
             detail="Worker already running for this account",
         )
-    # Check persistent registry (orphans from prior API run)
+    # Check persistent registry (orphans from prior API run). Prune dead entries.
     async with db.execute(
-        "SELECT pid FROM worker_registry WHERE account_id = ?", (account_id,)
+        "SELECT worker_id, pid FROM worker_registry WHERE account_id = ?", (account_id,)
     ) as cur:
         reg_rows = await cur.fetchall()
-    for (reg_pid,) in reg_rows:
+    for worker_id, reg_pid in reg_rows:
         try:
             os.kill(reg_pid, 0)
         except OSError:
+            # Process is dead; remove stale row so we can start a new worker
+            await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
             continue
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Worker already running for this account",
         )
+    if reg_rows:
+        await db.commit()
     spawned = await _spawn_worker_for_account(db, account_id, target_user, session_path)
     if not spawned:
         raise HTTPException(
