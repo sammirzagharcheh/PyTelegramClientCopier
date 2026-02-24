@@ -14,6 +14,9 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
+  }
   return config;
 });
 
@@ -52,4 +55,48 @@ export type User = {
   role: string;
   status: string;
   timezone?: string | null;
+};
+
+// Transforms
+export type TransformRuleType = 'text' | 'regex' | 'emoji' | 'media' | 'template';
+
+export type Transform = {
+  id: number;
+  mapping_id: number;
+  rule_type: TransformRuleType;
+  find_text: string | null;
+  replace_text: string | null;
+  regex_pattern: string | null;
+  regex_flags: string | null;
+  replacement_media_asset_id: number | null;
+  apply_to_media_types: string | null;
+  enabled: boolean;
+  priority: number;
+  created_at: string | null;
+};
+
+export type TransformCreate = {
+  rule_type: TransformRuleType;
+  find_text?: string | null;
+  replace_text?: string | null;
+  regex_pattern?: string | null;
+  regex_flags?: string | null;
+  replacement_media_asset_id?: number | null;
+  apply_to_media_types?: string | null;
+  enabled?: boolean;
+  priority?: number;
+};
+
+export type TransformUpdate = Partial<Omit<TransformCreate, 'rule_type'>> & { rule_type?: TransformRuleType };
+
+// Media assets
+export type MediaAsset = {
+  id: number;
+  user_id: number;
+  name: string;
+  file_path: string;
+  media_kind: string;
+  mime_type: string | null;
+  size_bytes: number;
+  created_at: string;
 };
