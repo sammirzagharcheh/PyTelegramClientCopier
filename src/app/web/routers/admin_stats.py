@@ -154,11 +154,12 @@ async def get_admin_dashboard_stats(user: AdminUser, db: Db) -> dict:
             entry = mapping_map.get((uid, src_id, dest_id))
             if entry:
                 mapping_id, mapping_name = entry
-                bar_label = f"{uid}-{mapping_id}"
+                bar_label = f"{mapping_name} (User {uid})" if uid is not None else mapping_name
                 top_mappings.append({"name": bar_label, "mapping_name": mapping_name, "count": doc["count"]})
             else:
                 fallback = f"{src_id} → {dest_id}"
-                top_mappings.append({"name": f"{uid}-?", "mapping_name": fallback, "count": doc["count"]})
+                bar_label = f"{fallback} (User {uid})" if uid is not None else fallback
+                top_mappings.append({"name": bar_label, "mapping_name": fallback, "count": doc["count"]})
 
         # worker_log_levels (last 7d)
         match_worker = {"timestamp": {"$gte": start_7d_ts, "$lte": today_end}}

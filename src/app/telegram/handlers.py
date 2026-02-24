@@ -141,11 +141,12 @@ def _apply_transforms(
                     output,
                     flags=regex_flags_from_string(rule.regex_flags),
                 )
-            except re.error:
-                logger.warning(
-                    "Invalid regex transform skipped: rule_id=%s pattern=%r",
+            except re.error as exc:
+                logger.error(
+                    "Invalid regex transform encountered: rule_id=%s pattern=%r",
                     rule.id,
                     rule.regex_pattern,
+                    exc_info=exc,
                 )
             continue
         if rule.rule_type == "template":
@@ -343,7 +344,14 @@ def build_message_handler(
                                 )
                             else:
                                 use_file = False
-                        except TypeError:
+                        except TypeError as e:
+                            if replacement_media_path is not None:
+                                logger.warning(
+                                    "Failed to send media for mapping_id=%s path=%r due to TypeError (fallback to text): %s",
+                                    mapping.id,
+                                    replacement_media_path,
+                                    e,
+                                )
                             use_file = False
                     if not use_file:
                         sent = await event.client.send_message(

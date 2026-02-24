@@ -158,7 +158,7 @@ MIGRATIONS = [
         FOREIGN KEY(user_id) REFERENCES users(id)
     );
     CREATE INDEX IF NOT EXISTS ix_media_assets_user_id ON media_assets(user_id);
-    ALTER TABLE mapping_transform_rules ADD COLUMN replacement_media_asset_id INTEGER REFERENCES media_assets(id);
+    ALTER TABLE mapping_transform_rules ADD COLUMN replacement_media_asset_id INTEGER REFERENCES media_assets(id) ON DELETE RESTRICT;
     ALTER TABLE mapping_transform_rules ADD COLUMN apply_to_media_types TEXT;
     """,
 ]

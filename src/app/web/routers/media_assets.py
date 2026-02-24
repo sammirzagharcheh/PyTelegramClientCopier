@@ -16,6 +16,7 @@ from app.web.schemas.media_assets import MediaAssetResponse
 router = APIRouter(prefix="/media-assets", tags=["media-assets"])
 
 _ALLOWED_MEDIA_KINDS = {"photo", "video", "voice", "other"}
+_MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
 
 
 def _project_root() -> Path:
@@ -107,6 +108,11 @@ async def upload_media_asset(
     data = await file.read()
     if not data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty")
+    if len(data) > _MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File exceeds maximum allowed size of {_MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)} MB",
+        )
 
     kind = _normalize_media_kind(media_kind, file.content_type, raw_filename)
     now = datetime.now(timezone.utc).isoformat()

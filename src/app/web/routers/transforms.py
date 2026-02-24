@@ -49,7 +49,7 @@ def _normalize_apply_to_media_types(value: str | None) -> str | None:
     if any(p not in _ALLOWED_MEDIA_TYPES for p in parts):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="apply_to_media_types may only contain text, photo, video, voice, other, any",
+            detail="apply_to_media_types may only contain text, photo, video, voice, other, any, all, *",
         )
     # deterministic order and uniqueness
     deduped: list[str] = []
