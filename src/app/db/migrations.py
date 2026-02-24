@@ -184,8 +184,7 @@ MIGRATIONS = [
         SELECT id, mapping_id, rule_type, find_text, replace_text, regex_pattern,
                regex_flags, enabled, priority, created_at,
                replacement_media_asset_id, apply_to_media_types
-        FROM mapping_transform_rules
-        WHERE EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'mapping_transform_rules');
+        FROM mapping_transform_rules;
     DROP TABLE IF EXISTS mapping_transform_rules;
     ALTER TABLE mapping_transform_rules_v15 RENAME TO mapping_transform_rules;
     CREATE INDEX IF NOT EXISTS ix_mapping_transform_rules_mapping_id
@@ -203,8 +202,7 @@ MIGRATIONS = [
     );
     INSERT INTO media_assets_v15
         SELECT id, user_id, name, file_path, media_kind, mime_type, size_bytes, created_at
-        FROM media_assets
-        WHERE EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'media_assets');
+        FROM media_assets;
     DROP TABLE IF EXISTS media_assets;
     ALTER TABLE media_assets_v15 RENAME TO media_assets;
     CREATE INDEX IF NOT EXISTS ix_media_assets_user_id ON media_assets(user_id);
