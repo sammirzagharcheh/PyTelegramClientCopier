@@ -87,6 +87,69 @@ def test_invalid_regex_transform_is_skipped():
     assert out == "sample text"
 
 
+def test_apply_template_transform_with_context():
+    rules = [
+        MappingTransform(
+            id=1,
+            rule_type="template",
+            replace_text="[{{source_chat_id}}] {{text}}",
+            enabled=True,
+            priority=10,
+        )
+    ]
+    out = _apply_transforms(
+        "hello world",
+        rules,
+        context={"source_chat_id": 12345},
+        media_type="text",
+    )
+    assert out == "[12345] hello world"
+
+
+def test_apply_template_transform_after_text_replace():
+    rules = [
+        MappingTransform(
+            id=1,
+            rule_type="text",
+            find_text="Sam channel",
+            replace_text="Tom channel",
+            enabled=True,
+            priority=10,
+        ),
+        MappingTransform(
+            id=2,
+            rule_type="template",
+            replace_text="{{text}} :: {{media_type}}",
+            enabled=True,
+            priority=20,
+        ),
+    ]
+    out = _apply_transforms(
+        "Welcome to Sam channel",
+        rules,
+        context={"media_type": "text"},
+        media_type="text",
+    )
+    assert out == "Welcome to Tom channel :: text"
+
+
+def test_template_transform_media_type_scope():
+    rules = [
+        MappingTransform(
+            id=1,
+            rule_type="template",
+            replace_text="caption={{text}}",
+            apply_to_media_types="photo",
+            enabled=True,
+            priority=10,
+        )
+    ]
+    out_text = _apply_transforms("plain", rules, media_type="text")
+    out_photo = _apply_transforms("plain", rules, media_type="photo")
+    assert out_text == "plain"
+    assert out_photo == "caption=plain"
+
+
 class _DummyMessage:
     def __init__(self, *, media=None, photo=False, video=False, voice=False):
         self.media = media

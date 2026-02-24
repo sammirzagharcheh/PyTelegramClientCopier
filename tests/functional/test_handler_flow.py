@@ -430,3 +430,56 @@ async def test_handler_replaces_media_with_uploaded_asset(tmp_path):
     assert client.sent_files[0][1] == str(replacement_asset)
     assert client.sent_files[0][2] == "caption"
 
+
+@pytest.mark.asyncio
+async def test_handler_applies_template_transform(tmp_path):
+    db_path = tmp_path / "test.db"
+    from app.config import settings
+
+    settings.sqlite_path = str(db_path)
+    await init_sqlite()
+    db = await get_sqlite()
+
+    mapping = ChannelMapping(
+        id=1,
+        user_id=1,
+        source_chat_id=10,
+        dest_chat_id=20,
+        enabled=True,
+        filters=[],
+        source_chat_title="Source A",
+        dest_chat_title="Dest B",
+        transforms=[
+            MappingTransform(
+                id=1,
+                rule_type="text",
+                find_text="Sam",
+                replace_text="Tom",
+                enabled=True,
+                priority=10,
+            ),
+            MappingTransform(
+                id=2,
+                rule_type="template",
+                replace_text="[{{source_chat_title}}] {{text}} (#{{message_id}})",
+                apply_to_media_types="text",
+                enabled=True,
+                priority=20,
+            ),
+        ],
+    )
+    mongo = DummyMongo()
+    client = DummyClient()
+    handler = build_message_handler(user_id=1, mappings=[mapping], db=db, mongo_db=mongo)
+
+    event = DummyEvent(
+        chat_id=10,
+        message=DummyMessage(42, "hello Sam"),
+        client=client,
+        chat=DummyChat("Channel A"),
+    )
+    await handler(event)
+
+    assert len(client.sent_messages) == 1
+    assert client.sent_messages[0][1] == "[Channel A] hello Tom (#42)"
+

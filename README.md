@@ -56,9 +56,11 @@ Mappings can also apply transform rules before sending to destination channels:
 - **Regex replacement**: replace text using regex patterns
 - **Emoji replacement**: replace icons/emoji (e.g. `🔥` -> `⭐`)
 - **Media replacement**: upload reusable media assets and replace incoming media (photo/video/voice)
+- **Template rendering**: build final message/caption using placeholders, e.g.
+  `"[{{source_chat_title}}] {{text}} (#{{message_id}})"`
 
 Transform rules are applied in priority order for each matched mapping, then the transformed
-message/caption is delivered. Media replacement rules can be scoped by media type.
+message/caption is delivered. Media/template rules can be scoped by message/media type.
 
 ## VPS Deployment (Ubuntu)
 

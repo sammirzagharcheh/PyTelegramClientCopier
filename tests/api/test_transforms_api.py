@@ -86,6 +86,50 @@ def test_create_emoji_requires_find_text(api_client, user_token):
     assert "find_text is required" in r.json()["detail"]
 
 
+def test_create_template_transform_201(api_client, user_token):
+    r = api_client.post(
+        "/api/mappings/1/transforms",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "rule_type": "template",
+            "replace_text": "[{{source_chat_id}}] {{text}}",
+            "apply_to_media_types": "text",
+            "priority": 50,
+        },
+    )
+    assert r.status_code == 201
+    data = r.json()
+    assert data["rule_type"] == "template"
+    assert data["replace_text"] == "[{{source_chat_id}}] {{text}}"
+    assert data["apply_to_media_types"] == "text"
+
+
+def test_create_template_transform_requires_replace_text(api_client, user_token):
+    r = api_client.post(
+        "/api/mappings/1/transforms",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "rule_type": "template",
+        },
+    )
+    assert r.status_code == 400
+    assert "replace_text is required for template rules" in r.json()["detail"]
+
+
+def test_create_template_transform_rejects_media_asset_field(api_client, user_token):
+    r = api_client.post(
+        "/api/mappings/1/transforms",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "rule_type": "template",
+            "replace_text": "{{text}}",
+            "replacement_media_asset_id": 1,
+        },
+    )
+    assert r.status_code == 400
+    assert "only valid for media rules" in r.json()["detail"]
+
+
 def test_update_transform_200(api_client, user_token):
     create = api_client.post(
         "/api/mappings/1/transforms",

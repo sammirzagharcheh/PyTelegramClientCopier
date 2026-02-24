@@ -1,4 +1,4 @@
-"""Mapping transforms API routes (text/regex/emoji/media replacements)."""
+"""Mapping transforms API routes (text/regex/emoji/media/template replacements)."""
 
 from __future__ import annotations
 
@@ -16,9 +16,9 @@ from app.web.schemas.mappings import (
 
 router = APIRouter(prefix="/mappings", tags=["transforms"])
 
-_ALLOWED_RULE_TYPES = {"text", "regex", "emoji", "media"}
+_ALLOWED_RULE_TYPES = {"text", "regex", "emoji", "media", "template"}
 _ALLOWED_REGEX_FLAGS = {"i", "m", "s"}
-_ALLOWED_MEDIA_TYPES = {"photo", "video", "voice", "other", "any", "all", "*"}
+_ALLOWED_MEDIA_TYPES = {"text", "photo", "video", "voice", "other", "any", "all", "*"}
 
 
 def _normalize_rule_type(value: str) -> str:
@@ -48,11 +48,11 @@ def _normalize_apply_to_media_types(value: str | None) -> str | None:
     if any(p not in _ALLOWED_MEDIA_TYPES for p in parts):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="apply_to_media_types may only contain photo, video, voice, other, any",
+            detail="apply_to_media_types may only contain text, photo, video, voice, other, any",
         )
     # deterministic order and uniqueness
     deduped: list[str] = []
-    for p in ["photo", "video", "voice", "other", "any", "all", "*"]:
+    for p in ["text", "photo", "video", "voice", "other", "any", "all", "*"]:
         if p in parts and p not in deduped:
             deduped.append(p)
     return ",".join(deduped)
@@ -75,6 +75,7 @@ def _validate_transform_payload(
     *,
     rule_type: str,
     find_text: str | None,
+    replace_text: str | None,
     regex_pattern: str | None,
     regex_flags: str | None,
     replacement_media_asset_id: int | None,
@@ -83,7 +84,7 @@ def _validate_transform_payload(
     if rule_type not in _ALLOWED_RULE_TYPES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="rule_type must be one of: text, regex, emoji, media",
+            detail="rule_type must be one of: text, regex, emoji, media, template",
         )
     if rule_type in {"text", "emoji"}:
         if find_text is None or find_text == "":
@@ -91,7 +92,12 @@ def _validate_transform_payload(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="find_text is required for text/emoji rules",
             )
-        return find_text, None, None, None, None
+        if replacement_media_asset_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="replacement_media_asset_id is only valid for media rules",
+            )
+        return find_text, None, None, None, apply_to_media_types
 
     if rule_type == "regex":
         if not regex_pattern:
@@ -106,7 +112,25 @@ def _validate_transform_payload(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid regex pattern: {e}",
             ) from e
-        return None, regex_pattern, regex_flags, None, None
+        if replacement_media_asset_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="replacement_media_asset_id is only valid for media rules",
+            )
+        return None, regex_pattern, regex_flags, None, apply_to_media_types
+
+    if rule_type == "template":
+        if replace_text is None or replace_text == "":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="replace_text is required for template rules",
+            )
+        if replacement_media_asset_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="replacement_media_asset_id is only valid for media rules",
+            )
+        return None, None, None, None, apply_to_media_types
 
     # media replacement rule
     if replacement_media_asset_id is None:
@@ -172,7 +196,7 @@ def _row_to_response(row: tuple) -> dict:
 
 @router.get("/{mapping_id}/transforms", response_model=list[MappingTransformResponse])
 async def list_transforms(mapping_id: int, db: Db, user: CurrentUser) -> list[dict]:
-    """List text/regex/emoji/media transformation rules for a mapping."""
+    """List text/regex/emoji/media/template transformation rules for a mapping."""
     await _get_mapping_scope(db, user, mapping_id)
     async with db.execute(
         "SELECT id, mapping_id, rule_type, find_text, replace_text, regex_pattern, regex_flags, "
@@ -210,6 +234,7 @@ async def create_transform(
     ) = _validate_transform_payload(
         rule_type=rule_type,
         find_text=data.find_text,
+        replace_text=data.replace_text,
         regex_pattern=data.regex_pattern,
         regex_flags=regex_flags,
         replacement_media_asset_id=data.replacement_media_asset_id,
@@ -270,7 +295,7 @@ async def update_transform(
     mapping_user_id, mapping_account_id = await _get_mapping_scope(db, user, mapping_id)
     async with db.execute(
         "SELECT id, mapping_id, rule_type, find_text, replace_text, regex_pattern, regex_flags, "
-        "enabled, priority, created_at "
+        "replacement_media_asset_id, apply_to_media_types, enabled, priority, created_at "
         "FROM mapping_transform_rules WHERE id = ? AND mapping_id = ?",
         (transform_id, mapping_id),
     ) as cur:
@@ -305,6 +330,7 @@ async def update_transform(
         ) = _validate_transform_payload(
             rule_type=merged["rule_type"],
             find_text=merged["find_text"],
+            replace_text=merged["replace_text"],
             regex_pattern=merged["regex_pattern"],
             regex_flags=normalized_flags,
             replacement_media_asset_id=merged["replacement_media_asset_id"],
