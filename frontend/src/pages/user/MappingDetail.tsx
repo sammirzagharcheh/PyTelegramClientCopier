@@ -107,8 +107,10 @@ export function MappingDetail() {
   const { data: mediaAssets } = useQuery({
     queryKey: ['media-assets', mapping?.user_id],
     queryFn: async () => {
+      // Always filter by mapping owner: transforms require assets to belong to the mapping owner.
+      // Without this, admins get all users' assets and the backend rejects non-owner assets with 400.
       const url =
-        user?.role === 'admin' && mapping?.user_id && mapping.user_id !== user.id
+        mapping?.user_id != null
           ? `/media-assets?user_id=${mapping.user_id}`
           : '/media-assets';
       return (await api.get(url)).data;
