@@ -6,6 +6,7 @@ import {
   Database,
   GitBranch,
   Globe,
+  Image,
   KeyRound,
   LayoutDashboard,
   LogOut,
@@ -32,6 +33,7 @@ const navItems: NavItem[] = [
   { to: '/logs', label: 'Message Logs', icon: MessageSquare },
   { to: '/message-index', label: 'Message Index', icon: Database },
   { to: '/schedule', label: 'Schedule', icon: Clock },
+  { to: '/media-assets', label: 'Media Assets', icon: Image },
 ];
 
 const adminNavItems: NavItem[] = [
@@ -43,6 +45,7 @@ const adminNavItems: NavItem[] = [
   { to: '/admin/message-index', label: 'Message Index', icon: Database },
   { to: '/admin/workers', label: 'Workers', icon: Activity },
   { to: '/admin/worker-logs', label: 'Worker Logs', icon: ScrollText },
+  { to: '/admin/media-assets', label: 'Media Assets', icon: Image },
 ];
 
 export function MainLayout() {

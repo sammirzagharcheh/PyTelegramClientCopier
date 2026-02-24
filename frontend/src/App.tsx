@@ -19,6 +19,7 @@ import { Workers } from './pages/admin/Workers';
 import { Settings } from './pages/admin/Settings';
 import { UserWorkers } from './pages/user/Workers';
 import { Schedule } from './pages/user/Schedule';
+import { MediaAssets } from './pages/user/MediaAssets';
 import { WorkerLogs } from './pages/user/WorkerLogs';
 import { AdminWorkerLogs } from './pages/admin/AdminWorkerLogs';
 import { ToastProvider } from './components/Toast';
@@ -58,6 +59,7 @@ function AppRoutes() {
         <Route path="logs" element={<Logs />} />
         <Route path="message-index" element={<MessageIndex />} />
         <Route path="schedule" element={<Schedule />} />
+        <Route path="media-assets" element={<MediaAssets />} />
       </Route>
       <Route path="/admin" element={<ProtectedRoute adminOnly><MainLayout /></ProtectedRoute>}>
         <Route index element={<AdminDashboard />} />
@@ -68,6 +70,7 @@ function AppRoutes() {
         <Route path="message-index" element={<AdminMessageIndex />} />
         <Route path="workers" element={<Workers />} />
         <Route path="worker-logs" element={<AdminWorkerLogs />} />
+        <Route path="media-assets" element={<MediaAssets />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

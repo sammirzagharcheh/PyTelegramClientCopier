@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -63,35 +62,6 @@ async def begin_login(data: BeginLoginRequest, user: CurrentUser, db: Db) -> dic
     try:
         sent = await client.send_code_request(phone)
         phone_code_hash = getattr(sent, "phone_code_hash", None)
-
-        # #region agent log
-        try:
-            from pathlib import Path as _DbgPath
-            import time as _dbg_time
-
-            dbg_entry = {
-                "id": f"log_begin_{_dbg_time.time()}",
-                "timestamp": int(_dbg_time.time() * 1000),
-                "location": "accounts_login.py:begin_login",
-                "message": "begin_login_tmp",
-                "data": {
-                    "user_id": user["id"],
-                    "tmp_session_name": tmp_session_name,
-                    "cwd": str(_DbgPath(".").resolve()),
-                    "tmp_exists": _DbgPath(f"{tmp_session_name}.session").exists(),
-                },
-                "runId": "pre-fix",
-                "hypothesisId": "H3",
-            }
-            dbg_log_path = _DbgPath(
-                r"d:\Ongoing Projects\TelegramClientCopier\.cursor\debug.log"
-            )
-            dbg_log_path.parent.mkdir(parents=True, exist_ok=True)
-            with dbg_log_path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(dbg_entry) + "\n")
-        except Exception:
-            pass
-        # #endregion agent log
 
     except Exception as e:  # Telethon error
         await client.disconnect()
@@ -184,30 +154,6 @@ async def complete_login(data: CompleteLoginRequest, user: CurrentUser, db: Db) 
                 detail="Invalid code.",
             )
         except Exception as e:
-            # #region agent log
-            try:
-                log_entry = {
-                    "id": f"log_complete_{datetime.now(timezone.utc).timestamp()}",
-                    "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
-                    "location": "accounts_login.py:complete_login",
-                    "message": "telethon_sign_in_error",
-                    "data": {
-                        "login_session_id": data.login_session_id,
-                        "error_type": type(e).__name__,
-                        "error_str": str(e),
-                    },
-                    "runId": "pre-fix",
-                    "hypothesisId": "telethon-sign-in",
-                }
-                log_path = Path(
-                    r"d:\Ongoing Projects\TelegramClientCopier\.cursor\debug.log"
-                )
-                log_path.parent.mkdir(parents=True, exist_ok=True)
-                with log_path.open("a", encoding="utf-8") as f:
-                    f.write(json.dumps(log_entry) + "\n")
-            except Exception:
-                pass
-            # #endregion agent log
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Login failed: {e}",

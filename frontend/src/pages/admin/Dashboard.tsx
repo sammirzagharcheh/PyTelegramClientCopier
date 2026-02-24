@@ -20,7 +20,7 @@ type AdminDashboardStats = {
   messages_prev_7d: number;
   messages_by_day: { date: string; count: number }[];
   status_breakdown: { status: string; count: number }[];
-  top_mappings: { name: string; count: number }[];
+  top_mappings: { name: string; mapping_name?: string; count: number }[];
   worker_log_levels: { level: string; count: number }[];
 };
 
@@ -145,6 +145,7 @@ export function AdminDashboard() {
             isLoading={isLoading}
             dataKey="count"
             color="#10b981"
+            tooltipLabelKey="mapping_name"
           />
         </Suspense>
       </div>

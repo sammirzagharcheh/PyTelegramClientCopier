@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable
 
 import aiosqlite
@@ -12,6 +12,22 @@ class MappingFilter:
     exclude_text: str | None
     media_types: str | None
     regex_pattern: str | None
+
+
+@dataclass(slots=True)
+class MappingTransform:
+    id: int
+    rule_type: str
+    find_text: str | None = None
+    replace_text: str | None = None
+    regex_pattern: str | None = None
+    regex_flags: str | None = None
+    replacement_media_asset_id: int | None = None
+    apply_to_media_types: str | None = None
+    replacement_media_asset_path: str | None = None
+    replacement_media_kind: str | None = None
+    enabled: bool = True
+    priority: int = 100
 
 
 WEEKDAY_COLS = [
@@ -76,6 +92,7 @@ class ChannelMapping:
     filters: list[MappingFilter]
     source_chat_title: str | None
     dest_chat_title: str | None
+    transforms: list[MappingTransform] = field(default_factory=list)
     schedule: Schedule | None = None
 
 
@@ -87,7 +104,6 @@ async def list_enabled_mappings(
     """List enabled mappings for a user. If telegram_account_id is given, include only mappings
     that have no account or that account (telegram_account_id IS NULL OR telegram_account_id = ?).
     """
-    mappings: list[ChannelMapping] = []
     if telegram_account_id is not None:
         q = (
             "SELECT id, user_id, source_chat_id, dest_chat_id, enabled, source_chat_title, dest_chat_title "
@@ -103,25 +119,31 @@ async def list_enabled_mappings(
         params = (user_id,)
     async with db.execute(q, params) as cursor:
         rows = await cursor.fetchall()
-    user_schedule = await _load_user_schedule(db, user_id)
 
-    for mapping_id, u_id, source_id, dest_id, enabled, src_title, dest_title in rows:
-        filters = await _list_filters(db, user_id, mapping_id)
-        schedule = await _load_mapping_schedule(db, mapping_id, user_id, user_schedule)
-        mappings.append(
-            ChannelMapping(
-                id=mapping_id,
-                user_id=u_id,
-                source_chat_id=source_id,
-                dest_chat_id=dest_id,
-                enabled=bool(enabled),
-                filters=filters,
-                source_chat_title=src_title or None,
-                dest_chat_title=dest_title or None,
-                schedule=schedule,
-            )
+    if not rows:
+        return []
+
+    mapping_ids = [row[0] for row in rows]
+    user_schedule = await _load_user_schedule(db, user_id)
+    filters_by_mapping = await _list_filters_bulk(db, user_id, mapping_ids)
+    transforms_by_mapping = await _list_transforms_bulk(db, user_id, mapping_ids)
+    schedules_by_mapping = await _load_mapping_schedules_bulk(db, mapping_ids, user_schedule)
+
+    return [
+        ChannelMapping(
+            id=mapping_id,
+            user_id=u_id,
+            source_chat_id=source_id,
+            dest_chat_id=dest_id,
+            enabled=bool(enabled),
+            filters=filters_by_mapping.get(mapping_id, []),
+            source_chat_title=src_title or None,
+            dest_chat_title=dest_title or None,
+            transforms=transforms_by_mapping.get(mapping_id, []),
+            schedule=schedules_by_mapping.get(mapping_id),
         )
-    return mappings
+        for mapping_id, u_id, source_id, dest_id, enabled, src_title, dest_title in rows
+    ]
 
 
 def _row_to_schedule(row: tuple) -> Schedule | None:
@@ -151,40 +173,99 @@ async def _load_user_schedule(db: aiosqlite.Connection, user_id: int) -> Schedul
     return _row_to_schedule(row)
 
 
-async def _load_mapping_schedule(
+async def _list_filters_bulk(
     db: aiosqlite.Connection,
-    mapping_id: int,
     user_id: int,
-    user_schedule: Schedule | None,
-) -> Schedule | None:
-    """Use mapping override if exists, else user schedule."""
-    cols = ", ".join(WEEKDAY_COLS)
+    mapping_ids: list[int],
+) -> dict[int, list[MappingFilter]]:
+    if not mapping_ids:
+        return {}
+    placeholders = ",".join("?" * len(mapping_ids))
     async with db.execute(
-        f"SELECT {cols} FROM mapping_schedules WHERE mapping_id = ?",
-        (mapping_id,),
-    ) as cursor:
-        row = await cursor.fetchone()
-    if row and any(x is not None for x in row):
-        return _row_to_schedule(row)
-    return user_schedule
-
-
-async def _list_filters(db: aiosqlite.Connection, user_id: int, mapping_id: int) -> list[MappingFilter]:
-    async with db.execute(
-        "SELECT mf.include_text, mf.exclude_text, mf.media_types, mf.regex_pattern "
-        "FROM mapping_filters mf "
-        "JOIN channel_mappings cm ON cm.id = mf.mapping_id "
-        "WHERE mf.mapping_id = ? AND cm.user_id = ?",
-        (mapping_id, user_id),
+        f"SELECT mf.mapping_id, mf.include_text, mf.exclude_text, mf.media_types, mf.regex_pattern "
+        f"FROM mapping_filters mf "
+        f"JOIN channel_mappings cm ON cm.id = mf.mapping_id "
+        f"WHERE mf.mapping_id IN ({placeholders}) AND cm.user_id = ?",
+        (*mapping_ids, user_id),
     ) as cursor:
         rows = await cursor.fetchall()
-    return [
-        MappingFilter(
-            include_text=row[0],
-            exclude_text=row[1],
-            media_types=row[2],
-            regex_pattern=row[3],
+    result: dict[int, list[MappingFilter]] = {}
+    for row in rows:
+        mid = row[0]
+        result.setdefault(mid, []).append(
+            MappingFilter(
+                include_text=row[1],
+                exclude_text=row[2],
+                media_types=row[3],
+                regex_pattern=row[4],
+            )
         )
-        for row in rows
-    ]
+    return result
 
+
+async def _list_transforms_bulk(
+    db: aiosqlite.Connection,
+    user_id: int,
+    mapping_ids: list[int],
+) -> dict[int, list[MappingTransform]]:
+    if not mapping_ids:
+        return {}
+    placeholders = ",".join("?" * len(mapping_ids))
+    async with db.execute(
+        f"SELECT tr.mapping_id, tr.id, tr.rule_type, tr.find_text, tr.replace_text, tr.regex_pattern, "
+        f"tr.regex_flags, tr.replacement_media_asset_id, tr.apply_to_media_types, "
+        f"ma.file_path, ma.media_kind, tr.enabled, tr.priority "
+        f"FROM mapping_transform_rules tr "
+        f"JOIN channel_mappings cm ON cm.id = tr.mapping_id "
+        f"LEFT JOIN media_assets ma ON ma.id = tr.replacement_media_asset_id "
+        f"WHERE tr.mapping_id IN ({placeholders}) AND cm.user_id = ? "
+        f"ORDER BY tr.priority ASC, tr.id ASC",
+        (*mapping_ids, user_id),
+    ) as cursor:
+        rows = await cursor.fetchall()
+    result: dict[int, list[MappingTransform]] = {}
+    for row in rows:
+        mid = row[0]
+        result.setdefault(mid, []).append(
+            MappingTransform(
+                id=row[1],
+                rule_type=row[2],
+                find_text=row[3],
+                replace_text=row[4],
+                regex_pattern=row[5],
+                regex_flags=row[6],
+                replacement_media_asset_id=row[7],
+                apply_to_media_types=row[8],
+                replacement_media_asset_path=row[9],
+                replacement_media_kind=row[10],
+                enabled=bool(row[11]),
+                priority=row[12] if row[12] is not None else 100,
+            )
+        )
+    return result
+
+
+async def _load_mapping_schedules_bulk(
+    db: aiosqlite.Connection,
+    mapping_ids: list[int],
+    user_schedule: Schedule | None,
+) -> dict[int, Schedule | None]:
+    if not mapping_ids:
+        return {}
+    cols = ", ".join(WEEKDAY_COLS)
+    placeholders = ",".join("?" * len(mapping_ids))
+    async with db.execute(
+        f"SELECT mapping_id, {cols} FROM mapping_schedules WHERE mapping_id IN ({placeholders})",
+        tuple(mapping_ids),
+    ) as cursor:
+        rows = await cursor.fetchall()
+    result: dict[int, Schedule | None] = {}
+    for row in rows:
+        mid = row[0]
+        sched_row = row[1:]
+        if any(x is not None for x in sched_row):
+            result[mid] = _row_to_schedule(sched_row)
+    for mid in mapping_ids:
+        if mid not in result:
+            result[mid] = user_schedule
+    return result

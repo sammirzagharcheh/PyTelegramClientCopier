@@ -171,9 +171,11 @@ async def restart_workers_for_mapping(
     mapping_user_id: int,
     mapping_telegram_account_id: int | None,
 ) -> None:
-    """Restart workers affected by a mapping change. Non-fatal on errors."""
+    """Restart workers affected by a mapping change. If no worker is running for an account
+    that has mappings, start one so forwarding begins without manual Worker Start."""
     try:
         await _prune_dead_workers(db)
+        await _prune_orphaned_registry_rows(db)
         if mapping_telegram_account_id is not None:
             account_ids = [mapping_telegram_account_id]
         else:
@@ -185,8 +187,6 @@ async def restart_workers_for_mapping(
                 rows = await cur.fetchall()
             account_ids = [r[0] for r in rows]
         for account_id in account_ids:
-            if not _account_has_running_worker(account_id):
-                continue
             async with db.execute(
                 "SELECT user_id, session_path FROM telegram_accounts WHERE id = ? AND status = 'active'",
                 (account_id,),
@@ -195,11 +195,17 @@ async def restart_workers_for_mapping(
             if not acc_row or not acc_row[1]:
                 continue
             user_id, session_path = acc_row[0], acc_row[1]
-            await stop_workers_for_account(account_id, db)
+            if _account_has_running_worker(account_id):
+                await stop_workers_for_account(account_id, db)
             try:
-                await _spawn_worker_for_account(db, account_id, user_id, session_path)
+                if not _account_has_running_worker(account_id):
+                    await _spawn_worker_for_account(db, account_id, user_id, session_path)
             except Exception as e:
-                logger.warning("Failed to restart worker for account %s after mapping change: %s", account_id, e)
+                logger.warning(
+                    "Failed to start/restart worker for account %s after mapping change: %s",
+                    account_id,
+                    e,
+                )
     except Exception as e:
         logger.warning("restart_workers_for_mapping failed: %s", e)
 

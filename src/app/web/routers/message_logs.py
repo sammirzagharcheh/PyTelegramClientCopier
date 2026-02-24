@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-import json
-import traceback
-from datetime import datetime, timezone
-from pathlib import Path
+import logging
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 from pymongo.errors import OperationFailure, ServerSelectionTimeoutError
 
 from app.db.mongo import get_mongo_db
 from app.web.deps import CurrentUser, Db
 
 router = APIRouter(prefix="/message-logs", tags=["message-logs"])
+logger = logging.getLogger(__name__)
 
 
 def _mongo_error_message(e: Exception) -> str:
@@ -42,9 +41,7 @@ async def list_message_logs(
     page_size: int = 50,
 ) -> dict:
     """List message logs from MongoDB. Users see own; admins can filter."""
-    # #region agent log
     try:
-        # #endregion agent log
         mongo_db = get_mongo_db()
         match: dict = {}
         current_user_id = int(user["id"])
@@ -136,52 +133,11 @@ async def list_message_logs(
             "total_pages": total_pages,
         }
     except (OperationFailure, ServerSelectionTimeoutError) as e:
-        # #region agent log
-        try:
-            log_entry = {
-                "id": "message_logs_mongo_error",
-                "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
-                "location": "message_logs.py:list_message_logs",
-                "message": "mongo_auth_or_connection_error",
-                "data": {
-                    "error_type": type(e).__name__,
-                    "error_str": str(e),
-                },
-                "runId": "post-fix",
-                "hypothesisId": "mongo_auth",
-            }
-            log_path = Path(r"d:\Ongoing Projects\TelegramClientCopier\.cursor\debug.log")
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            with log_path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(log_entry, default=str) + "\n")
-        except Exception:
-            pass
-        # #endregion agent log
+        logger.warning("Mongo message_logs query failed: %s", e)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=_mongo_error_message(e),
         ) from e
     except Exception as e:
-        # #region agent log
-        try:
-            log_entry = {
-                "id": "message_logs_error",
-                "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
-                "location": "message_logs.py:list_message_logs",
-                "message": "message_logs_unexpected_error",
-                "data": {
-                    "error_type": type(e).__name__,
-                    "error_str": str(e),
-                    "traceback": traceback.format_exc(),
-                },
-                "runId": "post-fix",
-                "hypothesisId": "unexpected",
-            }
-            log_path = Path(r"d:\Ongoing Projects\TelegramClientCopier\.cursor\debug.log")
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            with log_path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(log_entry, default=str) + "\n")
-        except Exception:
-            pass
-        # #endregion agent log
+        logger.exception("Unexpected message_logs error: %s", e)
         raise

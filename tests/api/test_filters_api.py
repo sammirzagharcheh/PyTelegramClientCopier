@@ -1,6 +1,7 @@
 """API tests for filter CRUD endpoints."""
 
 import pytest
+from unittest.mock import patch
 
 
 def test_list_filters_200(api_client, user_token):
@@ -34,16 +35,18 @@ def test_list_filters_401_no_auth(api_client):
 
 
 def test_create_filter_201(api_client, user_token):
-    r = api_client.post(
-        "/api/mappings/1/filters",
-        headers={"Authorization": f"Bearer {user_token}"},
-        json={"include_text": "announcement", "exclude_text": None, "media_types": None, "regex_pattern": None},
-    )
+    with patch("app.web.routers.filters.restart_workers_for_mapping") as mock_restart:
+        r = api_client.post(
+            "/api/mappings/1/filters",
+            headers={"Authorization": f"Bearer {user_token}"},
+            json={"include_text": "announcement", "exclude_text": None, "media_types": None, "regex_pattern": None},
+        )
     assert r.status_code == 201
     data = r.json()
     assert data["include_text"] == "announcement"
     assert data["mapping_id"] == 1
     assert "id" in data
+    assert mock_restart.await_count == 1
 
 
 def test_create_filter_with_all_fields(api_client, user_token):
@@ -92,13 +95,15 @@ def test_update_filter_200(api_client, user_token):
     assert create.status_code == 201
     fid = create.json()["id"]
 
-    r = api_client.patch(
-        f"/api/mappings/1/filters/{fid}",
-        headers={"Authorization": f"Bearer {user_token}"},
-        json={"include_text": "new"},
-    )
+    with patch("app.web.routers.filters.restart_workers_for_mapping") as mock_restart:
+        r = api_client.patch(
+            f"/api/mappings/1/filters/{fid}",
+            headers={"Authorization": f"Bearer {user_token}"},
+            json={"include_text": "new"},
+        )
     assert r.status_code == 200
     assert r.json()["include_text"] == "new"
+    assert mock_restart.await_count == 1
 
 
 def test_update_filter_404_filter(api_client, user_token):
@@ -128,11 +133,13 @@ def test_delete_filter_200(api_client, user_token):
     assert create.status_code == 201
     fid = create.json()["id"]
 
-    r = api_client.delete(
-        f"/api/mappings/1/filters/{fid}",
-        headers={"Authorization": f"Bearer {user_token}"},
-    )
+    with patch("app.web.routers.filters.restart_workers_for_mapping") as mock_restart:
+        r = api_client.delete(
+            f"/api/mappings/1/filters/{fid}",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
     assert r.status_code == 200
+    assert mock_restart.await_count == 1
 
     list_r = api_client.get(
         "/api/mappings/1/filters",

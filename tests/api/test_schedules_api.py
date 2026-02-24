@@ -33,6 +33,17 @@ def test_patch_user_schedule_200(api_client, user_token):
     assert data["mon_end_utc"] == "17:00"
 
 
+def test_patch_user_schedule_422_invalid_time_format(api_client, user_token):
+    r = api_client.patch(
+        "/api/users/me/schedule",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"mon_start_utc": "9:00"},
+    )
+    assert r.status_code == 422
+    details = r.json().get("detail", [])
+    assert any("UTC HH:MM" in str(item) for item in details)
+
+
 def test_get_mapping_schedule_200(api_client, user_token):
     r = api_client.get("/api/mappings/1/schedule", headers={"Authorization": f"Bearer {user_token}"})
     assert r.status_code == 200
@@ -60,6 +71,17 @@ def test_put_mapping_schedule_200(api_client, user_token):
     data = r.json()
     assert data["mon_start_utc"] == "10:00"
     assert data["mon_end_utc"] == "18:00"
+
+
+def test_put_mapping_schedule_422_invalid_time_format(api_client, user_token):
+    r = api_client.put(
+        "/api/mappings/1/schedule",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"mon_end_utc": "24:00"},
+    )
+    assert r.status_code == 422
+    details = r.json().get("detail", [])
+    assert any("UTC HH:MM" in str(item) for item in details)
 
 
 def test_delete_mapping_schedule_200(api_client, user_token):

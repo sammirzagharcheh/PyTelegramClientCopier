@@ -11,9 +11,11 @@ from telethon.errors import ChatIdInvalidError
 from telethon.tl.custom.message import Message
 from telethon.tl.types import MessageMediaWebPage
 
-from app.services.mapping_service import ChannelMapping, MappingFilter, Schedule
+from app.services.mapping_service import ChannelMapping, MappingFilter, MappingTransform, Schedule
+from app.utils.regex import regex_flags_from_string
 
 logger = logging.getLogger(__name__)
+_TEMPLATE_TOKEN_RE = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
 
 
 def _alternate_chat_id(chat_id: int) -> int | None:
@@ -84,6 +86,94 @@ def _passes_filters(message: Message, filters: Iterable[MappingFilter]) -> bool:
         if filter_rule.regex_pattern and not re.search(filter_rule.regex_pattern, text):
             return False
     return True
+
+
+def _rule_applies_to_media_type(rule: MappingTransform, media_type: str) -> bool:
+    if not rule.apply_to_media_types:
+        return True
+    allowed = {
+        p.strip().lower()
+        for p in rule.apply_to_media_types.split(",")
+        if p.strip()
+    }
+    if not allowed:
+        return True
+    return media_type in allowed or "any" in allowed or "*" in allowed or "all" in allowed
+
+
+def _render_template(template: str, context: dict[str, object]) -> str:
+    def _sub(match: re.Match[str]) -> str:
+        key = match.group(1)
+        value = context.get(key, "")
+        if value is None:
+            return ""
+        return str(value)
+
+    return _TEMPLATE_TOKEN_RE.sub(_sub, template)
+
+
+def _apply_transforms(
+    text: str,
+    transforms: Iterable[MappingTransform],
+    *,
+    context: dict[str, object] | None = None,
+    media_type: str = "text",
+) -> str:
+    if not transforms:
+        return text
+    output = text
+    for rule in transforms:
+        if not rule.enabled:
+            continue
+        if rule.rule_type == "media":
+            continue
+        if not _rule_applies_to_media_type(rule, media_type):
+            continue
+        if rule.rule_type in {"text", "emoji"}:
+            if rule.find_text:
+                output = output.replace(rule.find_text, rule.replace_text or "")
+            continue
+        if rule.rule_type == "regex" and rule.regex_pattern:
+            try:
+                output = re.sub(
+                    rule.regex_pattern,
+                    rule.replace_text or "",
+                    output,
+                    flags=regex_flags_from_string(rule.regex_flags),
+                )
+            except re.error:
+                logger.warning(
+                    "Invalid regex transform skipped: rule_id=%s pattern=%r",
+                    rule.id,
+                    rule.regex_pattern,
+                )
+            continue
+        if rule.rule_type == "template":
+            template_context = dict(context or {})
+            template_context["text"] = output
+            output = _render_template(rule.replace_text or "", template_context)
+    return output
+
+
+def _media_rule_matches(rule: MappingTransform, media_type: str) -> bool:
+    return rule.rule_type == "media" and _rule_applies_to_media_type(rule, media_type)
+
+
+def _pick_media_replacement(message: Message, transforms: Iterable[MappingTransform]) -> str | None:
+    incoming_has_media = (
+        message.media is not None and not isinstance(message.media, MessageMediaWebPage)
+    )
+    if not incoming_has_media:
+        return None
+    media_type = _message_media_type(message)
+    for rule in transforms:
+        if not rule.enabled:
+            continue
+        if not _media_rule_matches(rule, media_type):
+            continue
+        if rule.replacement_media_asset_path:
+            return rule.replacement_media_asset_path
+    return None
 
 
 async def _lookup_reply_dest_id(
@@ -177,6 +267,29 @@ def build_message_handler(
                 logger.debug("Skipped (outside schedule) msg_id=%s mapping_id=%s", message.id, mapping.id)
                 continue
 
+            source_chat_title = (
+                (getattr(event.chat, "title", None) if event.chat else None)
+                or mapping.source_chat_title
+                or ""
+            )
+            media_type = _message_media_type(message)
+            template_context = {
+                "original_text": message.message or "",
+                "source_chat_id": source_chat_id,
+                "dest_chat_id": mapping.dest_chat_id,
+                "source_chat_title": source_chat_title,
+                "dest_chat_title": mapping.dest_chat_title or "",
+                "message_id": message.id,
+                "media_type": media_type,
+                "date_utc": msg_time.isoformat(),
+            }
+            transformed_text = _apply_transforms(
+                message.message or "",
+                mapping.transforms,
+                context=template_context,
+                media_type=media_type,
+            )
+            replacement_media_path = _pick_media_replacement(message, mapping.transforms)
             reply_to_msg_id = None
             if message.reply_to and message.reply_to.reply_to_msg_id:
                 reply_to_msg_id = await _lookup_reply_dest_id(
@@ -195,25 +308,47 @@ def build_message_handler(
             last_err: Exception | None = None
             for dest_id in dest_ids:
                 try:
-                    use_file = (
+                    incoming_supported_media = (
                         (message.photo or message.video or message.voice)
                         and message.media is not None
                         and not isinstance(message.media, MessageMediaWebPage)
                     )
+                    use_file = replacement_media_path is not None or incoming_supported_media
                     if use_file:
                         try:
+                            file_payload = (
+                                replacement_media_path
+                                if replacement_media_path is not None
+                                else message.media
+                            )
                             sent = await event.client.send_file(
                                 dest_id,
-                                message.media,
-                                caption=message.message or "",
+                                file_payload,
+                                caption=transformed_text,
                                 reply_to=reply_to_msg_id,
                             )
+                        except (FileNotFoundError, OSError) as e:
+                            if replacement_media_path is not None and incoming_supported_media:
+                                logger.warning(
+                                    "Replacement media missing/unreadable for mapping_id=%s path=%r: %s",
+                                    mapping.id,
+                                    replacement_media_path,
+                                    e,
+                                )
+                                sent = await event.client.send_file(
+                                    dest_id,
+                                    message.media,
+                                    caption=transformed_text,
+                                    reply_to=reply_to_msg_id,
+                                )
+                            else:
+                                use_file = False
                         except TypeError:
                             use_file = False
                     if not use_file:
                         sent = await event.client.send_message(
                             dest_id,
-                            message.message or "",
+                            transformed_text,
                             reply_to=reply_to_msg_id,
                         )
                     break
@@ -243,12 +378,7 @@ def build_message_handler(
                     dest_msg_id=sent.id,
                 )
                 try:
-                    source_title = (
-                        (getattr(event.chat, "title", None) if event.chat else None)
-                        or mapping.source_chat_title
-                        or ""
-                    )
-                    source_title = str(source_title) if source_title else ""
+                    source_title = str(source_chat_title) if source_chat_title else ""
                     # Fetch dest title from Telegram; mapping rarely has it (Add Mapping doesn't set it)
                     dest_title = mapping.dest_chat_title or ""
                     if not dest_title:

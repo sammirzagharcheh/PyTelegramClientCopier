@@ -1,4 +1,4 @@
-import { ArrowLeft, Clock, Filter, GitBranch, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { ArrowLeft, Clock, Filter, GitBranch, Pencil, Plus, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
@@ -17,7 +17,9 @@ import {
   mediaArrayToString,
   stringToMediaArray,
 } from '../../components/FilterForm';
+import { TransformForm } from '../../components/TransformForm';
 import { formatScheduleSummary } from '../../lib/formatDateTime';
+import type { Transform, TransformCreate } from '../../lib/api';
 
 type Filter = {
   id: number;
@@ -37,6 +39,30 @@ function describeFilter(f: Filter): string[] {
   return parts;
 }
 
+function describeTransform(t: Transform): string {
+  const typeLabels: Record<string, string> = {
+    text: 'Text',
+    regex: 'Regex',
+    emoji: 'Emoji',
+    media: 'Media',
+    template: 'Template',
+  };
+  const label = typeLabels[t.rule_type] ?? t.rule_type;
+  if (t.rule_type === 'text' || t.rule_type === 'emoji') {
+    return `${label}: "${t.find_text ?? ''}" → "${t.replace_text ?? ''}"`;
+  }
+  if (t.rule_type === 'regex') {
+    return `${label}: /${t.regex_pattern ?? ''}/ → "${t.replace_text ?? ''}"`;
+  }
+  if (t.rule_type === 'media') {
+    return `${label}: asset #${t.replacement_media_asset_id} (${t.apply_to_media_types ?? 'all'})`;
+  }
+  if (t.rule_type === 'template') {
+    return `${label}: "${(t.replace_text ?? '').slice(0, 40)}${(t.replace_text ?? '').length > 40 ? '…' : ''}"`;
+  }
+  return label;
+}
+
 export function MappingDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -47,7 +73,9 @@ export function MappingDetail() {
   const isAdminView = location.pathname.startsWith('/admin/mappings/');
   const tz = user?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const [filterModalOpen, setFilterModalOpen] = useState<'add' | number | null>(null);
+  const [transformModalOpen, setTransformModalOpen] = useState<'add' | number | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const [transformDeleteConfirm, setTransformDeleteConfirm] = useState<number | null>(null);
   const [editingMapping, setEditingMapping] = useState<boolean>(false);
   const [mappingToDelete, setMappingToDelete] = useState<boolean>(false);
 
@@ -70,6 +98,24 @@ export function MappingDetail() {
     queryKey: ['user-schedule'],
     queryFn: async () => (await api.get<Record<string, string | null>>('/users/me/schedule')).data,
     enabled: !!id && !!user && mapping?.user_id === user.id,
+  });
+  const { data: transforms, isLoading: transformsLoading } = useQuery({
+    queryKey: ['mapping', id, 'transforms'],
+    queryFn: async () => (await api.get<Transform[]>(`/mappings/${id}/transforms`)).data,
+    enabled: !!id,
+  });
+  const { data: mediaAssets } = useQuery({
+    queryKey: ['media-assets', mapping?.user_id],
+    queryFn: async () => {
+      // Always filter by mapping owner: transforms require assets to belong to the mapping owner.
+      // Without this, admins get all users' assets and the backend rejects non-owner assets with 400.
+      const url =
+        mapping?.user_id != null
+          ? `/media-assets?user_id=${mapping.user_id}`
+          : '/media-assets';
+      return (await api.get(url)).data;
+    },
+    enabled: !!id && !!mapping,
   });
 
   const createMutation = useMutation({
@@ -173,6 +219,51 @@ export function MappingDetail() {
     onError: () => showToast('Failed to remove schedule override'),
   });
 
+  const transformCreateMutation = useMutation({
+    mutationFn: async (payload: TransformCreate) => {
+      return (await api.post(`/mappings/${id}/transforms`, payload)).data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mapping', id, 'transforms'] });
+      setTransformModalOpen(null);
+      showToast('Transform added. Workers restarting to apply changes.');
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      showToast(msg ?? 'Failed to add transform');
+    },
+  });
+
+  const transformUpdateMutation = useMutation({
+    mutationFn: async ({ transformId, payload }: { transformId: number; payload: TransformCreate }) => {
+      return (await api.patch(`/mappings/${id}/transforms/${transformId}`, payload)).data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mapping', id, 'transforms'] });
+      setTransformModalOpen(null);
+      showToast('Transform updated. Workers restarting to apply changes.');
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      showToast(msg ?? 'Failed to update transform');
+    },
+  });
+
+  const transformDeleteMutation = useMutation({
+    mutationFn: async (transformId: number) => {
+      await api.delete(`/mappings/${id}/transforms/${transformId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mapping', id, 'transforms'] });
+      setTransformDeleteConfirm(null);
+      showToast('Transform removed. Workers restarting to apply changes.');
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      showToast(msg ?? 'Failed to remove transform');
+    },
+  });
+
   const handleFilterSubmit = (values: FilterFormValues) => {
     if (filterModalOpen === 'add') {
       createMutation.mutate(values);
@@ -181,7 +272,16 @@ export function MappingDetail() {
     }
   };
 
+  const handleTransformSubmit = (values: TransformCreate) => {
+    if (transformModalOpen === 'add') {
+      transformCreateMutation.mutate(values);
+    } else if (typeof transformModalOpen === 'number') {
+      transformUpdateMutation.mutate({ transformId: transformModalOpen, payload: values });
+    }
+  };
+
   const editingFilter = typeof filterModalOpen === 'number' ? filters?.find((f) => f.id === filterModalOpen) : null;
+  const editingTransform = typeof transformModalOpen === 'number' ? transforms?.find((t) => t.id === transformModalOpen) : null;
 
   const mappingForEdit = mapping
     ? {
@@ -259,6 +359,18 @@ export function MappingDetail() {
           onConfirm={() => mappingDeleteMutation.mutate()}
           onCancel={() => setMappingToDelete(false)}
           isPending={mappingDeleteMutation.isPending}
+        />
+      )}
+      {transformDeleteConfirm !== null && (
+        <ConfirmDialog
+          title="Delete transform"
+          message="Are you sure you want to remove this transform rule? Workers will restart to apply the change."
+          confirmLabel="Delete"
+          variant="danger"
+          icon={<Trash2 className="h-5 w-5 text-red-600" />}
+          onConfirm={() => transformDeleteMutation.mutate(transformDeleteConfirm)}
+          onCancel={() => setTransformDeleteConfirm(null)}
+          isPending={transformDeleteMutation.isPending}
         />
       )}
 
@@ -387,6 +499,113 @@ export function MappingDetail() {
       </div>
 
       <div className="mb-4">
+        <h2 className="text-lg font-semibold mb-1">Transforms</h2>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          Transform copied messages before sending: replace text, regex patterns, emojis; use templates; or replace media with uploaded assets. Rules are applied by priority (lower first).
+        </p>
+        <button
+          type="button"
+          onClick={() => setTransformModalOpen('add')}
+          className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm"
+        >
+          <Plus className="h-4 w-4" />
+          Add transform
+        </button>
+      </div>
+
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg mb-6">
+        {transformsLoading ? (
+          <div className="p-8 animate-pulse">
+            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-4" />
+            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2 mb-4" />
+            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-5/6" />
+          </div>
+        ) : (
+          <>
+            <div className="divide-y divide-gray-200 dark:divide-gray-700">
+              {(transforms ?? []).map((t) => (
+                <div key={t.id} className="p-4 flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`text-xs font-medium px-2 py-0.5 rounded ${
+                          !t.enabled ? 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-400' : 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
+                        }`}
+                      >
+                        {t.rule_type}
+                      </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">priority {t.priority}</span>
+                    </div>
+                    <p className="text-sm mt-1">{describeTransform(t)}</p>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setTransformModalOpen(t.id)}
+                      className="px-3 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTransformDeleteConfirm(t.id)}
+                      className="px-3 py-1 text-sm rounded border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 dark:border-red-800"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {(transforms ?? []).length === 0 && (
+              <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+                No transforms. Messages are copied as-is.
+                <button
+                  type="button"
+                  onClick={() => setTransformModalOpen('add')}
+                  className="ml-2 inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  <Plus className="h-4 w-4" /> Add your first transform
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {transformModalOpen !== null && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="transform-dialog-title"
+          onClick={() => setTransformModalOpen(null)}
+          onKeyDown={(e) => e.key === 'Escape' && setTransformModalOpen(null)}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <Sparkles className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              <h2 id="transform-dialog-title" className="text-xl font-bold">
+                {transformModalOpen === 'add' ? 'Add transform' : 'Edit transform'}
+              </h2>
+            </div>
+            <TransformForm
+              key={transformModalOpen === 'add' ? 'new' : transformModalOpen}
+              initialValues={editingTransform ?? undefined}
+              mediaAssets={mediaAssets ?? []}
+              onSubmit={handleTransformSubmit}
+              onCancel={() => setTransformModalOpen(null)}
+              submitLabel={transformModalOpen === 'add' ? 'Add' : 'Save'}
+              isSubmitting={transformCreateMutation.isPending || transformUpdateMutation.isPending}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="mb-4">
         <h2 className="text-lg font-semibold mb-1">Filters</h2>
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
           Filters determine which messages are copied from source to destination. All rules in each filter must pass
@@ -473,7 +692,11 @@ export function MappingDetail() {
       {filterModalOpen !== null && (
         <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="filter-dialog-title"
           onClick={() => setFilterModalOpen(null)}
+          onKeyDown={(e) => e.key === 'Escape' && setFilterModalOpen(null)}
         >
           <div
             className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full"
@@ -481,7 +704,7 @@ export function MappingDetail() {
           >
             <div className="flex items-center gap-2 mb-4">
               <Filter className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-              <h2 className="text-xl font-bold">
+              <h2 id="filter-dialog-title" className="text-xl font-bold">
                 {filterModalOpen === 'add' ? 'Add filter' : 'Edit filter'}
               </h2>
             </div>
