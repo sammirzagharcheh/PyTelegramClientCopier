@@ -146,7 +146,7 @@ async def get_admin_dashboard_stats(user: AdminUser, db: Db) -> dict:
                     async for row in cur:
                         mapping_id, uid, src_id, dest_id = row[0], row[1], row[2], row[3]
                         name_val, st, dt = row[4], row[5], row[6]
-                        mapping_name = name_val if name_val else f"Mapping {mapping_id}"
+                        mapping_name = name_val if name_val else f"{st or src_id} → {dt or dest_id}"
                         mapping_map[(uid, src_id, dest_id)] = (mapping_id, mapping_name)
         for doc in top_raw:
             g = doc.get("_id", {})
