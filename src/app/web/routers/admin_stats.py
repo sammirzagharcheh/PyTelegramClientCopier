@@ -125,8 +125,8 @@ async def get_admin_dashboard_stats(user: AdminUser, db: Db) -> dict:
             d = (now - timedelta(days=6 - i)).strftime("%Y-%m-%d")
             messages_by_day.append({"date": d, "count": agg_by_day.get(d, 0)})
 
-        # Batch mapping name lookups
-        title_map: dict[tuple[int | None, int, int], str] = {}
+        # Batch mapping lookups: (user_id, src_id, dest_id) -> (mapping_id, mapping_name)
+        mapping_map: dict[tuple[int | None, int, int], tuple[int, str]] = {}
         if top_raw:
             keys = [
                 (g.get("user_id"), g.get("source_chat_id", 0), g.get("dest_chat_id", 0))
@@ -138,25 +138,27 @@ async def get_admin_dashboard_stats(user: AdminUser, db: Db) -> dict:
                 placeholders = ",".join(["(?,?,?)"] * len(keys))
                 params = [x for t in keys for x in t]
                 async with db.execute(
-                    f"SELECT user_id, source_chat_id, dest_chat_id, name, source_chat_title, dest_chat_title "
+                    f"SELECT id, user_id, source_chat_id, dest_chat_id, name, source_chat_title, dest_chat_title "
                     f"FROM channel_mappings WHERE (user_id, source_chat_id, dest_chat_id) IN "
                     f"(VALUES {placeholders})",
                     params,
                 ) as cur:
                     async for row in cur:
-                        uid, src_id, dest_id = row[0], row[1], row[2]
-                        name_val, st, dt = row[3], row[4], row[5]
-                        if name_val:
-                            title_map[(uid, src_id, dest_id)] = name_val
-                        elif st or dt:
-                            title_map[(uid, src_id, dest_id)] = f"{st or src_id} → {dt or dest_id}"
-                        else:
-                            title_map[(uid, src_id, dest_id)] = f"{src_id} → {dest_id}"
+                        mapping_id, uid, src_id, dest_id = row[0], row[1], row[2], row[3]
+                        name_val, st, dt = row[4], row[5], row[6]
+                        mapping_name = name_val if name_val else f"Mapping {mapping_id}"
+                        mapping_map[(uid, src_id, dest_id)] = (mapping_id, mapping_name)
         for doc in top_raw:
             g = doc.get("_id", {})
             uid, src_id, dest_id = g.get("user_id"), g.get("source_chat_id", 0), g.get("dest_chat_id", 0)
-            name = title_map.get((uid, src_id, dest_id), f"{src_id} → {dest_id}")
-            top_mappings.append({"name": name, "count": doc["count"]})
+            entry = mapping_map.get((uid, src_id, dest_id))
+            if entry:
+                mapping_id, mapping_name = entry
+                bar_label = f"{uid}-{mapping_id}"
+                top_mappings.append({"name": bar_label, "mapping_name": mapping_name, "count": doc["count"]})
+            else:
+                fallback = f"{src_id} → {dest_id}"
+                top_mappings.append({"name": f"{uid}-?", "mapping_name": fallback, "count": doc["count"]})
 
         # worker_log_levels (last 7d)
         match_worker = {"timestamp": {"$gte": start_7d_ts, "$lte": today_end}}
