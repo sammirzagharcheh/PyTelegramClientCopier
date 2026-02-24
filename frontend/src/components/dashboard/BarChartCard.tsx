@@ -102,11 +102,6 @@ export function BarChartCard({
                     dataKey={dataKey}
                   />
                 )}
-                contentStyle={{
-                  backgroundColor: theme.tooltipBg,
-                  border: `1px solid ${theme.tooltipBorder}`,
-                  borderRadius: '0.5rem',
-                }}
               />
               <Bar dataKey={dataKey} fill={color} radius={[0, 4, 4, 0]} />
             </BarChart>
