@@ -173,24 +173,6 @@ async def _load_user_schedule(db: aiosqlite.Connection, user_id: int) -> Schedul
     return _row_to_schedule(row)
 
 
-async def _load_mapping_schedule(
-    db: aiosqlite.Connection,
-    mapping_id: int,
-    user_id: int,
-    user_schedule: Schedule | None,
-) -> Schedule | None:
-    """Use mapping override if exists, else user schedule."""
-    cols = ", ".join(WEEKDAY_COLS)
-    async with db.execute(
-        f"SELECT {cols} FROM mapping_schedules WHERE mapping_id = ?",
-        (mapping_id,),
-    ) as cursor:
-        row = await cursor.fetchone()
-    if row and any(x is not None for x in row):
-        return _row_to_schedule(row)
-    return user_schedule
-
-
 async def _list_filters_bulk(
     db: aiosqlite.Connection,
     user_id: int,
