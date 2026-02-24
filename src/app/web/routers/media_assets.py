@@ -104,7 +104,13 @@ async def upload_media_asset(
 ) -> dict:
     """Upload a media asset for replacement rules."""
     raw_filename = Path(file.filename or "").name or "asset.bin"
-    data = await file.read()
+    max_bytes = settings.media_upload_max_bytes
+    data = await file.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File exceeds maximum size of {max_bytes:,} bytes ({max_bytes // (1024 * 1024)} MiB)",
+        )
     if not data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty")
 

@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import io
 
+import pytest
+
+from app.config import settings
+
 
 def test_upload_and_list_media_asset(api_client, user_token):
     upload = api_client.post(
@@ -35,6 +39,32 @@ def test_upload_media_asset_empty_file_400(api_client, user_token):
     )
     assert upload.status_code == 400
     assert "empty" in upload.json()["detail"].lower()
+
+
+def test_upload_media_asset_exceeds_max_size_413(api_client, user_token):
+    """Files over media_upload_max_bytes return 413 to prevent OOM/DoS."""
+    with pytest.MonkeyPatch.context() as m:
+        m.setattr(settings, "media_upload_max_bytes", 10)
+        upload = api_client.post(
+            "/api/media-assets",
+            headers={"Authorization": f"Bearer {user_token}"},
+            files={"file": ("large.bin", io.BytesIO(b"x" * 11), "application/octet-stream")},
+        )
+    assert upload.status_code == 413
+    assert "exceeds" in upload.json()["detail"].lower()
+
+
+def test_upload_media_asset_at_limit_201(api_client, user_token):
+    """Files exactly at media_upload_max_bytes are accepted."""
+    with pytest.MonkeyPatch.context() as m:
+        m.setattr(settings, "media_upload_max_bytes", 10)
+        upload = api_client.post(
+            "/api/media-assets",
+            headers={"Authorization": f"Bearer {user_token}"},
+            files={"file": ("ok.bin", io.BytesIO(b"0123456789"), "application/octet-stream")},
+        )
+    assert upload.status_code == 201
+    assert upload.json()["size_bytes"] == 10
 
 
 def test_delete_media_asset_409_when_in_use(api_client, user_token):

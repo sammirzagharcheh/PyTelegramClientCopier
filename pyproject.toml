@@ -34,4 +34,7 @@ where = ["src"]
 testpaths = ["tests"]
 addopts = "-ra"
 asyncio_mode = "auto"
+filterwarnings = [
+  "ignore::DeprecationWarning:jose.jwt",
+]
 

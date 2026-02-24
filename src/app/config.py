@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     sqlite_path: str = "data/app.db"
     sessions_dir: str = "data/sessions"
     media_assets_dir: str = "data/media_assets"
+    media_upload_max_bytes: int = 52_428_800  # 50 MiB
     log_level: str = "INFO"
     jwt_secret: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
