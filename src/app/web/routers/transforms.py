@@ -305,6 +305,10 @@ async def update_transform(
             "priority": patch.get("priority", row[10]),
         }
         merged["rule_type"] = _normalize_rule_type(merged["rule_type"])
+        # When switching from media to any other rule type, the frontend omits
+        # replacement_media_asset_id. Clear it so validation doesn't reject with 400.
+        if merged["rule_type"] != "media":
+            merged["replacement_media_asset_id"] = None
         normalized_flags = _normalize_regex_flags(merged["regex_flags"])
         normalized_media_types = _normalize_apply_to_media_types(
             merged["apply_to_media_types"]
