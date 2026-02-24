@@ -32,7 +32,13 @@ def _infer_media_kind(content_type: str | None, filename: str | None) -> str:
         return "voice"
     guessed, _ = mimetypes.guess_type(filename or "")
     if guessed:
-        return _infer_media_kind(guessed, filename)
+        g = guessed.lower()
+        if g.startswith("image/"):
+            return "photo"
+        if g.startswith("video/"):
+            return "video"
+        if g.startswith("audio/"):
+            return "voice"
     return "other"
 
 
