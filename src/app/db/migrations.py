@@ -161,6 +161,55 @@ MIGRATIONS = [
     ALTER TABLE mapping_transform_rules ADD COLUMN replacement_media_asset_id INTEGER REFERENCES media_assets(id);
     ALTER TABLE mapping_transform_rules ADD COLUMN apply_to_media_types TEXT;
     """,
+    # v15: recreate mapping_transform_rules and media_assets with ON DELETE CASCADE so that
+    # deleting a channel mapping or user automatically removes dependent rows.
+    """
+    PRAGMA foreign_keys = OFF;
+    CREATE TABLE IF NOT EXISTS mapping_transform_rules_v15 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mapping_id INTEGER NOT NULL,
+        rule_type TEXT NOT NULL,
+        find_text TEXT,
+        replace_text TEXT,
+        regex_pattern TEXT,
+        regex_flags TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        priority INTEGER NOT NULL DEFAULT 100,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        replacement_media_asset_id INTEGER REFERENCES media_assets(id) ON DELETE SET NULL,
+        apply_to_media_types TEXT,
+        FOREIGN KEY(mapping_id) REFERENCES channel_mappings(id) ON DELETE CASCADE
+    );
+    INSERT INTO mapping_transform_rules_v15
+        SELECT id, mapping_id, rule_type, find_text, replace_text, regex_pattern,
+               regex_flags, enabled, priority, created_at,
+               replacement_media_asset_id, apply_to_media_types
+        FROM mapping_transform_rules
+        WHERE EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'mapping_transform_rules');
+    DROP TABLE IF EXISTS mapping_transform_rules;
+    ALTER TABLE mapping_transform_rules_v15 RENAME TO mapping_transform_rules;
+    CREATE INDEX IF NOT EXISTS ix_mapping_transform_rules_mapping_id
+        ON mapping_transform_rules(mapping_id);
+    CREATE TABLE IF NOT EXISTS media_assets_v15 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        media_kind TEXT NOT NULL DEFAULT 'other',
+        mime_type TEXT,
+        size_bytes INTEGER,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    INSERT INTO media_assets_v15
+        SELECT id, user_id, name, file_path, media_kind, mime_type, size_bytes, created_at
+        FROM media_assets
+        WHERE EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'media_assets');
+    DROP TABLE IF EXISTS media_assets;
+    ALTER TABLE media_assets_v15 RENAME TO media_assets;
+    CREATE INDEX IF NOT EXISTS ix_media_assets_user_id ON media_assets(user_id);
+    PRAGMA foreign_keys = ON;
+    """,
 ]
 
 

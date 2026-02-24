@@ -122,3 +122,27 @@ async def test_migration_v14_creates_media_assets_and_transform_columns(tmp_path
         index_names = {r[0] for r in rows}
         for idx_name in V14_INDEXES:
             assert idx_name in index_names, f"Expected index {idx_name} from migration v14"
+
+
+@pytest.mark.asyncio
+async def test_migration_v15_recreates_tables_with_cascade(tmp_path):
+    """Migration v15 recreates mapping_transform_rules and media_assets with ON DELETE CASCADE."""
+    settings.sqlite_path = str(tmp_path / "migrations_v15_test.db")
+    tmp_path.mkdir(parents=True, exist_ok=True)
+
+    await init_sqlite()
+
+    async with aiosqlite.connect(settings.sqlite_path) as db:
+        async with db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='mapping_transform_rules'"
+        ) as cur:
+            row = await cur.fetchone()
+        assert row is not None
+        assert "ON DELETE CASCADE" in row[0]
+
+        async with db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='media_assets'"
+        ) as cur:
+            row = await cur.fetchone()
+        assert row is not None
+        assert "ON DELETE CASCADE" in row[0]

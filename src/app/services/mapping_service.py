@@ -5,6 +5,8 @@ from typing import Iterable
 
 import aiosqlite
 
+from app.utils.paths import resolve_asset_path
+
 
 @dataclass(slots=True)
 class MappingFilter:
@@ -254,7 +256,7 @@ async def _list_transforms_bulk(
                 regex_flags=row[6],
                 replacement_media_asset_id=row[7],
                 apply_to_media_types=row[8],
-                replacement_media_asset_path=row[9],
+                replacement_media_asset_path=str(resolve_asset_path(row[9])) if row[9] else None,
                 replacement_media_kind=row[10],
                 enabled=bool(row[11]),
                 priority=row[12] if row[12] is not None else 100,
@@ -332,7 +334,7 @@ async def _list_transforms(db: aiosqlite.Connection, user_id: int, mapping_id: i
             regex_flags=row[5],
             replacement_media_asset_id=row[6],
             apply_to_media_types=row[7],
-            replacement_media_asset_path=row[8],
+            replacement_media_asset_path=str(resolve_asset_path(row[8])) if row[8] else None,
             replacement_media_kind=row[9],
             enabled=bool(row[10]),
             priority=row[11] if row[11] is not None else 100,

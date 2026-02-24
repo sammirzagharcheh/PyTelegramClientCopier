@@ -329,6 +329,8 @@ def build_message_handler(
                             )
                         except (FileNotFoundError, OSError) as e:
                             if replacement_media_path is not None and incoming_supported_media:
+                                # Replacement file is missing/unreadable; fall back to the
+                                # original incoming media so the message is still forwarded.
                                 logger.warning(
                                     "Replacement media missing/unreadable for mapping_id=%s path=%r: %s",
                                     mapping.id,
@@ -342,6 +344,9 @@ def build_message_handler(
                                     reply_to=reply_to_msg_id,
                                 )
                             else:
+                                # Either no replacement was configured (plain incoming media
+                                # failed) or there is no incoming media to fall back to;
+                                # drop the media and send text only.
                                 use_file = False
                         except TypeError:
                             use_file = False

@@ -37,7 +37,7 @@ class ScheduleSlot(BaseModel):
         if value is None:
             return value
         if not _UTC_TIME_RE.fullmatch(value):
-            raise ValueError("Schedule times must use UTC HH:MM (24-hour) format")
+            raise ValueError("Schedule times must use UTC HH:MM format (00:00 to 23:59)")
         return value
 
 
@@ -65,7 +65,7 @@ class ScheduleUpdate(BaseModel):
         if value is None:
             return value
         if not _UTC_TIME_RE.fullmatch(value):
-            raise ValueError("Schedule times must use UTC HH:MM (24-hour) format")
+            raise ValueError("Schedule times must use UTC HH:MM format (00:00 to 23:59)")
         return value
 
 
