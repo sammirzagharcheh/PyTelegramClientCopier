@@ -48,6 +48,17 @@ Filters control which messages are copied from a source channel to a destination
 2. **Copy voice and video, exclude spam**: Media types `voice`, `video`; Exclude text `spam`.
 3. **Copy messages with order IDs**: Regex pattern `#\d+` (e.g. matches "order #123").
 
+## Transformations (text replacement before forwarding)
+
+Mappings can also apply transform rules before sending to destination channels:
+
+- **Text replacement**: replace plain text (e.g. `Sam channel` -> `Tom channel`)
+- **Regex replacement**: replace text using regex patterns
+- **Emoji replacement**: replace icons/emoji (e.g. `🔥` -> `⭐`)
+
+Transform rules are applied in priority order for each matched mapping, then the transformed
+message/caption is delivered.
+
 ## VPS Deployment (Ubuntu)
 
 Deploy on a fresh Ubuntu 20.04/22.04/24.04 VPS. The script installs nginx, Python 3.11+, Node.js 20, clones the repo, builds the frontend, configures systemd, and sets up nginx as a reverse proxy.

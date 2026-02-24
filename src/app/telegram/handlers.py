@@ -11,7 +11,7 @@ from telethon.errors import ChatIdInvalidError
 from telethon.tl.custom.message import Message
 from telethon.tl.types import MessageMediaWebPage
 
-from app.services.mapping_service import ChannelMapping, MappingFilter, Schedule
+from app.services.mapping_service import ChannelMapping, MappingFilter, MappingTransform, Schedule
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,48 @@ def _passes_filters(message: Message, filters: Iterable[MappingFilter]) -> bool:
         if filter_rule.regex_pattern and not re.search(filter_rule.regex_pattern, text):
             return False
     return True
+
+
+def _regex_flags(flag_string: str | None) -> int:
+    flags = 0
+    if not flag_string:
+        return flags
+    for ch in flag_string.lower():
+        if ch == "i":
+            flags |= re.IGNORECASE
+        elif ch == "m":
+            flags |= re.MULTILINE
+        elif ch == "s":
+            flags |= re.DOTALL
+    return flags
+
+
+def _apply_transforms(text: str, transforms: Iterable[MappingTransform]) -> str:
+    if not transforms:
+        return text
+    output = text
+    for rule in transforms:
+        if not rule.enabled:
+            continue
+        if rule.rule_type in {"text", "emoji"}:
+            if rule.find_text:
+                output = output.replace(rule.find_text, rule.replace_text or "")
+            continue
+        if rule.rule_type == "regex" and rule.regex_pattern:
+            try:
+                output = re.sub(
+                    rule.regex_pattern,
+                    rule.replace_text or "",
+                    output,
+                    flags=_regex_flags(rule.regex_flags),
+                )
+            except re.error:
+                logger.warning(
+                    "Invalid regex transform skipped: rule_id=%s pattern=%r",
+                    rule.id,
+                    rule.regex_pattern,
+                )
+    return output
 
 
 async def _lookup_reply_dest_id(
@@ -177,6 +219,7 @@ def build_message_handler(
                 logger.debug("Skipped (outside schedule) msg_id=%s mapping_id=%s", message.id, mapping.id)
                 continue
 
+            transformed_text = _apply_transforms(message.message or "", mapping.transforms)
             reply_to_msg_id = None
             if message.reply_to and message.reply_to.reply_to_msg_id:
                 reply_to_msg_id = await _lookup_reply_dest_id(
@@ -205,7 +248,7 @@ def build_message_handler(
                             sent = await event.client.send_file(
                                 dest_id,
                                 message.media,
-                                caption=message.message or "",
+                                caption=transformed_text,
                                 reply_to=reply_to_msg_id,
                             )
                         except TypeError:
@@ -213,7 +256,7 @@ def build_message_handler(
                     if not use_file:
                         sent = await event.client.send_message(
                             dest_id,
-                            message.message or "",
+                            transformed_text,
                             reply_to=reply_to_msg_id,
                         )
                     break

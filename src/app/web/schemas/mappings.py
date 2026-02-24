@@ -28,6 +28,39 @@ class MappingFilterResponse(BaseModel):
     regex_pattern: str | None
 
 
+class MappingTransformCreate(BaseModel):
+    rule_type: str
+    find_text: str | None = None
+    replace_text: str | None = None
+    regex_pattern: str | None = None
+    regex_flags: str | None = None
+    enabled: bool = True
+    priority: int = 100
+
+
+class MappingTransformUpdate(BaseModel):
+    rule_type: str | None = None
+    find_text: str | None = None
+    replace_text: str | None = None
+    regex_pattern: str | None = None
+    regex_flags: str | None = None
+    enabled: bool | None = None
+    priority: int | None = None
+
+
+class MappingTransformResponse(BaseModel):
+    id: int
+    mapping_id: int
+    rule_type: str
+    find_text: str | None
+    replace_text: str | None
+    regex_pattern: str | None
+    regex_flags: str | None
+    enabled: bool
+    priority: int
+    created_at: str | None
+
+
 class ChannelMappingCreate(BaseModel):
     source_chat_id: int
     dest_chat_id: int

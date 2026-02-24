@@ -126,6 +126,24 @@ MIGRATIONS = [
     );
     ALTER TABLE users ADD COLUMN timezone TEXT;
     """,
+    # v13: mapping transform rules (text/regex/emoji replacements)
+    """
+    CREATE TABLE IF NOT EXISTS mapping_transform_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mapping_id INTEGER NOT NULL,
+        rule_type TEXT NOT NULL,
+        find_text TEXT,
+        replace_text TEXT,
+        regex_pattern TEXT,
+        regex_flags TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        priority INTEGER NOT NULL DEFAULT 100,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(mapping_id) REFERENCES channel_mappings(id)
+    );
+    CREATE INDEX IF NOT EXISTS ix_mapping_transform_rules_mapping_id
+        ON mapping_transform_rules(mapping_id);
+    """,
 ]
 
 

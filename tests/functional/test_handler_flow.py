@@ -2,7 +2,7 @@ import datetime
 
 import pytest
 
-from app.services.mapping_service import ChannelMapping, MappingFilter
+from app.services.mapping_service import ChannelMapping, MappingFilter, MappingTransform
 from app.telegram.handlers import build_message_handler, _save_dest_mapping
 from app.db.sqlite import init_sqlite, get_sqlite
 
@@ -313,4 +313,70 @@ async def test_handler_no_filters_all_forwarded(tmp_path):
 
     assert len(client.sent_messages) == 1
     assert len(mongo.logs) == 1
+
+
+@pytest.mark.asyncio
+async def test_handler_applies_text_regex_and_emoji_transforms(tmp_path):
+    db_path = tmp_path / "test.db"
+    from app.config import settings
+
+    settings.sqlite_path = str(db_path)
+    await init_sqlite()
+    db = await get_sqlite()
+
+    mapping = ChannelMapping(
+        id=1,
+        user_id=1,
+        source_chat_id=10,
+        dest_chat_id=20,
+        enabled=True,
+        filters=[],
+        source_chat_title=None,
+        dest_chat_title=None,
+        transforms=[
+            MappingTransform(
+                id=1,
+                rule_type="text",
+                find_text="Sam channel",
+                replace_text="Tom channel",
+                regex_pattern=None,
+                regex_flags=None,
+                enabled=True,
+                priority=10,
+            ),
+            MappingTransform(
+                id=2,
+                rule_type="regex",
+                find_text=None,
+                replace_text="#XXX",
+                regex_pattern=r"#\d+",
+                regex_flags=None,
+                enabled=True,
+                priority=20,
+            ),
+            MappingTransform(
+                id=3,
+                rule_type="emoji",
+                find_text="🔥",
+                replace_text="⭐",
+                regex_pattern=None,
+                regex_flags=None,
+                enabled=True,
+                priority=30,
+            ),
+        ],
+    )
+    mongo = DummyMongo()
+    client = DummyClient()
+    handler = build_message_handler(user_id=1, mappings=[mapping], db=db, mongo_db=mongo)
+
+    event = DummyEvent(
+        chat_id=10,
+        message=DummyMessage(1, "Welcome to Sam channel order #123 🔥"),
+        client=client,
+    )
+    await handler(event)
+
+    assert len(client.sent_messages) == 1
+    assert client.sent_messages[0][1] == "Welcome to Tom channel order #XXX ⭐"
 

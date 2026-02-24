@@ -177,3 +177,46 @@ async def test_list_enabled_mappings_multiple_no_crosstalk(tmp_path):
     by_src = {m.source_chat_id: m for m in mappings}
     assert by_src[10].filters[0].include_text == "a"
     assert by_src[30].filters[0].include_text == "b"
+
+
+@pytest.mark.asyncio
+async def test_list_enabled_mappings_loads_transforms(tmp_path):
+    db_path = tmp_path / "test.db"
+    from app.config import settings
+
+    settings.sqlite_path = str(db_path)
+    await init_sqlite()
+    db = await get_sqlite()
+
+    await db.execute(
+        "INSERT INTO users (email, role, status) VALUES (?, ?, ?)",
+        ("u@ex.com", "user", "active"),
+    )
+    await db.execute(
+        "INSERT INTO channel_mappings (user_id, source_chat_id, dest_chat_id, enabled) VALUES (?, ?, ?, ?)",
+        (1, 100, 200, 1),
+    )
+    await db.execute(
+        "INSERT INTO mapping_transform_rules "
+        "(mapping_id, rule_type, find_text, replace_text, enabled, priority) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (1, "text", "Sam channel", "Tom channel", 1, 20),
+    )
+    await db.execute(
+        "INSERT INTO mapping_transform_rules "
+        "(mapping_id, rule_type, regex_pattern, replace_text, regex_flags, enabled, priority) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (1, "regex", r"#\d+", "#XXX", "i", 1, 10),
+    )
+    await db.commit()
+
+    mappings = list(await list_enabled_mappings(db, user_id=1))
+    assert len(mappings) == 1
+    transforms = mappings[0].transforms
+    assert len(transforms) == 2
+    assert transforms[0].rule_type == "regex"
+    assert transforms[0].regex_pattern == r"#\d+"
+    assert transforms[0].regex_flags == "i"
+    assert transforms[1].rule_type == "text"
+    assert transforms[1].find_text == "Sam channel"
+    assert transforms[1].replace_text == "Tom channel"

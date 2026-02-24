@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable
 
 import aiosqlite
@@ -12,6 +12,18 @@ class MappingFilter:
     exclude_text: str | None
     media_types: str | None
     regex_pattern: str | None
+
+
+@dataclass(slots=True)
+class MappingTransform:
+    id: int
+    rule_type: str
+    find_text: str | None
+    replace_text: str | None
+    regex_pattern: str | None
+    regex_flags: str | None
+    enabled: bool
+    priority: int
 
 
 WEEKDAY_COLS = [
@@ -76,6 +88,7 @@ class ChannelMapping:
     filters: list[MappingFilter]
     source_chat_title: str | None
     dest_chat_title: str | None
+    transforms: list[MappingTransform] = field(default_factory=list)
     schedule: Schedule | None = None
 
 
@@ -107,6 +120,7 @@ async def list_enabled_mappings(
 
     for mapping_id, u_id, source_id, dest_id, enabled, src_title, dest_title in rows:
         filters = await _list_filters(db, user_id, mapping_id)
+        transforms = await _list_transforms(db, user_id, mapping_id)
         schedule = await _load_mapping_schedule(db, mapping_id, user_id, user_schedule)
         mappings.append(
             ChannelMapping(
@@ -118,6 +132,7 @@ async def list_enabled_mappings(
                 filters=filters,
                 source_chat_title=src_title or None,
                 dest_chat_title=dest_title or None,
+                transforms=transforms,
                 schedule=schedule,
             )
         )
@@ -184,6 +199,32 @@ async def _list_filters(db: aiosqlite.Connection, user_id: int, mapping_id: int)
             exclude_text=row[1],
             media_types=row[2],
             regex_pattern=row[3],
+        )
+        for row in rows
+    ]
+
+
+async def _list_transforms(db: aiosqlite.Connection, user_id: int, mapping_id: int) -> list[MappingTransform]:
+    async with db.execute(
+        "SELECT tr.id, tr.rule_type, tr.find_text, tr.replace_text, tr.regex_pattern, "
+        "tr.regex_flags, tr.enabled, tr.priority "
+        "FROM mapping_transform_rules tr "
+        "JOIN channel_mappings cm ON cm.id = tr.mapping_id "
+        "WHERE tr.mapping_id = ? AND cm.user_id = ? "
+        "ORDER BY tr.priority ASC, tr.id ASC",
+        (mapping_id, user_id),
+    ) as cursor:
+        rows = await cursor.fetchall()
+    return [
+        MappingTransform(
+            id=row[0],
+            rule_type=row[1],
+            find_text=row[2],
+            replace_text=row[3],
+            regex_pattern=row[4],
+            regex_flags=row[5],
+            enabled=bool(row[6]),
+            priority=row[7] if row[7] is not None else 100,
         )
         for row in rows
     ]

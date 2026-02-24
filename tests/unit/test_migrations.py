@@ -21,6 +21,10 @@ V11_INDEXES = [
     "ix_dest_message_index_user_id",
 ]
 
+V13_INDEXES = [
+    "ix_mapping_transform_rules_mapping_id",
+]
+
 
 @pytest.mark.asyncio
 async def test_migration_v11_creates_indexes(tmp_path):
@@ -60,3 +64,27 @@ async def test_migration_v12_creates_schedule_tables(tmp_path):
         async with db.execute("PRAGMA table_info(users)") as cur:
             cols = {r[1] for r in await cur.fetchall()}
         assert "timezone" in cols
+
+
+@pytest.mark.asyncio
+async def test_migration_v13_creates_transform_rules_table(tmp_path):
+    """Migration v13 creates mapping_transform_rules and index."""
+    settings.sqlite_path = str(tmp_path / "migrations_v13_test.db")
+    tmp_path.mkdir(parents=True, exist_ok=True)
+
+    await init_sqlite()
+
+    async with aiosqlite.connect(settings.sqlite_path) as db:
+        async with db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name = 'mapping_transform_rules'"
+        ) as cur:
+            tables = [r[0] for r in await cur.fetchall()]
+        assert "mapping_transform_rules" in tables
+
+        async with db.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name IS NOT NULL"
+        ) as cur:
+            rows = await cur.fetchall()
+        index_names = {r[0] for r in rows}
+        for idx_name in V13_INDEXES:
+            assert idx_name in index_names, f"Expected index {idx_name} from migration v13"
