@@ -10,15 +10,7 @@ import {
   REGEX_FLAGS,
   TEMPLATE_VARIABLES,
 } from '../lib/transformTypes';
-
-function stringToMediaArray(s: string | null | undefined): string[] {
-  if (!s) return [];
-  return s.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
-}
-
-function mediaArrayToString(arr: string[]): string {
-  return arr.filter(Boolean).join(',');
-}
+import { mediaArrayToString, stringToMediaArray } from './FilterForm';
 
 type Props = {
   initialValues?: Transform | null;
@@ -61,7 +53,7 @@ export function TransformForm({
 
   const ruleType = watch('rule_type');
   const applyToMediaTypes = watch('apply_to_media_types');
-  const mediaTypesArr = stringToMediaArray(applyToMediaTypes);
+  const mediaTypesArr = stringToMediaArray(applyToMediaTypes ?? null);
 
   useEffect(() => {
     if (initialValues) {
