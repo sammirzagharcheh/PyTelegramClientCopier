@@ -1,9 +1,27 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Iterable
 
 import aiosqlite
+
+from app.config import project_root
+
+
+def _resolve_asset_path(stored: str | None) -> str | None:
+    """Resolve a stored media asset path to an absolute path string.
+
+    Paths stored as relative (new behaviour) are resolved against the project root.
+    Legacy entries that stored an absolute path are returned unchanged for backward
+    compatibility.
+    """
+    if stored is None:
+        return None
+    p = Path(stored)
+    if p.is_absolute():
+        return stored
+    return str(project_root() / stored)
 
 
 @dataclass(slots=True)
@@ -254,7 +272,7 @@ async def _list_transforms_bulk(
                 regex_flags=row[6],
                 replacement_media_asset_id=row[7],
                 apply_to_media_types=row[8],
-                replacement_media_asset_path=row[9],
+                replacement_media_asset_path=_resolve_asset_path(row[9]),
                 replacement_media_kind=row[10],
                 enabled=bool(row[11]),
                 priority=row[12] if row[12] is not None else 100,
@@ -332,7 +350,7 @@ async def _list_transforms(db: aiosqlite.Connection, user_id: int, mapping_id: i
             regex_flags=row[5],
             replacement_media_asset_id=row[6],
             apply_to_media_types=row[7],
-            replacement_media_asset_path=row[8],
+            replacement_media_asset_path=_resolve_asset_path(row[8]),
             replacement_media_kind=row[9],
             enabled=bool(row[10]),
             priority=row[11] if row[11] is not None else 100,

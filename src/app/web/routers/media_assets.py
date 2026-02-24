@@ -2,24 +2,33 @@
 
 from __future__ import annotations
 
+import logging
 import mimetypes
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
-from app.config import settings
+from app.config import project_root, settings
 from app.web.deps import CurrentUser, Db
 from app.web.schemas.media_assets import MediaAssetResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/media-assets", tags=["media-assets"])
 
 _ALLOWED_MEDIA_KINDS = {"photo", "video", "voice", "other"}
+# 50 MB upload limit
+_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+# Characters that are invalid or problematic on common filesystems
+_UNSAFE_FILENAME_RE = re.compile(r'[^\w.\-]')
 
 
-def _project_root() -> Path:
-    return Path(__file__).resolve().parents[4]
+def _sanitize_filename(raw: str) -> str:
+    """Replace unsafe filesystem characters with underscores, preserving extension."""
+    return _UNSAFE_FILENAME_RE.sub("_", raw)
 
 
 def _infer_media_kind(content_type: str | None, filename: str | None) -> str:
@@ -103,25 +112,33 @@ async def upload_media_asset(
     media_kind: str | None = Form(None),
 ) -> dict:
     """Upload a media asset for replacement rules."""
-    raw_filename = Path(file.filename or "").name or "asset.bin"
+    safe_filename = _sanitize_filename(Path(file.filename or "").name or "asset.bin")
     data = await file.read()
     if not data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty")
+    if len(data) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File exceeds maximum allowed size of {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB",
+        )
 
-    kind = _normalize_media_kind(media_kind, file.content_type, raw_filename)
+    kind = _normalize_media_kind(media_kind, file.content_type, safe_filename)
     now = datetime.now(timezone.utc).isoformat()
 
-    assets_root = _project_root() / settings.media_assets_dir / str(user["id"])
+    root = project_root()
+    assets_root = root / settings.media_assets_dir / str(user["id"])
     assets_root.mkdir(parents=True, exist_ok=True)
-    stored_name = f"{uuid.uuid4().hex}_{raw_filename}"
+    stored_name = f"{uuid.uuid4().hex}_{safe_filename}"
     dest = assets_root / stored_name
     dest.write_bytes(data)
 
-    display_name = (name or raw_filename).strip() or raw_filename
+    # Store the path relative to the project root for portability across deployments.
+    relative_path = str(dest.relative_to(root))
+    display_name = (name or safe_filename).strip() or safe_filename
     cursor = await db.execute(
         "INSERT INTO media_assets (user_id, name, file_path, media_kind, mime_type, size_bytes, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (user["id"], display_name, str(dest), kind, file.content_type, len(data), now),
+        (user["id"], display_name, relative_path, kind, file.content_type, len(data), now),
     )
     await db.commit()
 
@@ -148,21 +165,32 @@ async def delete_media_asset(asset_id: int, db: Db, user: CurrentUser) -> dict:
     if user["role"] != "admin" and row[1] != user["id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
-    async with db.execute(
-        "SELECT COUNT(*) FROM mapping_transform_rules WHERE replacement_media_asset_id = ?",
-        (asset_id,),
-    ) as cur:
-        in_use = (await cur.fetchone())[0]
-    if in_use:
+    # Atomically delete only if the asset is not referenced by any transform rules,
+    # preventing a TOCTOU race between the usage check and the DELETE.
+    cursor = await db.execute(
+        """
+        DELETE FROM media_assets
+        WHERE id = ?
+          AND NOT EXISTS (
+              SELECT 1 FROM mapping_transform_rules
+              WHERE replacement_media_asset_id = ?
+          )
+        """,
+        (asset_id, asset_id),
+    )
+    await db.commit()
+    if cursor.rowcount == 0:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Media asset is in use by transform rules",
         )
 
-    await db.execute("DELETE FROM media_assets WHERE id = ?", (asset_id,))
-    await db.commit()
+    stored_path = row[2]
+    # Resolve relative paths against the project root; absolute paths are used as-is
+    # (backward compat with pre-migration entries that stored absolute paths).
+    file_path = Path(stored_path) if Path(stored_path).is_absolute() else project_root() / stored_path
     try:
-        Path(row[2]).unlink(missing_ok=True)
-    except OSError:
-        pass
+        file_path.unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("Failed to delete media asset file %r: %s", str(file_path), exc)
     return {"status": "ok"}

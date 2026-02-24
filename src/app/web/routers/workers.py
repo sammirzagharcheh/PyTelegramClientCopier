@@ -197,6 +197,11 @@ async def restart_workers_for_mapping(
             user_id, session_path = acc_row[0], acc_row[1]
             if _account_has_running_worker(account_id):
                 await stop_workers_for_account(account_id, db)
+            # NOTE: There is an intentional race window here – another process may start
+            # a worker for this account between the check above and the one below, so
+            # _account_has_running_worker can change concurrently. This is acceptable:
+            # failures are caught and logged as warnings rather than propagated, and
+            # occasional redundant start/stop attempts are tolerated.
             try:
                 if not _account_has_running_worker(account_id):
                     await _spawn_worker_for_account(db, account_id, user_id, session_path)

@@ -1,6 +1,22 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def project_root() -> Path:
+    """Return the project root by searching for a pyproject.toml or setup.py marker.
+
+    Walks up from this file's location so the result is correct regardless of the
+    current working directory, and avoids hard-coding a fixed number of parent
+    directories that would break if the file is moved.
+    """
+    current = Path(__file__).resolve()
+    for candidate in (current,) + tuple(current.parents):
+        if (candidate / "pyproject.toml").is_file() or (candidate / "setup.py").is_file():
+            return candidate
+    return current.parent
 
 
 class Settings(BaseSettings):

@@ -161,6 +161,36 @@ MIGRATIONS = [
     ALTER TABLE mapping_transform_rules ADD COLUMN replacement_media_asset_id INTEGER REFERENCES media_assets(id);
     ALTER TABLE mapping_transform_rules ADD COLUMN apply_to_media_types TEXT;
     """,
+    # v15: add ON DELETE CASCADE to mapping_transform_rules foreign key on channel_mappings
+    # SQLite does not support ALTER TABLE to change constraints, so the table is recreated.
+    """
+    PRAGMA foreign_keys = OFF;
+    CREATE TABLE IF NOT EXISTS mapping_transform_rules_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mapping_id INTEGER NOT NULL,
+        rule_type TEXT NOT NULL,
+        find_text TEXT,
+        replace_text TEXT,
+        regex_pattern TEXT,
+        regex_flags TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        priority INTEGER NOT NULL DEFAULT 100,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        replacement_media_asset_id INTEGER REFERENCES media_assets(id),
+        apply_to_media_types TEXT,
+        FOREIGN KEY(mapping_id) REFERENCES channel_mappings(id) ON DELETE CASCADE
+    );
+    INSERT OR IGNORE INTO mapping_transform_rules_new
+        SELECT id, mapping_id, rule_type, find_text, replace_text, regex_pattern,
+               regex_flags, enabled, priority, created_at,
+               replacement_media_asset_id, apply_to_media_types
+        FROM mapping_transform_rules;
+    DROP TABLE mapping_transform_rules;
+    ALTER TABLE mapping_transform_rules_new RENAME TO mapping_transform_rules;
+    CREATE INDEX IF NOT EXISTS ix_mapping_transform_rules_mapping_id
+        ON mapping_transform_rules(mapping_id);
+    PRAGMA foreign_keys = ON;
+    """,
 ]
 
 

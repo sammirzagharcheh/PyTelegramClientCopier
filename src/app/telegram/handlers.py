@@ -102,6 +102,11 @@ def _rule_applies_to_media_type(rule: MappingTransform, media_type: str) -> bool
 
 
 def _render_template(template: str, context: dict[str, object]) -> str:
+    """Substitute ``{{key}}`` placeholders in *template* with values from *context*.
+
+    Note: values are coerced to strings with no escaping of Telegram formatting
+    characters. Templates are owner-controlled, so this is intentional.
+    """
     def _sub(match: re.Match[str]) -> str:
         key = match.group(1)
         value = context.get(key, "")
@@ -342,6 +347,14 @@ def build_message_handler(
                                     reply_to=reply_to_msg_id,
                                 )
                             else:
+                                if replacement_media_path is not None:
+                                    logger.warning(
+                                        "Replacement media missing/unreadable for mapping_id=%s path=%r "
+                                        "and no original media available; falling back to text-only: %s",
+                                        mapping.id,
+                                        replacement_media_path,
+                                        e,
+                                    )
                                 use_file = False
                         except TypeError:
                             use_file = False

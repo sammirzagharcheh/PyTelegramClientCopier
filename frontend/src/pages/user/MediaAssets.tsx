@@ -51,6 +51,12 @@ export function MediaAssets() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadError('');
+    const MAX_SIZE_MB = 50;
+    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+      setUploadError(`File exceeds the maximum allowed size of ${MAX_SIZE_MB} MB`);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
     setIsUploading(true);
     try {
       const formData = new FormData();
