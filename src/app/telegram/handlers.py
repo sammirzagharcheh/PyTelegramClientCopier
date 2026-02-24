@@ -12,6 +12,7 @@ from telethon.tl.custom.message import Message
 from telethon.tl.types import MessageMediaWebPage
 
 from app.services.mapping_service import ChannelMapping, MappingFilter, MappingTransform, Schedule
+from app.utils.regex import regex_flags_from_string
 
 logger = logging.getLogger(__name__)
 _TEMPLATE_TOKEN_RE = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
@@ -87,20 +88,6 @@ def _passes_filters(message: Message, filters: Iterable[MappingFilter]) -> bool:
     return True
 
 
-def _regex_flags(flag_string: str | None) -> int:
-    flags = 0
-    if not flag_string:
-        return flags
-    for ch in flag_string.lower():
-        if ch == "i":
-            flags |= re.IGNORECASE
-        elif ch == "m":
-            flags |= re.MULTILINE
-        elif ch == "s":
-            flags |= re.DOTALL
-    return flags
-
-
 def _rule_applies_to_media_type(rule: MappingTransform, media_type: str) -> bool:
     if not rule.apply_to_media_types:
         return True
@@ -152,7 +139,7 @@ def _apply_transforms(
                     rule.regex_pattern,
                     rule.replace_text or "",
                     output,
-                    flags=_regex_flags(rule.regex_flags),
+                    flags=regex_flags_from_string(rule.regex_flags),
                 )
             except re.error:
                 logger.warning(

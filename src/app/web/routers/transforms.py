@@ -6,6 +6,7 @@ import re
 
 from fastapi import APIRouter, HTTPException, status
 
+from app.utils.regex import regex_flags_from_string
 from app.web.deps import CurrentUser, Db
 from app.web.routers.workers import restart_workers_for_mapping
 from app.web.schemas.mappings import (
@@ -58,19 +59,6 @@ def _normalize_apply_to_media_types(value: str | None) -> str | None:
     return ",".join(deduped)
 
 
-def _regex_flags_value(flag_string: str | None) -> int:
-    flags = 0
-    if not flag_string:
-        return flags
-    if "i" in flag_string:
-        flags |= re.IGNORECASE
-    if "m" in flag_string:
-        flags |= re.MULTILINE
-    if "s" in flag_string:
-        flags |= re.DOTALL
-    return flags
-
-
 def _validate_transform_payload(
     *,
     rule_type: str,
@@ -106,7 +94,7 @@ def _validate_transform_payload(
                 detail="regex_pattern is required for regex rules",
             )
         try:
-            re.compile(regex_pattern, flags=_regex_flags_value(regex_flags))
+            re.compile(regex_pattern, flags=regex_flags_from_string(regex_flags))
         except re.error as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
