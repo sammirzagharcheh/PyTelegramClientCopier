@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.utils.regex import regex_flags_from_string
 from app.web.deps import CurrentUser, Db
+from app.web.mapping_access import get_mapping_scope
 from app.web.routers.workers import restart_workers_for_mapping
 from app.web.schemas.mappings import (
     MappingTransformCreate,
@@ -129,19 +130,6 @@ def _validate_transform_payload(
     return None, None, None, replacement_media_asset_id, apply_to_media_types
 
 
-async def _get_mapping_scope(db: Db, user: dict, mapping_id: int) -> tuple[int, int | None]:
-    async with db.execute(
-        "SELECT user_id, telegram_account_id FROM channel_mappings WHERE id = ?",
-        (mapping_id,),
-    ) as cur:
-        row = await cur.fetchone()
-    if not row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mapping not found")
-    if user["role"] != "admin" and row[0] != user["id"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    return int(row[0]), row[1]
-
-
 async def _validate_media_asset_for_mapping(
     db: Db,
     *,
@@ -185,7 +173,7 @@ def _row_to_response(row: tuple) -> dict:
 @router.get("/{mapping_id}/transforms", response_model=list[MappingTransformResponse])
 async def list_transforms(mapping_id: int, db: Db, user: CurrentUser) -> list[dict]:
     """List text/regex/emoji/media/template transformation rules for a mapping."""
-    await _get_mapping_scope(db, user, mapping_id)
+    await get_mapping_scope(db, user, mapping_id)
     async with db.execute(
         "SELECT id, mapping_id, rule_type, find_text, replace_text, regex_pattern, regex_flags, "
         "replacement_media_asset_id, apply_to_media_types, enabled, priority, created_at "
@@ -209,7 +197,7 @@ async def create_transform(
     user: CurrentUser,
 ) -> dict:
     """Create a transformation rule for a mapping."""
-    mapping_user_id, mapping_account_id = await _get_mapping_scope(db, user, mapping_id)
+    mapping_user_id, mapping_account_id = await get_mapping_scope(db, user, mapping_id)
     rule_type = _normalize_rule_type(data.rule_type)
     regex_flags = _normalize_regex_flags(data.regex_flags)
     apply_to_media_types = _normalize_apply_to_media_types(data.apply_to_media_types)
@@ -280,7 +268,7 @@ async def update_transform(
     user: CurrentUser,
 ) -> dict:
     """Update a transformation rule."""
-    mapping_user_id, mapping_account_id = await _get_mapping_scope(db, user, mapping_id)
+    mapping_user_id, mapping_account_id = await get_mapping_scope(db, user, mapping_id)
     async with db.execute(
         "SELECT id, mapping_id, rule_type, find_text, replace_text, regex_pattern, regex_flags, "
         "replacement_media_asset_id, apply_to_media_types, enabled, priority, created_at "
@@ -378,7 +366,7 @@ async def update_transform(
 @router.delete("/{mapping_id}/transforms/{transform_id}")
 async def delete_transform(mapping_id: int, transform_id: int, db: Db, user: CurrentUser) -> dict:
     """Delete a transformation rule."""
-    mapping_user_id, mapping_account_id = await _get_mapping_scope(db, user, mapping_id)
+    mapping_user_id, mapping_account_id = await get_mapping_scope(db, user, mapping_id)
     result = await db.execute(
         "DELETE FROM mapping_transform_rules WHERE id = ? AND mapping_id = ?",
         (transform_id, mapping_id),
