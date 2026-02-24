@@ -309,6 +309,12 @@ async def update_transform(
         # replacement_media_asset_id. Clear it so validation doesn't reject with 400.
         if merged["rule_type"] != "media":
             merged["replacement_media_asset_id"] = None
+        # When switching from media/template to text/emoji/regex, the frontend omits
+        # apply_to_media_types. Clear it so the rule applies to all media types.
+        # Otherwise _rule_applies_to_media_type would restrict application to the
+        # old value (e.g. only photo captions) with no UI indication.
+        if merged["rule_type"] in {"text", "emoji", "regex"}:
+            merged["apply_to_media_types"] = None
         normalized_flags = _normalize_regex_flags(merged["regex_flags"])
         normalized_media_types = _normalize_apply_to_media_types(
             merged["apply_to_media_types"]
