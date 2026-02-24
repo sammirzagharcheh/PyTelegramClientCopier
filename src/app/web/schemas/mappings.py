@@ -34,6 +34,8 @@ class MappingTransformCreate(BaseModel):
     replace_text: str | None = None
     regex_pattern: str | None = None
     regex_flags: str | None = None
+    replacement_media_asset_id: int | None = None
+    apply_to_media_types: str | None = None
     enabled: bool = True
     priority: int = 100
 
@@ -44,6 +46,8 @@ class MappingTransformUpdate(BaseModel):
     replace_text: str | None = None
     regex_pattern: str | None = None
     regex_flags: str | None = None
+    replacement_media_asset_id: int | None = None
+    apply_to_media_types: str | None = None
     enabled: bool | None = None
     priority: int | None = None
 
@@ -56,6 +60,8 @@ class MappingTransformResponse(BaseModel):
     replace_text: str | None
     regex_pattern: str | None
     regex_flags: str | None
+    replacement_media_asset_id: int | None
+    apply_to_media_types: str | None
     enabled: bool
     priority: int
     created_at: str | None

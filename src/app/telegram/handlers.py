@@ -128,6 +128,38 @@ def _apply_transforms(text: str, transforms: Iterable[MappingTransform]) -> str:
     return output
 
 
+def _media_rule_matches(rule: MappingTransform, media_type: str) -> bool:
+    if rule.rule_type != "media":
+        return False
+    if not rule.apply_to_media_types:
+        return True
+    allowed = {
+        p.strip().lower()
+        for p in rule.apply_to_media_types.split(",")
+        if p.strip()
+    }
+    if not allowed:
+        return True
+    return media_type in allowed or "any" in allowed or "*" in allowed or "all" in allowed
+
+
+def _pick_media_replacement(message: Message, transforms: Iterable[MappingTransform]) -> str | None:
+    incoming_has_media = (
+        message.media is not None and not isinstance(message.media, MessageMediaWebPage)
+    )
+    if not incoming_has_media:
+        return None
+    media_type = _message_media_type(message)
+    for rule in transforms:
+        if not rule.enabled:
+            continue
+        if not _media_rule_matches(rule, media_type):
+            continue
+        if rule.replacement_media_asset_path:
+            return rule.replacement_media_asset_path
+    return None
+
+
 async def _lookup_reply_dest_id(
     db: aiosqlite.Connection,
     user_id: int,
@@ -220,6 +252,7 @@ def build_message_handler(
                 continue
 
             transformed_text = _apply_transforms(message.message or "", mapping.transforms)
+            replacement_media_path = _pick_media_replacement(message, mapping.transforms)
             reply_to_msg_id = None
             if message.reply_to and message.reply_to.reply_to_msg_id:
                 reply_to_msg_id = await _lookup_reply_dest_id(
@@ -238,19 +271,41 @@ def build_message_handler(
             last_err: Exception | None = None
             for dest_id in dest_ids:
                 try:
-                    use_file = (
+                    incoming_supported_media = (
                         (message.photo or message.video or message.voice)
                         and message.media is not None
                         and not isinstance(message.media, MessageMediaWebPage)
                     )
+                    use_file = replacement_media_path is not None or incoming_supported_media
                     if use_file:
                         try:
+                            file_payload = (
+                                replacement_media_path
+                                if replacement_media_path is not None
+                                else message.media
+                            )
                             sent = await event.client.send_file(
                                 dest_id,
-                                message.media,
+                                file_payload,
                                 caption=transformed_text,
                                 reply_to=reply_to_msg_id,
                             )
+                        except (FileNotFoundError, OSError) as e:
+                            if replacement_media_path is not None and incoming_supported_media:
+                                logger.warning(
+                                    "Replacement media missing/unreadable for mapping_id=%s path=%r: %s",
+                                    mapping.id,
+                                    replacement_media_path,
+                                    e,
+                                )
+                                sent = await event.client.send_file(
+                                    dest_id,
+                                    message.media,
+                                    caption=transformed_text,
+                                    reply_to=reply_to_msg_id,
+                                )
+                            else:
+                                use_file = False
                         except TypeError:
                             use_file = False
                     if not use_file:

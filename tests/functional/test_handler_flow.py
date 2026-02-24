@@ -380,3 +380,53 @@ async def test_handler_applies_text_regex_and_emoji_transforms(tmp_path):
     assert len(client.sent_messages) == 1
     assert client.sent_messages[0][1] == "Welcome to Tom channel order #XXX ⭐"
 
+
+@pytest.mark.asyncio
+async def test_handler_replaces_media_with_uploaded_asset(tmp_path):
+    db_path = tmp_path / "test.db"
+    from app.config import settings
+
+    settings.sqlite_path = str(db_path)
+    await init_sqlite()
+    db = await get_sqlite()
+
+    replacement_asset = tmp_path / "replacement.jpg"
+    replacement_asset.write_bytes(b"fake-jpg-bytes")
+
+    mapping = ChannelMapping(
+        id=1,
+        user_id=1,
+        source_chat_id=10,
+        dest_chat_id=20,
+        enabled=True,
+        filters=[],
+        source_chat_title=None,
+        dest_chat_title=None,
+        transforms=[
+            MappingTransform(
+                id=1,
+                rule_type="media",
+                replacement_media_asset_id=1,
+                replacement_media_asset_path=str(replacement_asset),
+                apply_to_media_types="photo",
+                enabled=True,
+                priority=1,
+            )
+        ],
+    )
+    mongo = DummyMongo()
+    client = DummyClient()
+    handler = build_message_handler(user_id=1, mappings=[mapping], db=db, mongo_db=mongo)
+
+    event = DummyEvent(
+        chat_id=10,
+        message=DummyMessage(1, "caption", media="source-media", photo=True),
+        client=client,
+    )
+    await handler(event)
+
+    assert len(client.sent_files) == 1
+    # send_file should use replacement asset path, not original source media payload
+    assert client.sent_files[0][1] == str(replacement_asset)
+    assert client.sent_files[0][2] == "caption"
+

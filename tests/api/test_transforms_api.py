@@ -1,5 +1,9 @@
 """API tests for transform CRUD endpoints."""
 
+from __future__ import annotations
+
+import io
+
 
 def test_list_transforms_200_empty(api_client, user_token):
     r = api_client.get(
@@ -147,3 +151,62 @@ def test_admin_can_manage_other_user_transforms(api_client, admin_token):
     )
     assert list_resp.status_code == 200
     assert any(item["id"] == transform_id for item in list_resp.json())
+
+
+def test_create_media_transform_201(api_client, user_token):
+    upload = api_client.post(
+        "/api/media-assets",
+        headers={"Authorization": f"Bearer {user_token}"},
+        files={"file": ("replacement.jpg", io.BytesIO(b"img"), "image/jpeg")},
+    )
+    assert upload.status_code == 201
+    asset_id = upload.json()["id"]
+
+    r = api_client.post(
+        "/api/mappings/1/transforms",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "rule_type": "media",
+            "replacement_media_asset_id": asset_id,
+            "apply_to_media_types": "photo",
+            "priority": 1,
+        },
+    )
+    assert r.status_code == 201
+    data = r.json()
+    assert data["rule_type"] == "media"
+    assert data["replacement_media_asset_id"] == asset_id
+    assert data["apply_to_media_types"] == "photo"
+
+
+def test_create_media_transform_requires_asset_400(api_client, user_token):
+    r = api_client.post(
+        "/api/mappings/1/transforms",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"rule_type": "media"},
+    )
+    assert r.status_code == 400
+    assert "replacement_media_asset_id is required" in r.json()["detail"]
+
+
+def test_create_media_transform_rejects_non_owner_asset(api_client, admin_token):
+    # Asset belongs to admin user (id=2), mapping 1 belongs to user 1.
+    upload = api_client.post(
+        "/api/media-assets",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        files={"file": ("admin-only.jpg", io.BytesIO(b"img"), "image/jpeg")},
+    )
+    assert upload.status_code == 201
+    asset_id = upload.json()["id"]
+
+    r = api_client.post(
+        "/api/mappings/1/transforms",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "rule_type": "media",
+            "replacement_media_asset_id": asset_id,
+            "apply_to_media_types": "photo",
+        },
+    )
+    assert r.status_code == 400
+    assert "must belong to mapping owner" in r.json()["detail"]

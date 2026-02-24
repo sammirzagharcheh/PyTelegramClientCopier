@@ -16,6 +16,7 @@ def api_client(tmp_path):
     from app.config import settings
 
     settings.sqlite_path = str(tmp_path / "test.db")
+    settings.media_assets_dir = str(tmp_path / "media_assets")
     from app.web.app import create_app
 
     app = create_app()

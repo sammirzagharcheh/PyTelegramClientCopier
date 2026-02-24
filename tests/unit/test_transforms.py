@@ -1,5 +1,5 @@
 from app.services.mapping_service import MappingTransform
-from app.telegram.handlers import _apply_transforms
+from app.telegram.handlers import _apply_transforms, _pick_media_replacement
 
 
 def test_apply_text_transform():
@@ -85,3 +85,47 @@ def test_invalid_regex_transform_is_skipped():
     ]
     out = _apply_transforms("sample text", rules)
     assert out == "sample text"
+
+
+class _DummyMessage:
+    def __init__(self, *, media=None, photo=False, video=False, voice=False):
+        self.media = media
+        self.photo = photo
+        self.video = video
+        self.voice = voice
+        self.text = ""
+        self.message = ""
+
+
+def test_pick_media_replacement_for_photo():
+    msg = _DummyMessage(media="source-bytes", photo=True)
+    rules = [
+        MappingTransform(
+            id=1,
+            rule_type="media",
+            replacement_media_asset_id=100,
+            replacement_media_asset_path="/tmp/replacement.jpg",
+            apply_to_media_types="photo",
+            enabled=True,
+            priority=1,
+        )
+    ]
+    picked = _pick_media_replacement(msg, rules)
+    assert picked == "/tmp/replacement.jpg"
+
+
+def test_pick_media_replacement_ignores_non_matching_media_type():
+    msg = _DummyMessage(media="source-bytes", video=True)
+    rules = [
+        MappingTransform(
+            id=1,
+            rule_type="media",
+            replacement_media_asset_id=100,
+            replacement_media_asset_path="/tmp/replacement.jpg",
+            apply_to_media_types="photo",
+            enabled=True,
+            priority=1,
+        )
+    ]
+    picked = _pick_media_replacement(msg, rules)
+    assert picked is None

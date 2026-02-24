@@ -18,12 +18,16 @@ class MappingFilter:
 class MappingTransform:
     id: int
     rule_type: str
-    find_text: str | None
-    replace_text: str | None
-    regex_pattern: str | None
-    regex_flags: str | None
-    enabled: bool
-    priority: int
+    find_text: str | None = None
+    replace_text: str | None = None
+    regex_pattern: str | None = None
+    regex_flags: str | None = None
+    replacement_media_asset_id: int | None = None
+    apply_to_media_types: str | None = None
+    replacement_media_asset_path: str | None = None
+    replacement_media_kind: str | None = None
+    enabled: bool = True
+    priority: int = 100
 
 
 WEEKDAY_COLS = [
@@ -207,9 +211,11 @@ async def _list_filters(db: aiosqlite.Connection, user_id: int, mapping_id: int)
 async def _list_transforms(db: aiosqlite.Connection, user_id: int, mapping_id: int) -> list[MappingTransform]:
     async with db.execute(
         "SELECT tr.id, tr.rule_type, tr.find_text, tr.replace_text, tr.regex_pattern, "
-        "tr.regex_flags, tr.enabled, tr.priority "
+        "tr.regex_flags, tr.replacement_media_asset_id, tr.apply_to_media_types, "
+        "ma.file_path, ma.media_kind, tr.enabled, tr.priority "
         "FROM mapping_transform_rules tr "
         "JOIN channel_mappings cm ON cm.id = tr.mapping_id "
+        "LEFT JOIN media_assets ma ON ma.id = tr.replacement_media_asset_id "
         "WHERE tr.mapping_id = ? AND cm.user_id = ? "
         "ORDER BY tr.priority ASC, tr.id ASC",
         (mapping_id, user_id),
@@ -223,8 +229,12 @@ async def _list_transforms(db: aiosqlite.Connection, user_id: int, mapping_id: i
             replace_text=row[3],
             regex_pattern=row[4],
             regex_flags=row[5],
-            enabled=bool(row[6]),
-            priority=row[7] if row[7] is not None else 100,
+            replacement_media_asset_id=row[6],
+            apply_to_media_types=row[7],
+            replacement_media_asset_path=row[8],
+            replacement_media_kind=row[9],
+            enabled=bool(row[10]),
+            priority=row[11] if row[11] is not None else 100,
         )
         for row in rows
     ]
