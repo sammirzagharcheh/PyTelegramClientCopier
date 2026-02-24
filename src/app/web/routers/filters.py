@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 
+from app.web.routers.workers import restart_workers_for_mapping
 from app.web.deps import CurrentUser, Db
 from app.web.schemas.mappings import (
     MappingFilterCreate,
@@ -14,9 +15,11 @@ from app.web.schemas.mappings import (
 router = APIRouter(prefix="/mappings", tags=["filters"])
 
 
-async def _check_mapping_access(db: Db, user: dict, mapping_id: int) -> None:
+async def _check_mapping_access(
+    db: Db, user: dict, mapping_id: int
+) -> tuple[int, int | None]:
     async with db.execute(
-        "SELECT user_id FROM channel_mappings WHERE id = ?",
+        "SELECT user_id, telegram_account_id FROM channel_mappings WHERE id = ?",
         (mapping_id,),
     ) as cur:
         row = await cur.fetchone()
@@ -24,6 +27,7 @@ async def _check_mapping_access(db: Db, user: dict, mapping_id: int) -> None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mapping not found")
     if user["role"] != "admin" and row[0] != user["id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    return int(row[0]), row[1]
 
 
 @router.get("/{mapping_id}/filters", response_model=list[MappingFilterResponse])
@@ -61,7 +65,7 @@ async def create_filter(
     user: CurrentUser,
 ) -> dict:
     """Create filter for a mapping."""
-    await _check_mapping_access(db, user, mapping_id)
+    mapping_user_id, mapping_account_id = await _check_mapping_access(db, user, mapping_id)
     cursor = await db.execute(
         """INSERT INTO mapping_filters (mapping_id, include_text, exclude_text, media_types, regex_pattern)
            VALUES (?, ?, ?, ?, ?)""",
@@ -74,6 +78,10 @@ async def create_filter(
         ),
     )
     await db.commit()
+    try:
+        await restart_workers_for_mapping(db, mapping_user_id, mapping_account_id)
+    except Exception:
+        pass
     fid = cursor.lastrowid
     async with db.execute(
         "SELECT id, mapping_id, include_text, exclude_text, media_types, regex_pattern FROM mapping_filters WHERE id = ?",
@@ -99,7 +107,7 @@ async def update_filter(
     user: CurrentUser,
 ) -> dict:
     """Update filter."""
-    await _check_mapping_access(db, user, mapping_id)
+    mapping_user_id, mapping_account_id = await _check_mapping_access(db, user, mapping_id)
     async with db.execute(
         "SELECT id FROM mapping_filters WHERE id = ? AND mapping_id = ?",
         (filter_id, mapping_id),
@@ -125,6 +133,10 @@ async def update_filter(
         params.append(filter_id)
         await db.execute(f"UPDATE mapping_filters SET {', '.join(updates)} WHERE id = ?", params)
         await db.commit()
+        try:
+            await restart_workers_for_mapping(db, mapping_user_id, mapping_account_id)
+        except Exception:
+            pass
     async with db.execute(
         "SELECT id, mapping_id, include_text, exclude_text, media_types, regex_pattern FROM mapping_filters WHERE id = ?",
         (filter_id,),
@@ -148,7 +160,7 @@ async def delete_filter(
     user: CurrentUser,
 ) -> dict:
     """Delete filter."""
-    await _check_mapping_access(db, user, mapping_id)
+    mapping_user_id, mapping_account_id = await _check_mapping_access(db, user, mapping_id)
     result = await db.execute(
         "DELETE FROM mapping_filters WHERE id = ? AND mapping_id = ?",
         (filter_id, mapping_id),
@@ -156,4 +168,8 @@ async def delete_filter(
     await db.commit()
     if result.rowcount == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Filter not found")
+    try:
+        await restart_workers_for_mapping(db, mapping_user_id, mapping_account_id)
+    except Exception:
+        pass
     return {"status": "ok"}

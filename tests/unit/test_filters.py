@@ -1,5 +1,5 @@
 from app.services.mapping_service import MappingFilter
-from app.telegram.handlers import _message_media_type, _passes_filters
+from app.telegram.handlers import _alternate_chat_id, _message_media_type, _passes_filters
 
 
 class DummyMessage:
@@ -124,3 +124,13 @@ def test_passes_filters_exclude_empty_string_no_op():
     msg = DummyMessage("hello")
     filters = [MappingFilter(include_text=None, exclude_text="", media_types=None, regex_pattern=None)]
     assert _passes_filters(msg, filters) is True
+
+
+def test_alternate_chat_id_converts_full_to_legacy():
+    full = -1001234567890
+    assert _alternate_chat_id(full) == -1234567890
+
+
+def test_alternate_chat_id_converts_legacy_to_full():
+    legacy = -1234567890
+    assert _alternate_chat_id(legacy) == -1001234567890

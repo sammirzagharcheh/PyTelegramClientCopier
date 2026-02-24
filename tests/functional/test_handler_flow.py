@@ -79,6 +79,14 @@ class DummyMongo:
         self.logs.append(doc)
 
 
+class FailingMongo:
+    def __init__(self):
+        self.message_logs = self
+
+    async def insert_one(self, _doc):
+        raise RuntimeError("mongo down")
+
+
 @pytest.mark.asyncio
 async def test_handler_flow_replies_and_media(tmp_path):
     db_path = tmp_path / "test.db"
@@ -482,4 +490,73 @@ async def test_handler_applies_template_transform(tmp_path):
 
     assert len(client.sent_messages) == 1
     assert client.sent_messages[0][1] == "[Channel A] hello Tom (#42)"
+
+
+@pytest.mark.asyncio
+async def test_handler_matches_alternate_source_chat_id_formats(tmp_path):
+    db_path = tmp_path / "test.db"
+    from app.config import settings
+
+    settings.sqlite_path = str(db_path)
+    await init_sqlite()
+    db = await get_sqlite()
+
+    source_full = -1001234567890
+    source_legacy = source_full + 1000000000000
+
+    mapping = ChannelMapping(
+        id=1,
+        user_id=1,
+        source_chat_id=source_full,
+        dest_chat_id=20,
+        enabled=True,
+        filters=[],
+        source_chat_title=None,
+        dest_chat_title=None,
+    )
+    mongo = DummyMongo()
+    client = DummyClient()
+    handler = build_message_handler(user_id=1, mappings=[mapping], db=db, mongo_db=mongo)
+
+    # Incoming event uses legacy format, mapping uses full format.
+    event = DummyEvent(
+        chat_id=source_legacy,
+        message=DummyMessage(5, "compat message"),
+        client=client,
+    )
+    await handler(event)
+
+    assert len(client.sent_messages) == 1
+    assert client.sent_messages[0][0] == 20
+    assert client.sent_messages[0][1] == "compat message"
+
+
+@pytest.mark.asyncio
+async def test_handler_forwards_even_if_mongo_log_write_fails(tmp_path):
+    db_path = tmp_path / "test.db"
+    from app.config import settings
+
+    settings.sqlite_path = str(db_path)
+    await init_sqlite()
+    db = await get_sqlite()
+
+    mapping = ChannelMapping(
+        id=1,
+        user_id=1,
+        source_chat_id=10,
+        dest_chat_id=20,
+        enabled=True,
+        filters=[],
+        source_chat_title=None,
+        dest_chat_title=None,
+    )
+    mongo = FailingMongo()
+    client = DummyClient()
+    handler = build_message_handler(user_id=1, mappings=[mapping], db=db, mongo_db=mongo)
+
+    event = DummyEvent(chat_id=10, message=DummyMessage(9, "hello"), client=client)
+    await handler(event)
+
+    assert len(client.sent_messages) == 1
+    assert client.sent_messages[0][1] == "hello"
 
