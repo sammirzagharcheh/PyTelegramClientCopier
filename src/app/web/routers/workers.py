@@ -110,10 +110,7 @@ async def _list_workers_from_registry(
             workers_pruned += 1
             continue
 
-        # Normalize SQLite datetime to ISO UTC for frontend
-        started_at = created_at
-        if created_at and "T" not in str(created_at) and "Z" not in str(created_at) and "+" not in str(created_at):
-            started_at = str(created_at).replace(" ", "T") + "Z"
+        started_at = _normalize_started_at(created_at)
 
         # Reattach to _workers if missing (e.g. worker started by another API instance)
         if worker_id not in _workers:
@@ -161,6 +158,13 @@ async def _prune_orphaned_registry_rows(db: aiosqlite.Connection) -> None:
     if deleted:
         await db.commit()
         logger.info("Pruned %d orphaned worker_registry row(s)", deleted)
+
+
+def _normalize_started_at(created_at: str | None) -> str | None:
+    """Normalize a SQLite datetime string to ISO 8601 UTC format for the frontend."""
+    if created_at and "T" not in str(created_at) and "Z" not in str(created_at) and "+" not in str(created_at):
+        return str(created_at).replace(" ", "T") + "Z"
+    return created_at
 
 
 def _next_worker_id() -> str:
@@ -404,9 +408,7 @@ async def stop_worker(
             if user["role"] != "admin" and uid != user["id"]:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
             if _pid_alive(pid):
-                started_at = created_at
-                if created_at and "T" not in str(created_at) and "Z" not in str(created_at) and "+" not in str(created_at):
-                    started_at = str(created_at).replace(" ", "T") + "Z"
+                started_at = _normalize_started_at(created_at)
                 _workers[worker_id] = {
                     "id": worker_id,
                     "user_id": uid,
@@ -451,9 +453,7 @@ async def restore_workers_from_db(db: aiosqlite.Connection) -> None:
             await _spawn_worker_for_account(db, account_id, user_id, session_path)
             continue
         # Normalize SQLite datetime to ISO UTC for frontend
-        started_at = created_at
-        if created_at and "T" not in created_at and "Z" not in created_at and "+" not in created_at:
-            started_at = created_at.replace(" ", "T") + "Z"
+        started_at = _normalize_started_at(created_at)
         _workers[worker_id] = {
             "id": worker_id,
             "user_id": user_id,
