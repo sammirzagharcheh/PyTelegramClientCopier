@@ -1,11 +1,18 @@
 """API tests for workers endpoints (start, stop, list)."""
 
+import asyncio
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app.db.sqlite import get_sqlite
 from app.web.routers import workers
+
+
+def _run_async(coro):
+    """Run async code from sync test; avoids event loop conflicts."""
+    return asyncio.run(coro)
 
 
 @pytest.fixture(autouse=True)
@@ -31,9 +38,7 @@ def test_start_worker_with_stale_registry_succeeds(api_client, user_token):
         await db.commit()
         await db.close()
 
-    import asyncio
-
-    asyncio.run(add_stale_row())
+    _run_async(add_stale_row())
 
     fake_proc = MagicMock()
     fake_proc.pid = 12345
@@ -59,7 +64,7 @@ def test_start_worker_with_stale_registry_succeeds(api_client, user_token):
 def test_list_workers_returns_started_at(api_client, user_token):
     """GET /workers includes started_at for each running worker."""
     fake_proc = MagicMock()
-    fake_proc.pid = 12345
+    fake_proc.pid = os.getpid()  # Use current process PID so registry liveness check passes
     fake_proc.poll.return_value = None
 
     with patch("app.web.routers.workers.subprocess.Popen", return_value=fake_proc):
@@ -79,3 +84,35 @@ def test_list_workers_returns_started_at(api_client, user_token):
     w = next(ww for ww in workers_list if ww.get("account_id") == 1 and ww.get("running"))
     assert "started_at" in w
     assert w["started_at"] is not None
+
+
+def test_list_workers_reattaches_from_registry_when_missing_from_memory(api_client, user_token):
+    """When worker_registry has a row with alive PID but worker is not in _workers
+    (e.g. started by another API instance), list_workers returns it and reattaches."""
+    workers._workers.clear()
+    alive_pid = os.getpid()
+
+    async def add_registry_row():
+        db = await get_sqlite()
+        await db.execute(
+            "INSERT INTO worker_registry (worker_id, user_id, account_id, session_path, pid) VALUES (?, ?, ?, ?, ?)",
+            ("w99", 1, 1, "data/user1.session", alive_pid),
+        )
+        await db.commit()
+        await db.close()
+
+    _run_async(add_registry_row())
+
+    r = api_client.get(
+        "/api/workers",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert r.status_code == 200
+    workers_list = r.json()
+    assert len(workers_list) == 1
+    w = workers_list[0]
+    assert w["id"] == "w99"
+    assert w["account_id"] == 1
+    assert w["running"] is True
+    assert w["pid"] == alive_pid
+    assert "w99" in workers._workers

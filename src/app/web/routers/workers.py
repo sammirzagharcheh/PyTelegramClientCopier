@@ -67,6 +67,83 @@ async def _prune_dead_workers(db: aiosqlite.Connection) -> None:
         await db.commit()
 
 
+def _pid_alive(pid: int) -> bool:
+    """Check if a process with the given PID is alive."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+async def _list_workers_from_registry(
+    db: aiosqlite.Connection, user: dict
+) -> tuple[list[dict], int, int, int]:
+    """
+    List workers from worker_registry (source of truth). Prunes dead PIDs, reattaches
+    alive workers missing from _workers, and returns the response list.
+    Returns (items, workers_in_registry, workers_reattached, workers_pruned).
+    """
+    if user["role"] != "admin":
+        async with db.execute(
+            "SELECT worker_id, user_id, account_id, session_path, pid, created_at FROM worker_registry WHERE user_id = ?",
+            (user["id"],),
+        ) as cur:
+            rows = await cur.fetchall()
+    else:
+        async with db.execute(
+            "SELECT worker_id, user_id, account_id, session_path, pid, created_at FROM worker_registry"
+        ) as cur:
+            rows = await cur.fetchall()
+
+    workers_in_registry = len(rows)
+    workers_reattached = 0
+    workers_pruned = 0
+    items: list[dict] = []
+
+    for row in rows:
+        worker_id, uid, account_id, session_path, pid, created_at = (
+            row[0], row[1], row[2], row[3], row[4], row[5]
+        )
+        if not _pid_alive(pid):
+            await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
+            workers_pruned += 1
+            continue
+
+        # Normalize SQLite datetime to ISO UTC for frontend
+        started_at = created_at
+        if created_at and "T" not in str(created_at) and "Z" not in str(created_at) and "+" not in str(created_at):
+            started_at = str(created_at).replace(" ", "T") + "Z"
+
+        # Reattach to _workers if missing (e.g. worker started by another API instance)
+        if worker_id not in _workers:
+            _workers[worker_id] = {
+                "id": worker_id,
+                "user_id": uid,
+                "account_id": account_id,
+                "session_path": session_path,
+                "process": None,
+                "pid": pid,
+                "started_at": started_at,
+            }
+            workers_reattached += 1
+
+        items.append({
+            "id": worker_id,
+            "user_id": uid,
+            "account_id": account_id,
+            "session_path": session_path,
+            "pid": pid,
+            "running": True,
+            "started_at": started_at,
+        })
+
+    if workers_pruned:
+        await db.commit()
+
+    return items, workers_in_registry, workers_reattached, workers_pruned
+
+
 async def _prune_orphaned_registry_rows(db: aiosqlite.Connection) -> None:
     """Remove worker_registry rows whose PIDs are no longer running (e.g. worker crashed, API
     restarted). This prevents 'Worker already running' when the process is actually dead."""
@@ -212,24 +289,25 @@ async def restart_workers_for_mapping(
 
 @router.get("")
 async def list_workers(user: CurrentUser, db: Db) -> list[dict]:
-    """List running workers. Dead workers are pruned from the registry."""
+    """List running workers. Uses worker_registry as source of truth; reattaches workers
+    missing from in-memory state. Dead workers are pruned."""
     await _prune_dead_workers(db)
-    if user["role"] != "admin":
-        items = [w for w in _workers.values() if w["user_id"] == user["id"]]
+    items, in_registry, reattached, pruned = await _list_workers_from_registry(db, user)
+    if reattached > 0 or pruned > 0:
+        logger.info(
+            "list_workers: registry=%d alive=%d reattached=%d pruned=%d",
+            in_registry,
+            len(items),
+            reattached,
+            pruned,
+        )
     else:
-        items = list(_workers.values())
-    return [
-        {
-            "id": w["id"],
-            "user_id": w["user_id"],
-            "account_id": w.get("account_id"),
-            "session_path": w["session_path"],
-            "pid": w.get("pid") if _is_process_alive(w) else None,
-            "running": _is_process_alive(w),
-            "started_at": w.get("started_at"),
-        }
-        for w in items
-    ]
+        logger.debug(
+            "list_workers: registry=%d alive=%d",
+            in_registry,
+            len(items),
+        )
+    return items
 
 
 @router.post("/start")
@@ -315,7 +393,35 @@ async def stop_worker(
 ) -> dict:
     """Stop a running worker."""
     if worker_id not in _workers:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker not found")
+        # Worker may have been listed by another API instance; try to reattach from registry
+        async with db.execute(
+            "SELECT worker_id, user_id, account_id, session_path, pid, created_at FROM worker_registry WHERE worker_id = ?",
+            (worker_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        if row:
+            _, uid, account_id, session_path, pid, created_at = row
+            if user["role"] != "admin" and uid != user["id"]:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+            if _pid_alive(pid):
+                started_at = created_at
+                if created_at and "T" not in str(created_at) and "Z" not in str(created_at) and "+" not in str(created_at):
+                    started_at = str(created_at).replace(" ", "T") + "Z"
+                _workers[worker_id] = {
+                    "id": worker_id,
+                    "user_id": uid,
+                    "account_id": account_id,
+                    "session_path": session_path,
+                    "process": None,
+                    "pid": pid,
+                    "started_at": started_at,
+                }
+            else:
+                await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
+                await db.commit()
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker not found (already stopped)")
+        else:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker not found")
     w = _workers[worker_id]
     if user["role"] != "admin" and w["user_id"] != user["id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
