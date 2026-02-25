@@ -25,6 +25,15 @@ _workers: dict[str, dict[str, Any]] = {}
 _worker_counter = 0
 
 
+def _pid_alive(pid: int) -> bool:
+    """Check if a process with the given PID is alive."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
 def _is_process_alive(w: dict[str, Any]) -> bool:
     """Check if a worker process is still running."""
     proc = w.get("process")
@@ -33,11 +42,7 @@ def _is_process_alive(w: dict[str, Any]) -> bool:
     pid = w.get("pid")
     if pid is None:
         return False
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
+    return _pid_alive(pid)
 
 
 def _terminate_worker(w: dict[str, Any]) -> None:
@@ -65,15 +70,6 @@ async def _prune_dead_workers(db: aiosqlite.Connection) -> None:
         await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (wid,))
     if dead:
         await db.commit()
-
-
-def _pid_alive(pid: int) -> bool:
-    """Check if a process with the given PID is alive."""
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
 
 
 async def _list_workers_from_registry(
@@ -153,9 +149,7 @@ async def _prune_orphaned_registry_rows(db: aiosqlite.Connection) -> None:
         rows = await cur.fetchall()
     deleted = 0
     for worker_id, pid in rows:
-        try:
-            os.kill(pid, 0)
-        except OSError:
+        if not _pid_alive(pid):
             await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
             deleted += 1
     if deleted:
@@ -356,9 +350,7 @@ async def start_worker(
     ) as cur:
         reg_rows = await cur.fetchall()
     for worker_id, reg_pid in reg_rows:
-        try:
-            os.kill(reg_pid, 0)
-        except OSError:
+        if not _pid_alive(reg_pid):
             # Process is dead; remove stale row so we can start a new worker
             await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
             continue
@@ -444,9 +436,7 @@ async def restore_workers_from_db(db: aiosqlite.Connection) -> None:
     for row in rows:
         worker_id, user_id, account_id, session_path, pid = row[0], row[1], row[2], row[3], row[4]
         created_at = row[5]
-        try:
-            os.kill(pid, 0)
-        except OSError:
+        if not _pid_alive(pid):
             await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
             await _spawn_worker_for_account(db, account_id, user_id, session_path)
             continue
