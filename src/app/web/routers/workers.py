@@ -67,15 +67,6 @@ async def _prune_dead_workers(db: aiosqlite.Connection) -> None:
         await db.commit()
 
 
-def _pid_alive(pid: int) -> bool:
-    """Check if a process with the given PID is alive."""
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
-
-
 async def _list_workers_from_registry(
     db: aiosqlite.Connection, user: dict
 ) -> tuple[list[dict], int, int, int]:
@@ -105,7 +96,7 @@ async def _list_workers_from_registry(
         worker_id, uid, account_id, session_path, pid, created_at = (
             row[0], row[1], row[2], row[3], row[4], row[5]
         )
-        if not _pid_alive(pid):
+        if not _is_process_alive({"pid": pid}):
             await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
             workers_pruned += 1
             continue
@@ -403,7 +394,7 @@ async def stop_worker(
             _, uid, account_id, session_path, pid, created_at = row
             if user["role"] != "admin" and uid != user["id"]:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-            if _pid_alive(pid):
+            if _is_process_alive({"pid": pid}):
                 started_at = created_at
                 if created_at and "T" not in str(created_at) and "Z" not in str(created_at) and "+" not in str(created_at):
                     started_at = str(created_at).replace(" ", "T") + "Z"
