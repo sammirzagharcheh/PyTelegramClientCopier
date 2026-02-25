@@ -1,5 +1,6 @@
 """API tests for workers endpoints (start, stop, list)."""
 
+import asyncio
 import os
 from unittest.mock import MagicMock, patch
 
@@ -7,6 +8,11 @@ import pytest
 
 from app.db.sqlite import get_sqlite
 from app.web.routers import workers
+
+
+def _run_async(coro):
+    """Run async code from sync test; avoids event loop conflicts."""
+    return asyncio.run(coro)
 
 
 @pytest.fixture(autouse=True)
@@ -32,9 +38,7 @@ def test_start_worker_with_stale_registry_succeeds(api_client, user_token):
         await db.commit()
         await db.close()
 
-    import asyncio
-
-    asyncio.run(add_stale_row())
+    _run_async(add_stale_row())
 
     fake_proc = MagicMock()
     fake_proc.pid = 12345
@@ -89,8 +93,6 @@ def test_list_workers_reattaches_from_registry_when_missing_from_memory(api_clie
     alive_pid = os.getpid()
 
     async def add_registry_row():
-        import asyncio
-
         db = await get_sqlite()
         await db.execute(
             "INSERT INTO worker_registry (worker_id, user_id, account_id, session_path, pid) VALUES (?, ?, ?, ?, ?)",
@@ -99,9 +101,7 @@ def test_list_workers_reattaches_from_registry_when_missing_from_memory(api_clie
         await db.commit()
         await db.close()
 
-    import asyncio
-
-    asyncio.run(add_registry_row())
+    _run_async(add_registry_row())
 
     r = api_client.get(
         "/api/workers",
