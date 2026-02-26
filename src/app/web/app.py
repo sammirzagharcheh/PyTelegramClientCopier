@@ -37,11 +37,12 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     await init_sqlite()
     await purge_old_login_sessions(settings.login_sessions_retention_days)
-    await ensure_mongo_indexes()
+    if not settings.testing:
+        await ensure_mongo_indexes()
 
     async def _delayed_restore():
         """Restore workers a few seconds after startup so DB, Mongo, etc. are fully ready."""
-        await asyncio.sleep(3)
+        await asyncio.sleep(3 if not settings.testing else 0)
         db = await get_sqlite()
         try:
             await workers.restore_workers_from_db(db)

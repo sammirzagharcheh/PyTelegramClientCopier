@@ -17,14 +17,15 @@ def test_get_me_returns_timezone(api_client, user_token):
 
 def test_patch_me_timezone_200(api_client, user_token):
     """PATCH /auth/me with valid timezone updates and returns updated user."""
+    # Use UTC - guaranteed in zoneinfo on all platforms (Windows, minimal installs)
     r = api_client.patch(
         "/api/auth/me",
         headers={"Authorization": f"Bearer {user_token}"},
-        json={"timezone": "America/New_York"},
+        json={"timezone": "UTC"},
     )
     assert r.status_code == 200
     data = r.json()
-    assert data["timezone"] == "America/New_York"
+    assert data["timezone"] == "UTC"
     assert "email" in data
     assert "id" in data
 
@@ -34,7 +35,7 @@ def test_patch_me_timezone_200(api_client, user_token):
         headers={"Authorization": f"Bearer {user_token}"},
     )
     assert get_r.status_code == 200
-    assert get_r.json()["timezone"] == "America/New_York"
+    assert get_r.json()["timezone"] == "UTC"
 
 
 def test_patch_me_timezone_null(api_client, user_token):
@@ -42,7 +43,7 @@ def test_patch_me_timezone_null(api_client, user_token):
     api_client.patch(
         "/api/auth/me",
         headers={"Authorization": f"Bearer {user_token}"},
-        json={"timezone": "Europe/London"},
+        json={"timezone": "UTC"},
     )
     r = api_client.patch(
         "/api/auth/me",
@@ -68,6 +69,6 @@ def test_patch_me_401_no_auth(api_client):
     """PATCH /auth/me returns 401 when not authenticated."""
     r = api_client.patch(
         "/api/auth/me",
-        json={"timezone": "America/New_York"},
+        json={"timezone": "UTC"},
     )
     assert r.status_code == 401

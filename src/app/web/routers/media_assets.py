@@ -108,7 +108,7 @@ async def upload_media_asset(
     data = await file.read(max_bytes + 1)
     if len(data) > max_bytes:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=413,  # Content Too Large (HTTP_413_REQUEST_ENTITY_TOO_LARGE deprecated)
             detail=f"File exceeds maximum size of {max_bytes:,} bytes ({max_bytes // (1024 * 1024)} MiB)",
         )
     if not data:
