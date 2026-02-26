@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from datetime import datetime, timezone
@@ -40,8 +41,8 @@ def _is_process_alive(w: dict[str, Any]) -> bool:
         return False
 
 
-def _terminate_worker(w: dict[str, Any]) -> None:
-    """Terminate a worker process (managed or reattached)."""
+async def _terminate_worker(w: dict[str, Any]) -> None:
+    """Terminate a worker process (managed or reattached). Waits for exit before returning."""
     proc = w.get("process")
     pid = w.get("pid")
     if proc is not None and proc.poll() is None:
@@ -53,6 +54,7 @@ def _terminate_worker(w: dict[str, Any]) -> None:
     elif pid is not None:
         try:
             os.kill(pid, signal.SIGTERM)
+            await _wait_for_pid_exit(pid, timeout_sec=5.0)
         except OSError:
             pass
 
@@ -74,6 +76,18 @@ def _pid_alive(pid: int) -> bool:
         return True
     except OSError:
         return False
+
+
+async def _wait_for_pid_exit(pid: int, timeout_sec: float = 5.0) -> bool:
+    """Poll until process exits or timeout. Returns True if exited within timeout."""
+    polls = int(timeout_sec / 0.1) or 1
+    for _ in range(polls):
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return True  # Process is gone
+        await asyncio.sleep(0.1)
+    return False
 
 
 async def _list_workers_from_registry(
@@ -170,9 +184,22 @@ def _next_worker_id() -> str:
 
 
 def _account_has_running_worker(account_id: int) -> bool:
-    """Check if any running worker exists for this account."""
+    """Check if any running worker exists for this account (in-memory)."""
     for w in _workers.values():
         if w.get("account_id") == account_id and _is_process_alive(w):
+            return True
+    return False
+
+
+async def _account_has_worker_in_registry(db: aiosqlite.Connection, account_id: int) -> bool:
+    """Check if worker_registry has any row for this account with alive PID (covers workers
+    started by other API processes)."""
+    async with db.execute(
+        "SELECT worker_id, pid FROM worker_registry WHERE account_id = ?", (account_id,)
+    ) as cur:
+        rows = await cur.fetchall()
+    for _worker_id, pid in rows:
+        if _pid_alive(pid):
             return True
     return False
 
@@ -184,7 +211,7 @@ async def _spawn_worker_for_account(
     session_path: str,
 ) -> bool:
     """Spawn a worker process for an account. Returns True if spawned."""
-    if _account_has_running_worker(account_id):
+    if _account_has_running_worker(account_id) or await _account_has_worker_in_registry(db, account_id):
         return False
     project_root = Path(__file__).resolve().parents[4]
     session_abs = (project_root / session_path).resolve() if not Path(session_path).is_absolute() else Path(session_path)
@@ -232,14 +259,42 @@ async def _spawn_worker_for_account(
 
 
 async def stop_workers_for_account(account_id: int, db: aiosqlite.Connection) -> None:
-    """Internal helper: stop and remove all workers for a given account_id."""
+    """Stop and remove all workers for a given account_id. Uses worker_registry as source of
+    truth so workers started by other API processes are also stopped. Waits for each process
+    to exit before returning."""
+    async with db.execute(
+        "SELECT worker_id, user_id, session_path, pid FROM worker_registry WHERE account_id = ?",
+        (account_id,),
+    ) as cur:
+        rows = await cur.fetchall()
+    for worker_id, uid, session_path, pid in rows:
+        if not _pid_alive(pid):
+            await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
+            continue
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
+            continue
+        await _wait_for_pid_exit(pid, timeout_sec=5.0)
+        # Force-kill if still alive after wait (SIGKILL not on Windows)
+        try:
+            os.kill(pid, 0)
+            kill_sig = getattr(signal, "SIGKILL", signal.SIGTERM)
+            os.kill(pid, kill_sig)
+        except OSError:
+            pass
+        if worker_id in _workers:
+            del _workers[worker_id]
+        await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
+    # Also stop any in-memory workers not yet in registry (race)
     to_stop = [wid for wid, w in _workers.items() if w.get("account_id") == account_id]
     for wid in to_stop:
         w = _workers[wid]
-        _terminate_worker(w)
+        await _terminate_worker(w)
         del _workers[wid]
         await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (wid,))
-    if to_stop:
+    if rows or to_stop:
         await db.commit()
 
 
@@ -272,11 +327,11 @@ async def restart_workers_for_mapping(
             if not acc_row or not acc_row[1]:
                 continue
             user_id, session_path = acc_row[0], acc_row[1]
-            if _account_has_running_worker(account_id):
-                await stop_workers_for_account(account_id, db)
+            # Always stop first (registry-first stops workers from any API process); ensures
+            # no overlap of old and new workers before spawn.
+            await stop_workers_for_account(account_id, db)
             try:
-                if not _account_has_running_worker(account_id):
-                    await _spawn_worker_for_account(db, account_id, user_id, session_path)
+                await _spawn_worker_for_account(db, account_id, user_id, session_path)
             except Exception as e:
                 logger.warning(
                     "Failed to start/restart worker for account %s after mapping change: %s",
@@ -425,7 +480,7 @@ async def stop_worker(
     w = _workers[worker_id]
     if user["role"] != "admin" and w["user_id"] != user["id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    _terminate_worker(w)
+    await _terminate_worker(w)
     del _workers[worker_id]
     await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
     await db.commit()
@@ -474,7 +529,7 @@ async def terminate_all_workers(db: aiosqlite.Connection) -> None:
     spawn workers for these accounts on next startup."""
     to_stop = list(_workers.items())
     for wid, w in to_stop:
-        _terminate_worker(w)
+        await _terminate_worker(w)
         del _workers[wid]
     if to_stop:
         await db.commit()
