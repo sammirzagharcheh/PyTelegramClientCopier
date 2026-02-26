@@ -61,7 +61,7 @@ export function Settings() {
     // Include mongo_db: empty string clears override → falls back to MONGO_DB from .env
     if (mongoDb.trim()) {
       updates.mongo_db = mongoDb.trim();
-    } else if (settings.mongo_db_set) {
+    } else if (settings?.mongo_db_set) {
       updates.mongo_db = '';  // Clear override to use .env
     }
     if (Object.keys(updates).length === 0) {
