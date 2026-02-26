@@ -150,13 +150,19 @@ async def bulk_apply_schedule(db: Db, user: CurrentUser) -> dict:
         )
     await db.commit()
     try:
+        # Deduplicate: restart once per unique (user_id, telegram_account_id) to avoid
+        # rapid stop/spawn cycles when many mappings share the same account.
+        seen: set[tuple[int, int | None]] = set()
         for mid in mapping_ids:
             async with db.execute(
                 "SELECT user_id, telegram_account_id FROM channel_mappings WHERE id = ?",
                 (mid,),
             ) as cur:
                 row = (await cur.fetchone()) or (user["id"], None)
-            await restart_workers_for_mapping(db, row[0], row[1])
+            pair = (row[0], row[1])
+            if pair not in seen:
+                seen.add(pair)
+                await restart_workers_for_mapping(db, row[0], row[1])
     except Exception:
         pass
     return {"status": "ok", "updated": len(mapping_ids)}

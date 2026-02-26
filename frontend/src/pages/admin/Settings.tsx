@@ -58,9 +58,14 @@ export function Settings() {
     setError('');
     const updates: { mongo_uri?: string; mongo_db?: string } = {};
     if (mongoUri.trim()) updates.mongo_uri = mongoUri.trim();
-    if (mongoDb.trim()) updates.mongo_db = mongoDb.trim();
+    // Include mongo_db: empty string clears override → falls back to MONGO_DB from .env
+    if (mongoDb.trim()) {
+      updates.mongo_db = mongoDb.trim();
+    } else if (settings.mongo_db_set) {
+      updates.mongo_db = '';  // Clear override to use .env
+    }
     if (Object.keys(updates).length === 0) {
-      setError('Enter MongoDB URI and/or database name to save');
+      setError('Change MongoDB URI and/or database name to save');
       return;
     }
     updateMutation.mutate(updates);
@@ -117,6 +122,9 @@ export function Settings() {
             />
             <p className="mt-1 text-xs text-gray-500">
               Current: {settings.mongo_db} {settings.mongo_db_set ? '(from settings)' : '(from env)'}
+            </p>
+            <p className="mt-1 text-xs text-gray-500">
+              Leave empty to use MONGO_DB from .env. Clear and save to reset override.
             </p>
           </div>
 

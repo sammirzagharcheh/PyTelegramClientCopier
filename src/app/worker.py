@@ -10,7 +10,7 @@ from app.config import settings
 from app.db.mongo import get_mongo_db
 from app.db.sqlite import get_sqlite, init_sqlite
 from app.services.mapping_service import list_enabled_mappings
-from app.worker_log_handler import MongoWorkerLogHandler
+from app.worker_log_handler import MongoWorkerLogHandler, test_mongo_connection
 from app.telegram.client_manager import attach_handler, start_user_client
 from app.telegram.handlers import build_message_handler
 
@@ -58,8 +58,14 @@ async def run_worker(
         mongo_handler.setLevel(level)
         mongo_handler.setFormatter(logging.Formatter("%(message)s"))
         logging.getLogger().addHandler(mongo_handler)
-    except Exception:
-        pass  # non-fatal
+        # Test MongoDB connectivity; log result so user sees it in worker.log
+        err, db_name = test_mongo_connection()
+        if err:
+            logger.warning("MongoDB worker_logs disabled (connection failed): %s", err)
+        else:
+            logger.info("MongoDB worker_logs connected OK (database: %s)", db_name)
+    except Exception as e:
+        logger.warning("MongoDB worker_logs handler skipped: %s", e)
 
     try:
         await init_sqlite()

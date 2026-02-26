@@ -51,3 +51,21 @@ class MongoWorkerLogHandler(logging.Handler):
                 f"[MongoWorkerLogHandler] Failed to write log to MongoDB: {e}",
                 file=sys.stderr,
             )
+
+
+def test_mongo_connection() -> tuple[str | None, str]:
+    """Test MongoDB write. Returns (error_message, db_name). error_message is None on success."""
+    try:
+        from pymongo import MongoClient
+
+        uri = _resolve_mongo_uri()
+        db_name = _resolve_mongo_db()
+        client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+        db = client[db_name]
+        doc = {"_test": True, "source": "worker_log_handler"}
+        db.worker_logs.insert_one(doc)
+        db.worker_logs.delete_one({"_test": True})
+        client.close()
+        return (None, db_name)
+    except Exception as e:
+        return (str(e), _resolve_mongo_db())

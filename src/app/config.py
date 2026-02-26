@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
     login_sessions_retention_days: int = 7
+    testing: bool = False  # TESTING=1 skips slow startup (Mongo indexes, worker restore delay)
 
 
 settings = Settings()

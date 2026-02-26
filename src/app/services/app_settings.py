@@ -11,21 +11,24 @@ from app.config import settings
 
 
 def get_setting_sync(key: str) -> str | None:
-    """Sync read for use in MongoDB client (avoids async deps)."""
+    """Sync read for use in MongoDB client (avoids async deps). Empty string treated as unset → fallback to env."""
     try:
         conn = sqlite3.connect(settings.sqlite_path)
         cur = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,))
         row = cur.fetchone()
         conn.close()
-        return row[0] if row and row[0] else None
+        val = row[0] if row else None
+        return val if val and str(val).strip() else None
     except sqlite3.OperationalError:
         return None
 
 
 async def get_setting(db: aiosqlite.Connection, key: str) -> str | None:
+    """Empty string treated as unset."""
     async with db.execute("SELECT value FROM app_settings WHERE key = ?", (key,)) as cur:
         row = await cur.fetchone()
-    return row[0] if row and row[0] else None
+    val = row[0] if row else None
+    return val if val and str(val).strip() else None
 
 
 async def set_setting(db: aiosqlite.Connection, key: str, value: str | None) -> None:
