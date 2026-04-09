@@ -161,6 +161,11 @@ MIGRATIONS = [
     ALTER TABLE mapping_transform_rules ADD COLUMN replacement_media_asset_id INTEGER REFERENCES media_assets(id);
     ALTER TABLE mapping_transform_rules ADD COLUMN apply_to_media_types TEXT;
     """,
+    # v15: OR groups — filters with same or_group_id match as OR; distinct groups AND together
+    """
+    ALTER TABLE mapping_filters ADD COLUMN or_group_id INTEGER;
+    UPDATE mapping_filters SET or_group_id = id WHERE or_group_id IS NULL;
+    """,
 ]
 
 

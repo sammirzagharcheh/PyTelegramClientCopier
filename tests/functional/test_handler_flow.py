@@ -102,7 +102,15 @@ async def test_handler_flow_replies_and_media(tmp_path):
         source_chat_id=10,
         dest_chat_id=20,
         enabled=True,
-        filters=[MappingFilter(include_text="hello", exclude_text=None, media_types="text,photo", regex_pattern=None)],
+        filters=[
+            MappingFilter(
+                include_text="hello",
+                exclude_text=None,
+                media_types="text,photo",
+                regex_pattern=None,
+                or_group_id=1,
+            )
+        ],
         source_chat_title="Source Channel",
         dest_chat_title="Dest Channel",
     )
@@ -155,7 +163,7 @@ async def test_handler_rejected_by_include_text(tmp_path):
         source_chat_id=10,
         dest_chat_id=20,
         enabled=True,
-        filters=[MappingFilter(include_text="required", exclude_text=None, media_types=None, regex_pattern=None)],
+        filters=[MappingFilter(include_text="required", exclude_text=None, media_types=None, regex_pattern=None, or_group_id=1)],
         source_chat_title=None,
         dest_chat_title=None,
     )
@@ -185,7 +193,7 @@ async def test_handler_rejected_by_exclude_text(tmp_path):
         source_chat_id=10,
         dest_chat_id=20,
         enabled=True,
-        filters=[MappingFilter(include_text=None, exclude_text="spam", media_types=None, regex_pattern=None)],
+        filters=[MappingFilter(include_text=None, exclude_text="spam", media_types=None, regex_pattern=None, or_group_id=1)],
         source_chat_title=None,
         dest_chat_title=None,
     )
@@ -215,7 +223,7 @@ async def test_handler_rejected_by_media_types(tmp_path):
         source_chat_id=10,
         dest_chat_id=20,
         enabled=True,
-        filters=[MappingFilter(include_text=None, exclude_text=None, media_types="text,voice", regex_pattern=None)],
+        filters=[MappingFilter(include_text=None, exclude_text=None, media_types="text,voice", regex_pattern=None, or_group_id=1)],
         source_chat_title=None,
         dest_chat_title=None,
     )
@@ -245,7 +253,7 @@ async def test_handler_rejected_by_regex(tmp_path):
         source_chat_id=10,
         dest_chat_id=20,
         enabled=True,
-        filters=[MappingFilter(include_text=None, exclude_text=None, media_types=None, regex_pattern=r"#\d+")],
+        filters=[MappingFilter(include_text=None, exclude_text=None, media_types=None, regex_pattern=r"#\d+", or_group_id=1)],
         source_chat_title=None,
         dest_chat_title=None,
     )
@@ -276,8 +284,8 @@ async def test_handler_multiple_filters_second_fails(tmp_path):
         dest_chat_id=20,
         enabled=True,
         filters=[
-            MappingFilter(include_text="hello", exclude_text=None, media_types=None, regex_pattern=None),
-            MappingFilter(include_text="missing", exclude_text=None, media_types=None, regex_pattern=None),
+            MappingFilter(include_text="hello", exclude_text=None, media_types=None, regex_pattern=None, or_group_id=1),
+            MappingFilter(include_text="missing", exclude_text=None, media_types=None, regex_pattern=None, or_group_id=2),
         ],
         source_chat_title=None,
         dest_chat_title=None,

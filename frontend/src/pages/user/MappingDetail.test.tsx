@@ -39,6 +39,8 @@ describe('MappingDetail', () => {
     mockApiGet.mockImplementation(async (url: string) => {
       if (url === '/mappings/1') return { data: defaultMapping };
       if (url === '/mappings/1/filters') return { data: [] };
+      if (url === '/mappings/1/transforms') return { data: [] };
+      if (url.startsWith('/media-assets')) return { data: [] };
       if (url === '/mappings/1/schedule')
         return {
           data: {
@@ -111,6 +113,8 @@ describe('MappingDetail', () => {
     mockApiGet.mockImplementation(async (url: string) => {
       if (url === '/mappings/1') return { data: defaultMapping };
       if (url === '/mappings/1/filters') return { data: [] };
+      if (url === '/mappings/1/transforms') return { data: [] };
+      if (url.startsWith('/media-assets')) return { data: [] };
       if (url === '/mappings/1/schedule')
         return {
           data: {

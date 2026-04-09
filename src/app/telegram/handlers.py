@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 import logging
 import re
+from collections import defaultdict
 from typing import Iterable
 
 import aiosqlite
@@ -66,24 +67,46 @@ def _passes_schedule(now_utc: datetime.datetime, schedule: Schedule | None) -> b
     return now_t >= start_t or now_t <= end_t
 
 
+def _single_filter_matches(
+    message: Message,
+    filter_rule: MappingFilter,
+    *,
+    text: str,
+    media_type: str,
+) -> bool:
+    if filter_rule.media_types:
+        allowed = {
+            part.strip().lower()
+            for part in filter_rule.media_types.split(",")
+            if part.strip()
+        }
+        if allowed and media_type not in allowed:
+            return False
+    if filter_rule.include_text and filter_rule.include_text not in text:
+        return False
+    if filter_rule.exclude_text and filter_rule.exclude_text in text:
+        return False
+    if filter_rule.regex_pattern and not re.search(filter_rule.regex_pattern, text):
+        return False
+    return True
+
+
 def _passes_filters(message: Message, filters: Iterable[MappingFilter]) -> bool:
-    if not filters:
+    filter_list = list(filters)
+    if not filter_list:
         return True
 
     text = message.message or ""
     media_type = _message_media_type(message)
-    filter_list = list(filters)
-
-    for filter_rule in filter_list:
-        if filter_rule.media_types:
-            allowed = {part.strip().lower() for part in filter_rule.media_types.split(",") if part.strip()}
-            if allowed and media_type not in allowed:
-                return False
-        if filter_rule.include_text and filter_rule.include_text not in text:
-            return False
-        if filter_rule.exclude_text and filter_rule.exclude_text in text:
-            return False
-        if filter_rule.regex_pattern and not re.search(filter_rule.regex_pattern, text):
+    by_group: dict[int, list[MappingFilter]] = defaultdict(list)
+    for f in filter_list:
+        by_group[f.or_group_id].append(f)
+    for gid in sorted(by_group.keys()):
+        group_filters = by_group[gid]
+        if not any(
+            _single_filter_matches(message, fr, text=text, media_type=media_type)
+            for fr in group_filters
+        ):
             return False
     return True
 

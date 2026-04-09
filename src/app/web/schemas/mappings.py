@@ -10,6 +10,8 @@ class MappingFilterCreate(BaseModel):
     exclude_text: str | None = None
     media_types: str | None = None
     regex_pattern: str | None = None
+    # Omitted => server sets to new row id (own OR group; AND with other filters by default).
+    or_group_id: int | None = None
 
 
 class MappingFilterUpdate(BaseModel):
@@ -17,6 +19,7 @@ class MappingFilterUpdate(BaseModel):
     exclude_text: str | None = None
     media_types: str | None = None
     regex_pattern: str | None = None
+    or_group_id: int | None = None
 
 
 class MappingFilterResponse(BaseModel):
@@ -26,6 +29,7 @@ class MappingFilterResponse(BaseModel):
     exclude_text: str | None
     media_types: str | None
     regex_pattern: str | None
+    or_group_id: int
 
 
 class MappingTransformCreate(BaseModel):

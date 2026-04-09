@@ -28,10 +28,12 @@ type Filter = {
   exclude_text: string | null;
   media_types: string | null;
   regex_pattern: string | null;
+  or_group_id: number;
 };
 
 function describeFilter(f: Filter): string[] {
   const parts: string[] = [];
+  parts.push(`OR group ${f.or_group_id}`);
   if (f.include_text) parts.push(`Must contain "${f.include_text}"`);
   if (f.exclude_text) parts.push(`Must NOT contain "${f.exclude_text}"`);
   if (f.media_types) parts.push(`Media: ${formatMediaDisplay(f.media_types)}`);
@@ -120,14 +122,16 @@ export function MappingDetail() {
 
   const createMutation = useMutation({
     mutationFn: async (values: FilterFormValues) => {
-      return (
-        await api.post(`/mappings/${id}/filters`, {
-          include_text: values.include_text || null,
-          exclude_text: values.exclude_text || null,
-          media_types: mediaArrayToString(values.media_types) || null,
-          regex_pattern: values.regex_pattern || null,
-        })
-      ).data;
+      const body: Record<string, unknown> = {
+        include_text: values.include_text || null,
+        exclude_text: values.exclude_text || null,
+        media_types: mediaArrayToString(values.media_types) || null,
+        regex_pattern: values.regex_pattern || null,
+      };
+      if (values.or_group_id !== undefined) {
+        body.or_group_id = values.or_group_id;
+      }
+      return (await api.post(`/mappings/${id}/filters`, body)).data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mapping', id, 'filters'] });
@@ -146,14 +150,16 @@ export function MappingDetail() {
       filterId: number;
       values: FilterFormValues;
     }) => {
-      return (
-        await api.patch(`/mappings/${id}/filters/${filterId}`, {
-          include_text: values.include_text || null,
-          exclude_text: values.exclude_text || null,
-          media_types: mediaArrayToString(values.media_types) || null,
-          regex_pattern: values.regex_pattern || null,
-        })
-      ).data;
+      const body: Record<string, unknown> = {
+        include_text: values.include_text || null,
+        exclude_text: values.exclude_text || null,
+        media_types: mediaArrayToString(values.media_types) || null,
+        regex_pattern: values.regex_pattern || null,
+      };
+      if (values.or_group_id !== undefined) {
+        body.or_group_id = values.or_group_id;
+      }
+      return (await api.patch(`/mappings/${id}/filters/${filterId}`, body)).data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mapping', id, 'filters'] });
@@ -608,8 +614,9 @@ export function MappingDetail() {
       <div className="mb-4">
         <h2 className="text-lg font-semibold mb-1">Filters</h2>
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-          Filters determine which messages are copied from source to destination. All rules in each filter must pass
-          (AND). With multiple filters, a message is copied if it passes every filter.
+          Filters determine which messages are copied from source to destination. Within one filter row, every rule
+          must pass (AND). Filters that share the same OR group number match as OR (any of them can satisfy that
+          group). Different OR group numbers are combined with AND (each group must be satisfied).
         </p>
         <button
           type="button"
@@ -699,7 +706,7 @@ export function MappingDetail() {
           onKeyDown={(e) => e.key === 'Escape' && setFilterModalOpen(null)}
         >
           <div
-            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full"
+            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-2 mb-4">
@@ -718,6 +725,7 @@ export function MappingDetail() {
                       exclude_text: editingFilter.exclude_text ?? '',
                       media_types: stringToMediaArray(editingFilter.media_types),
                       regex_pattern: editingFilter.regex_pattern ?? '',
+                      or_group_id: editingFilter.or_group_id,
                     }
                   : undefined
               }

@@ -46,6 +46,7 @@ def test_create_filter_201(api_client, user_token):
     assert data["include_text"] == "announcement"
     assert data["mapping_id"] == 1
     assert "id" in data
+    assert data["or_group_id"] == data["id"]
     assert mock_restart.await_count == 1
 
 
@@ -66,6 +67,7 @@ def test_create_filter_with_all_fields(api_client, user_token):
     assert data["exclude_text"] == "spam"
     assert data["media_types"] == "text,voice"
     assert data["regex_pattern"] == r"#\d+"
+    assert data["or_group_id"] == data["id"]
 
 
 def test_create_filter_404_mapping(api_client, user_token):
@@ -163,3 +165,67 @@ def test_admin_can_access_any_mapping_filters(api_client, admin_token):
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert r.status_code == 200
+
+
+def test_create_filter_explicit_or_group_id(api_client, user_token):
+    r = api_client.post(
+        "/api/mappings/1/filters",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "include_text": "a",
+            "exclude_text": None,
+            "media_types": None,
+            "regex_pattern": None,
+            "or_group_id": 42,
+        },
+    )
+    assert r.status_code == 201
+    data = r.json()
+    assert data["or_group_id"] == 42
+
+
+def test_create_filter_negative_or_group_400(api_client, user_token):
+    r = api_client.post(
+        "/api/mappings/1/filters",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"include_text": "x", "or_group_id": -1},
+    )
+    assert r.status_code == 400
+
+
+def test_patch_filter_or_group_id(api_client, user_token):
+    create = api_client.post(
+        "/api/mappings/1/filters",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"include_text": "a", "exclude_text": None, "media_types": None, "regex_pattern": None},
+    )
+    assert create.status_code == 201
+    fid = create.json()["id"]
+    r = api_client.patch(
+        f"/api/mappings/1/filters/{fid}",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"or_group_id": 99},
+    )
+    assert r.status_code == 200
+    assert r.json()["or_group_id"] == 99
+
+
+def test_list_filters_include_or_group_id(api_client, user_token):
+    api_client.post(
+        "/api/mappings/1/filters",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "include_text": "g1",
+            "exclude_text": None,
+            "media_types": None,
+            "regex_pattern": None,
+            "or_group_id": 5,
+        },
+    )
+    r = api_client.get(
+        "/api/mappings/1/filters",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert r.status_code == 200
+    items = r.json()
+    assert any(f.get("or_group_id") == 5 for f in items)

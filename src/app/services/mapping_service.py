@@ -12,6 +12,8 @@ class MappingFilter:
     exclude_text: str | None
     media_types: str | None
     regex_pattern: str | None
+    # Same or_group_id => OR within group; distinct groups => AND between groups.
+    or_group_id: int
 
 
 @dataclass(slots=True)
@@ -182,7 +184,8 @@ async def _list_filters_bulk(
         return {}
     placeholders = ",".join("?" * len(mapping_ids))
     async with db.execute(
-        f"SELECT mf.mapping_id, mf.include_text, mf.exclude_text, mf.media_types, mf.regex_pattern "
+        f"SELECT mf.mapping_id, mf.include_text, mf.exclude_text, mf.media_types, mf.regex_pattern, "
+        f"mf.or_group_id "
         f"FROM mapping_filters mf "
         f"JOIN channel_mappings cm ON cm.id = mf.mapping_id "
         f"WHERE mf.mapping_id IN ({placeholders}) AND cm.user_id = ?",
@@ -192,12 +195,14 @@ async def _list_filters_bulk(
     result: dict[int, list[MappingFilter]] = {}
     for row in rows:
         mid = row[0]
+        ogid = row[5]
         result.setdefault(mid, []).append(
             MappingFilter(
                 include_text=row[1],
                 exclude_text=row[2],
                 media_types=row[3],
                 regex_pattern=row[4],
+                or_group_id=int(ogid) if ogid is not None else 0,
             )
         )
     return result

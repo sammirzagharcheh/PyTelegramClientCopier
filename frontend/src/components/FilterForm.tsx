@@ -13,6 +13,8 @@ export type FilterFormValues = {
   exclude_text: string;
   media_types: string[];
   regex_pattern: string;
+  /** Same number = OR within that group; different numbers = AND between groups. Omit on create for a new unique group. */
+  or_group_id?: number;
 };
 
 function mediaArrayToString(arr: string[]): string {
@@ -52,6 +54,12 @@ export function FilterForm({
     initialValues?.media_types?.length ? initialValues.media_types : []
   );
   const [regexPattern, setRegexPattern] = useState(initialValues?.regex_pattern ?? '');
+  const [orGroupId, setOrGroupId] = useState(
+    () =>
+      initialValues?.or_group_id != null && initialValues.or_group_id !== undefined
+        ? String(initialValues.or_group_id)
+        : ''
+  );
   const [error, setError] = useState('');
   const toggleMedia = (value: string) => {
     setMediaTypes((prev) =>
@@ -64,6 +72,7 @@ export function FilterForm({
     setExcludeText(preset.exclude_text);
     setMediaTypes(preset.media_types);
     setRegexPattern(preset.regex_pattern);
+    if (preset.or_group_id != null) setOrGroupId(String(preset.or_group_id));
   };
 
   const EXAMPLES: { label: string; values: FilterFormValues }[] = [
@@ -108,12 +117,28 @@ export function FilterForm({
       setError('At least one filter rule is required.');
       return;
     }
-    onSubmit({
+    let parsedGroup: number | undefined;
+    const g = orGroupId.trim();
+    if (g !== '') {
+      const n = parseInt(g, 10);
+      if (Number.isNaN(n) || n < 0) {
+        setError('OR group must be a non-negative integer.');
+        return;
+      }
+      parsedGroup = n;
+    } else if (initialValues?.or_group_id != null) {
+      parsedGroup = initialValues.or_group_id;
+    }
+    const payload: FilterFormValues = {
       include_text: includeText.trim() || '',
       exclude_text: excludeText.trim() || '',
       media_types: mediaTypes,
       regex_pattern: regexPattern.trim() || '',
-    });
+    };
+    if (parsedGroup !== undefined) {
+      payload.or_group_id = parsedGroup;
+    }
+    onSubmit(payload);
   };
 
   return (
@@ -202,6 +227,29 @@ export function FilterForm({
           className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-mono text-sm"
           placeholder="e.g. #[0-9]+"
         />
+      </div>
+
+      <div>
+        <label className="flex items-center gap-2 text-sm font-medium mb-1">
+          OR group
+          <span
+            title="Filters with the same group number match as OR (any can match). Different group numbers are combined with AND. Leave empty when adding a filter to start a new group."
+            className="text-gray-400 hover:text-gray-600 cursor-help"
+          >
+            (?)
+          </span>
+        </label>
+        <input
+          type="number"
+          min={0}
+          value={orGroupId}
+          onChange={(e) => setOrGroupId(e.target.value)}
+          className="w-full max-w-[12rem] px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+          placeholder="e.g. 1 (optional)"
+        />
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          Leave empty for a new filter: each filter gets its own group by default (same as AND across filters).
+        </p>
       </div>
 
       <details className="border border-gray-200 dark:border-gray-600 rounded p-2">
