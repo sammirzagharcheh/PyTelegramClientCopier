@@ -213,11 +213,12 @@ async def _save_dest_mapping(
     dest_chat_id: int,
     dest_msg_id: int,
 ) -> None:
+    now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
     await db.execute(
         "INSERT OR REPLACE INTO dest_message_index "
-        "(user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id),
+        "(user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id, now_utc),
     )
     await db.commit()
 

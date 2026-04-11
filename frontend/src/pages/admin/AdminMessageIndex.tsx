@@ -2,6 +2,8 @@ import { Database, Filter, Inbox } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { formatLocalDateTime } from '../../lib/formatDateTime';
+import { useAuth } from '../../store/AuthContext';
 import { PageHeader } from '../../components/PageHeader';
 import { Pagination } from '../../components/Pagination';
 
@@ -11,6 +13,7 @@ type IndexEntry = {
   source_msg_id: number;
   dest_chat_id: number;
   dest_msg_id: number;
+  updated_at?: string | null;
 };
 
 type User = { id: number; email: string; name: string | null };
@@ -18,6 +21,7 @@ type PaginatedIndex = { items: IndexEntry[]; total: number; page: number; page_s
 type PaginatedUsers = { items: User[]; total: number };
 
 export function AdminMessageIndex() {
+  const { user } = useAuth();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [userId, setUserId] = useState<number | null>(null);
@@ -77,6 +81,7 @@ export function AdminMessageIndex() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">User</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Source</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Dest</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Updated</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -85,6 +90,9 @@ export function AdminMessageIndex() {
                 <td className="px-6 py-4 text-sm">{e.user_id}</td>
                 <td className="px-6 py-4 text-sm font-mono">{e.source_chat_id} / {e.source_msg_id}</td>
                 <td className="px-6 py-4 text-sm font-mono">{e.dest_chat_id} / {e.dest_msg_id}</td>
+                <td className="px-6 py-4 text-sm whitespace-nowrap" title={e.updated_at ?? undefined}>
+                  {formatLocalDateTime(e.updated_at, user?.timezone ?? undefined)}
+                </td>
               </tr>
             ))}
           </tbody>
