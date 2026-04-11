@@ -122,3 +122,17 @@ async def test_migration_v14_creates_media_assets_and_transform_columns(tmp_path
         index_names = {r[0] for r in rows}
         for idx_name in V14_INDEXES:
             assert idx_name in index_names, f"Expected index {idx_name} from migration v14"
+
+
+@pytest.mark.asyncio
+async def test_migration_v17_adds_dest_message_index_updated_at(tmp_path):
+    """Migration v17 adds dest_message_index.updated_at for UI timestamps."""
+    settings.sqlite_path = str(tmp_path / "migrations_v17_test.db")
+    tmp_path.mkdir(parents=True, exist_ok=True)
+
+    await init_sqlite()
+
+    async with aiosqlite.connect(settings.sqlite_path) as db:
+        async with db.execute("PRAGMA table_info(dest_message_index)") as cur:
+            cols = {r[1] for r in await cur.fetchall()}
+        assert "updated_at" in cols

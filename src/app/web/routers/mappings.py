@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.db.message_index_cleanup import delete_dest_message_index_for_mapping
 from app.services.mapping_service import WEEKDAY_COLS
 from app.web.deps import CurrentUser, Db
 from app.web.routers.workers import restart_workers_for_mapping
@@ -263,7 +264,7 @@ async def update_mapping(
 ) -> dict:
     """Update channel mapping."""
     async with db.execute(
-        "SELECT id, user_id FROM channel_mappings WHERE id = ?",
+        "SELECT id, user_id, source_chat_id, dest_chat_id FROM channel_mappings WHERE id = ?",
         (mapping_id,),
     ) as cur:
         row = await cur.fetchone()
@@ -271,6 +272,17 @@ async def update_mapping(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mapping not found")
     if user["role"] != "admin" and row[1] != user["id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    _, mapping_user_id, old_source_chat_id, old_dest_chat_id = row
+    routing_changed = (
+        (data.source_chat_id is not None and int(data.source_chat_id) != int(old_source_chat_id))
+        or (data.dest_chat_id is not None and int(data.dest_chat_id) != int(old_dest_chat_id))
+    )
+    if routing_changed:
+        n = await delete_dest_message_index_for_mapping(
+            db, int(mapping_user_id), int(old_source_chat_id), int(old_dest_chat_id)
+        )
+        if n:
+            await db.commit()
     updates = []
     params = []
     if data.name is not None:
@@ -434,7 +446,8 @@ async def delete_mapping(
 ) -> dict:
     """Delete channel mapping."""
     async with db.execute(
-        "SELECT id, user_id, telegram_account_id FROM channel_mappings WHERE id = ?",
+        "SELECT id, user_id, telegram_account_id, source_chat_id, dest_chat_id "
+        "FROM channel_mappings WHERE id = ?",
         (mapping_id,),
     ) as cur:
         row = await cur.fetchone()
@@ -443,6 +456,7 @@ async def delete_mapping(
     if user["role"] != "admin" and row[1] != user["id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     mapping_user_id, mapping_telegram_account_id = row[1], row[2]
+    await delete_dest_message_index_for_mapping(db, int(row[1]), int(row[3]), int(row[4]))
     await db.execute("DELETE FROM mapping_filters WHERE mapping_id = ?", (mapping_id,))
     await db.execute("DELETE FROM channel_mappings WHERE id = ?", (mapping_id,))
     await db.commit()

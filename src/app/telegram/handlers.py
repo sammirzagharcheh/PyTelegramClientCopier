@@ -13,21 +13,11 @@ from telethon.tl.custom.message import Message
 from telethon.tl.types import MessageMediaWebPage
 
 from app.services.mapping_service import ChannelMapping, MappingFilter, MappingTransform, Schedule
+from app.telegram.chat_ids import alternate_chat_id
 from app.utils.regex import regex_flags_from_string
 
 logger = logging.getLogger(__name__)
 _TEMPLATE_TOKEN_RE = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
-
-
-def _alternate_chat_id(chat_id: int) -> int | None:
-    """Return the alternate format for a Telegram chat ID (legacy vs full channel).
-    Channels use -100xxxxxxxxxx, legacy groups use -xxxxxxxxx. Both refer to the same chat.
-    """
-    if chat_id >= 0:
-        return None
-    if chat_id <= -1000000000000:
-        return chat_id + 1000000000000  # full -> legacy
-    return chat_id - 1000000000000  # legacy -> full
 
 
 def _message_media_type(message: Message) -> str:
@@ -223,11 +213,12 @@ async def _save_dest_mapping(
     dest_chat_id: int,
     dest_msg_id: int,
 ) -> None:
+    now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
     await db.execute(
         "INSERT OR REPLACE INTO dest_message_index "
-        "(user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id),
+        "(user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id, now_utc),
     )
     await db.commit()
 
@@ -241,7 +232,7 @@ def build_message_handler(
     mapping_by_source: dict[int, list[ChannelMapping]] = {}
     for mapping in mappings:
         cids: list[int] = [mapping.source_chat_id]
-        alt = _alternate_chat_id(mapping.source_chat_id)
+        alt = alternate_chat_id(mapping.source_chat_id)
         if alt is not None:
             cids.append(alt)
         for cid in cids:
@@ -257,7 +248,7 @@ def build_message_handler(
 
         source_chat_id = event.chat_id
         candidates = [source_chat_id]
-        alt = _alternate_chat_id(source_chat_id)
+        alt = alternate_chat_id(source_chat_id)
         if alt is not None:
             candidates.append(alt)
         matched: list[ChannelMapping] = []
@@ -325,7 +316,7 @@ def build_message_handler(
 
             sent = None
             dest_ids = [mapping.dest_chat_id]
-            alt_dest = _alternate_chat_id(mapping.dest_chat_id)
+            alt_dest = alternate_chat_id(mapping.dest_chat_id)
             if alt_dest is not None:
                 dest_ids.append(alt_dest)
             last_err: Exception | None = None
@@ -405,7 +396,7 @@ def build_message_handler(
                     # Fetch dest title from Telegram; mapping rarely has it (Add Mapping doesn't set it)
                     dest_title = mapping.dest_chat_title or ""
                     if not dest_title:
-                        for dest_id in (mapping.dest_chat_id, _alternate_chat_id(mapping.dest_chat_id)):
+                        for dest_id in (mapping.dest_chat_id, alternate_chat_id(mapping.dest_chat_id)):
                             if dest_id is None:
                                 continue
                             try:

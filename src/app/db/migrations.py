@@ -177,6 +177,10 @@ MIGRATIONS = [
     CREATE UNIQUE INDEX IF NOT EXISTS ix_worker_registry_account_id
         ON worker_registry(account_id);
     """,
+    # v17: dest_message_index.updated_at for UI and ordering
+    """
+    ALTER TABLE dest_message_index ADD COLUMN updated_at TEXT;
+    """,
 ]
 
 
