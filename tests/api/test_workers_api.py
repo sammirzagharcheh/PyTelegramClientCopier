@@ -20,9 +20,11 @@ def reset_worker_registry():
     """Reset in-memory worker registry before/after each test."""
     workers._workers.clear()
     workers._worker_counter = 0
+    workers._account_worker_locks.clear()
     yield
     workers._workers.clear()
     workers._worker_counter = 0
+    workers._account_worker_locks.clear()
 
 
 def test_start_worker_with_stale_registry_succeeds(api_client, user_token):
@@ -116,3 +118,26 @@ def test_list_workers_reattaches_from_registry_when_missing_from_memory(api_clie
     assert w["running"] is True
     assert w["pid"] == alive_pid
     assert "w99" in workers._workers
+
+
+def test_start_worker_same_account_twice_returns_conflict(api_client, user_token):
+    """Starting an already-running account twice must return 409 on second request."""
+    fake_proc = MagicMock()
+    fake_proc.pid = 12346
+    fake_proc.poll.return_value = None
+
+    with patch("app.web.routers.workers.subprocess.Popen", return_value=fake_proc) as popen_mock:
+        first = api_client.post(
+            "/api/workers/start",
+            params={"account_id": 1},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        second = api_client.post(
+            "/api/workers/start",
+            params={"account_id": 1},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 409
+    assert popen_mock.call_count == 1

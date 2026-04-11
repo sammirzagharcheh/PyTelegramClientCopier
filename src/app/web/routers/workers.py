@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 from datetime import datetime, timezone
@@ -24,6 +25,8 @@ router = APIRouter(prefix="/workers", tags=["workers"])
 # process may be None for reattached workers (orphans from prior API run)
 _workers: dict[str, dict[str, Any]] = {}
 _worker_counter = 0
+_account_worker_locks: dict[int, asyncio.Lock] = {}
+_account_worker_locks_guard = asyncio.Lock()
 
 
 def _is_process_alive(w: dict[str, Any]) -> bool:
@@ -88,6 +91,16 @@ async def _wait_for_pid_exit(pid: int, timeout_sec: float = 5.0) -> bool:
             return True  # Process is gone
         await asyncio.sleep(0.1)
     return False
+
+
+async def _get_account_worker_lock(account_id: int) -> asyncio.Lock:
+    """Return a stable per-account lock for worker start/restart operations."""
+    async with _account_worker_locks_guard:
+        lock = _account_worker_locks.get(account_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _account_worker_locks[account_id] = lock
+        return lock
 
 
 async def _list_workers_from_registry(
@@ -210,12 +223,56 @@ async def _spawn_worker_for_account(
     user_id: int,
     session_path: str,
 ) -> bool:
-    """Spawn a worker process for an account. Returns True if spawned."""
-    if _account_has_running_worker(account_id) or await _account_has_worker_in_registry(db, account_id):
-        return False
+    """Spawn a worker process for an account. Returns True if spawned.
+
+    Concurrency safety:
+    - serializes starts per account in-process
+    - reserves worker_registry row in DB before spawning process
+    - relies on UNIQUE(account_id) index to prevent cross-process duplicates
+    """
+    lock = await _get_account_worker_lock(account_id)
+    async with lock:
+        if _account_has_running_worker(account_id):
+            return False
+
+        worker_id = _next_worker_id()
+        transaction_started = False
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            transaction_started = True
+            async with db.execute(
+                "SELECT worker_id, pid FROM worker_registry WHERE account_id = ?",
+                (account_id,),
+            ) as cur:
+                rows = await cur.fetchall()
+            for existing_worker_id, existing_pid in rows:
+                if _pid_alive(existing_pid):
+                    await db.execute("ROLLBACK")
+                    return False
+                await db.execute(
+                    "DELETE FROM worker_registry WHERE worker_id = ?",
+                    (existing_worker_id,),
+                )
+            await db.execute(
+                "INSERT INTO worker_registry (worker_id, user_id, account_id, session_path, pid) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (worker_id, user_id, account_id, session_path, -1),
+            )
+            await db.commit()
+            transaction_started = False
+        except aiosqlite.IntegrityError:
+            if transaction_started:
+                with contextlib.suppress(Exception):
+                    await db.execute("ROLLBACK")
+            return False
+        except Exception:
+            if transaction_started:
+                with contextlib.suppress(Exception):
+                    await db.execute("ROLLBACK")
+            raise
+
     project_root = Path(__file__).resolve().parents[4]
     session_abs = (project_root / session_path).resolve() if not Path(session_path).is_absolute() else Path(session_path)
-    worker_id = _next_worker_id()
     cmd = [
         sys.executable, "-m", "app.main",
         "db", "run-worker",
@@ -230,16 +287,36 @@ async def _spawn_worker_for_account(
         stderr_handle = open(stderr_path, "w", encoding="utf-8")
     except OSError:
         stderr_handle = None
-    proc = subprocess.Popen(
-        cmd,
-        cwd=str(project_root),
-        stdout=subprocess.DEVNULL,
-        stderr=stderr_handle if stderr_handle else subprocess.DEVNULL,
-        stdin=subprocess.DEVNULL,
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
-    )
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(project_root),
+            stdout=subprocess.DEVNULL,
+            stderr=stderr_handle if stderr_handle else subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
+        )
+    except Exception:
+        # Release reserved row so future retries can proceed.
+        await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
+        await db.commit()
+        raise
     pid = proc.pid
     started_at = datetime.now(timezone.utc).isoformat()
+    try:
+        await db.execute(
+            "UPDATE worker_registry SET pid = ? WHERE worker_id = ?",
+            (pid, worker_id),
+        )
+        await db.commit()
+    except Exception:
+        with contextlib.suppress(Exception):
+            proc.terminate()
+            proc.wait(timeout=5)
+        with contextlib.suppress(Exception):
+            await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
+            await db.commit()
+        raise
     _workers[worker_id] = {
         "id": worker_id,
         "user_id": user_id,
@@ -249,11 +326,6 @@ async def _spawn_worker_for_account(
         "pid": pid,
         "started_at": started_at,
     }
-    await db.execute(
-        "INSERT INTO worker_registry (worker_id, user_id, account_id, session_path, pid) VALUES (?, ?, ?, ?, ?)",
-        (worker_id, user_id, account_id, session_path, pid),
-    )
-    await db.commit()
     logger.info("Spawned worker %s for account_id=%s pid=%s", worker_id, account_id, pid)
     return True
 
@@ -503,6 +575,7 @@ async def restore_workers_from_db(db: aiosqlite.Connection) -> None:
             os.kill(pid, 0)
         except OSError:
             await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
+            await db.commit()
             await _spawn_worker_for_account(db, account_id, user_id, session_path)
             continue
         # Normalize SQLite datetime to ISO UTC for frontend
