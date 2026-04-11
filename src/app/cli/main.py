@@ -136,3 +136,31 @@ def create_admin(email: str, password: str, name: str = "") -> None:
 
     asyncio.run(_create())
 
+
+@cli.command("purge-message-index")
+def purge_message_index(
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Report how many orphan rows would be deleted without deleting",
+    ),
+) -> None:
+    """Remove dest_message_index rows that no longer match any channel mapping."""
+    from app.db.message_index_cleanup import purge_orphan_dest_message_index
+    from app.db.sqlite import get_sqlite
+
+    asyncio.run(init_sqlite())
+
+    async def _run() -> int:
+        db = await get_sqlite()
+        try:
+            return await purge_orphan_dest_message_index(db, dry_run=dry_run)
+        finally:
+            await db.close()
+
+    n = asyncio.run(_run())
+    if dry_run:
+        typer.echo(f"Dry run: {n} orphan dest_message_index row(s) would be removed.")
+    else:
+        typer.echo(f"Removed {n} orphan dest_message_index row(s).")
+
