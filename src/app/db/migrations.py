@@ -166,6 +166,17 @@ MIGRATIONS = [
     ALTER TABLE mapping_filters ADD COLUMN or_group_id INTEGER;
     UPDATE mapping_filters SET or_group_id = id WHERE or_group_id IS NULL;
     """,
+    # v16: enforce single worker process per Telegram account
+    """
+    DELETE FROM worker_registry
+    WHERE rowid NOT IN (
+        SELECT MAX(rowid)
+        FROM worker_registry
+        GROUP BY account_id
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS ix_worker_registry_account_id
+        ON worker_registry(account_id);
+    """,
 ]
 
 
