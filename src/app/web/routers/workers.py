@@ -210,6 +210,14 @@ def _account_has_running_worker(account_id: int) -> bool:
     return False
 
 
+def _running_worker_info_for_account(account_id: int) -> tuple[str | None, int | None]:
+    """Return (worker_id, pid) for a live in-memory worker for this account, else (None, None)."""
+    for wid, w in _workers.items():
+        if w.get("account_id") == account_id and _is_process_alive(w):
+            return wid, w.get("pid")
+    return None, None
+
+
 async def _account_has_worker_in_registry(db: aiosqlite.Connection, account_id: int) -> bool:
     """Check if worker_registry has any row for this account with alive PID (covers workers
     started by other API processes)."""
@@ -479,9 +487,13 @@ async def start_worker(
     session_path = row[2]
     # Check in-memory registry
     if _account_has_running_worker(account_id):
+        wid, mpid = _running_worker_info_for_account(account_id)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Worker already running for this account",
+            detail=(
+                f"Worker already running for this account (in-memory worker_id={wid}, pid={mpid}). "
+                "Stop that worker from Admin → Workers (or POST /api/workers/{worker_id}/stop) before starting again."
+            ),
         )
     # Check persistent registry (orphans from prior API run). Prune dead entries.
     async with db.execute(
@@ -497,7 +509,10 @@ async def start_worker(
             continue
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Worker already running for this account",
+            detail=(
+                f"Worker already running for this account (registry worker_id={worker_id}, pid={reg_pid}). "
+                "Stop that worker or restart the API after confirming the PID is not a stale zombie."
+            ),
         )
     if reg_rows:
         await db.commit()
@@ -505,7 +520,10 @@ async def start_worker(
     if not spawned:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Worker already running for this account",
+            detail=(
+                "Could not start worker (race or duplicate): another live worker or registry row "
+                f"exists for account_id={account_id}. Retry after a moment or stop the existing worker."
+            ),
         )
     w = next(x for x in _workers.values() if x["account_id"] == account_id)
     return {
