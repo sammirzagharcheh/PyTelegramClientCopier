@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import logging
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import StreamingResponse
 from pymongo.errors import OperationFailure, ServerSelectionTimeoutError
 
 from app.db.mongo import get_mongo_db
@@ -141,3 +144,81 @@ async def list_message_logs(
     except Exception as e:
         logger.exception("Unexpected message_logs error: %s", e)
         raise
+
+
+MAX_EXPORT_ROWS = 10_000
+
+
+@router.get("/export.csv")
+async def export_message_logs_csv(
+    user: CurrentUser,
+    db: Db,
+    user_id: int | None = None,
+    source_chat_id: int | None = None,
+    dest_chat_id: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> StreamingResponse:
+    """Stream up to MAX_EXPORT_ROWS message log rows as CSV (same filters as list)."""
+    try:
+        mongo_db = get_mongo_db()
+        match: dict = {}
+        current_user_id = int(user["id"])
+        if user["role"] != "admin":
+            match["user_id"] = current_user_id
+        elif user_id is not None:
+            match["user_id"] = int(user_id)
+        if source_chat_id is not None:
+            match["source_chat_id"] = source_chat_id
+        if dest_chat_id is not None:
+            match["dest_chat_id"] = dest_chat_id
+        if date_from or date_to:
+            match["timestamp"] = {}
+            if date_from:
+                match["timestamp"]["$gte"] = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
+            if date_to:
+                match["timestamp"]["$lte"] = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+
+        async def gen():
+            buf = io.StringIO()
+            w = csv.writer(buf)
+            w.writerow([
+                "user_id", "source_chat_id", "source_msg_id", "dest_chat_id", "dest_msg_id",
+                "source_chat_title", "dest_chat_title", "timestamp", "status",
+            ])
+            yield buf.getvalue()
+            buf.seek(0)
+            buf.truncate(0)
+            n = 0
+            cursor = mongo_db.message_logs.find(match).sort("timestamp", -1).limit(MAX_EXPORT_ROWS)
+            async for doc in cursor:
+                ts = doc.get("timestamp")
+                w.writerow([
+                    doc.get("user_id"),
+                    doc.get("source_chat_id"),
+                    doc.get("source_msg_id"),
+                    doc.get("dest_chat_id"),
+                    doc.get("dest_msg_id"),
+                    doc.get("source_chat_title") or "",
+                    doc.get("dest_chat_title") or "",
+                    ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+                    doc.get("status") or "",
+                ])
+                n += 1
+                if n % 500 == 0:
+                    yield buf.getvalue()
+                    buf.seek(0)
+                    buf.truncate(0)
+            yield buf.getvalue()
+
+        return StreamingResponse(
+            gen(),
+            media_type="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="message_logs.csv"'},
+        )
+    except (OperationFailure, ServerSelectionTimeoutError) as e:
+        logger.warning("Mongo message_logs export failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_mongo_error_message(e),
+        ) from e

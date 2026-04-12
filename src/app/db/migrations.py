@@ -181,6 +181,55 @@ MIGRATIONS = [
     """
     ALTER TABLE dest_message_index ADD COLUMN updated_at TEXT;
     """,
+    # v18: worker heartbeat for stale detection
+    """
+    ALTER TABLE worker_registry ADD COLUMN last_heartbeat_at TEXT;
+    """,
+    # v19: user alert webhooks (worker health notifications)
+    """
+    CREATE TABLE IF NOT EXISTS user_alert_webhooks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        url TEXT NOT NULL,
+        secret TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS ix_user_alert_webhooks_user_id ON user_alert_webhooks(user_id);
+    """,
+    # v20: mapping send tuning and lifecycle / copy webhook
+    """
+    ALTER TABLE channel_mappings ADD COLUMN send_delay_ms INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE channel_mappings ADD COLUMN sync_edits INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE channel_mappings ADD COLUMN edit_strategy TEXT NOT NULL DEFAULT 'replace_text';
+    ALTER TABLE channel_mappings ADD COLUMN sync_deletes INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE channel_mappings ADD COLUMN copy_webhook_url TEXT;
+    ALTER TABLE channel_mappings ADD COLUMN copy_webhook_secret TEXT;
+    """,
+    # v21: richer mapping filters
+    """
+    ALTER TABLE mapping_filters ADD COLUMN allowed_sender_ids TEXT;
+    ALTER TABLE mapping_filters ADD COLUMN denied_usernames TEXT;
+    ALTER TABLE mapping_filters ADD COLUMN min_url_count INTEGER;
+    ALTER TABLE mapping_filters ADD COLUMN max_url_count INTEGER;
+    ALTER TABLE mapping_filters ADD COLUMN required_hashtags TEXT;
+    """,
+    # v22: API keys for automation
+    """
+    CREATE TABLE IF NOT EXISTS user_api_keys (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        key_hash TEXT NOT NULL,
+        scopes TEXT NOT NULL DEFAULT 'mappings:read',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_used_at TEXT,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS ix_user_api_keys_user_id ON user_api_keys(user_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS ix_user_api_keys_key_hash ON user_api_keys(key_hash);
+    """,
 ]
 
 

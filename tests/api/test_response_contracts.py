@@ -42,6 +42,7 @@ def test_workers_list_contract(api_client, user_token):
             "pid",
             "running",
             "started_at",
+            "last_heartbeat_at",
         }.issubset(w.keys())
 
 

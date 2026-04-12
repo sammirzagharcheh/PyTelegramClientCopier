@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.web.deps import CurrentUser, Db
+from app.web.deps import CurrentUser, Db, WriterUser
 from app.web.mapping_access import get_mapping_scope
 from app.web.routers.workers import restart_workers_for_mapping
 from app.web.schemas.mappings import (
@@ -25,6 +25,11 @@ def _row_to_filter_dict(row: tuple) -> dict:
         "media_types": row[4],
         "regex_pattern": row[5],
         "or_group_id": int(row[6]) if row[6] is not None else 0,
+        "allowed_sender_ids": row[7] if len(row) > 7 else None,
+        "denied_usernames": row[8] if len(row) > 8 else None,
+        "min_url_count": row[9] if len(row) > 9 else None,
+        "max_url_count": row[10] if len(row) > 10 else None,
+        "required_hashtags": row[11] if len(row) > 11 else None,
     }
 
 
@@ -37,7 +42,8 @@ async def list_filters(
     """List filters for a mapping."""
     await get_mapping_scope(db, user, mapping_id)
     async with db.execute(
-        """SELECT id, mapping_id, include_text, exclude_text, media_types, regex_pattern, or_group_id
+        """SELECT id, mapping_id, include_text, exclude_text, media_types, regex_pattern, or_group_id,
+               allowed_sender_ids, denied_usernames, min_url_count, max_url_count, required_hashtags
            FROM mapping_filters WHERE mapping_id = ? ORDER BY id""",
         (mapping_id,),
     ) as cur:
@@ -50,7 +56,7 @@ async def create_filter(
     mapping_id: int,
     data: MappingFilterCreate,
     db: Db,
-    user: CurrentUser,
+    user: WriterUser,
 ) -> dict:
     """Create filter for a mapping."""
     if data.or_group_id is not None and data.or_group_id < 0:
@@ -61,8 +67,10 @@ async def create_filter(
     mapping_user_id, mapping_account_id = await get_mapping_scope(db, user, mapping_id)
     ogid = data.or_group_id
     cursor = await db.execute(
-        """INSERT INTO mapping_filters (mapping_id, include_text, exclude_text, media_types, regex_pattern, or_group_id)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO mapping_filters (
+               mapping_id, include_text, exclude_text, media_types, regex_pattern, or_group_id,
+               allowed_sender_ids, denied_usernames, min_url_count, max_url_count, required_hashtags)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             mapping_id,
             data.include_text,
@@ -70,6 +78,11 @@ async def create_filter(
             data.media_types,
             data.regex_pattern,
             ogid,
+            data.allowed_sender_ids,
+            data.denied_usernames,
+            data.min_url_count,
+            data.max_url_count,
+            data.required_hashtags,
         ),
     )
     fid = cursor.lastrowid
@@ -84,8 +97,9 @@ async def create_filter(
     except Exception:
         pass
     async with db.execute(
-        "SELECT id, mapping_id, include_text, exclude_text, media_types, regex_pattern, or_group_id "
-        "FROM mapping_filters WHERE id = ?",
+        """SELECT id, mapping_id, include_text, exclude_text, media_types, regex_pattern, or_group_id,
+               allowed_sender_ids, denied_usernames, min_url_count, max_url_count, required_hashtags
+           FROM mapping_filters WHERE id = ?""",
         (fid,),
     ) as cur:
         row = await cur.fetchone()
@@ -99,7 +113,7 @@ async def update_filter(
     filter_id: int,
     data: MappingFilterUpdate,
     db: Db,
-    user: CurrentUser,
+    user: WriterUser,
 ) -> dict:
     """Update filter."""
     if data.or_group_id is not None and data.or_group_id < 0:
@@ -132,6 +146,21 @@ async def update_filter(
     if data.or_group_id is not None:
         updates.append("or_group_id = ?")
         params.append(data.or_group_id)
+    if data.allowed_sender_ids is not None:
+        updates.append("allowed_sender_ids = ?")
+        params.append(data.allowed_sender_ids)
+    if data.denied_usernames is not None:
+        updates.append("denied_usernames = ?")
+        params.append(data.denied_usernames)
+    if data.min_url_count is not None:
+        updates.append("min_url_count = ?")
+        params.append(data.min_url_count)
+    if data.max_url_count is not None:
+        updates.append("max_url_count = ?")
+        params.append(data.max_url_count)
+    if data.required_hashtags is not None:
+        updates.append("required_hashtags = ?")
+        params.append(data.required_hashtags)
     if updates:
         params.append(filter_id)
         await db.execute(f"UPDATE mapping_filters SET {', '.join(updates)} WHERE id = ?", params)
@@ -141,8 +170,9 @@ async def update_filter(
         except Exception:
             pass
     async with db.execute(
-        "SELECT id, mapping_id, include_text, exclude_text, media_types, regex_pattern, or_group_id "
-        "FROM mapping_filters WHERE id = ?",
+        """SELECT id, mapping_id, include_text, exclude_text, media_types, regex_pattern, or_group_id,
+               allowed_sender_ids, denied_usernames, min_url_count, max_url_count, required_hashtags
+           FROM mapping_filters WHERE id = ?""",
         (filter_id,),
     ) as cur:
         row = await cur.fetchone()
@@ -155,7 +185,7 @@ async def delete_filter(
     mapping_id: int,
     filter_id: int,
     db: Db,
-    user: CurrentUser,
+    user: WriterUser,
 ) -> dict:
     """Delete filter."""
     mapping_user_id, mapping_account_id = await get_mapping_scope(db, user, mapping_id)

@@ -12,6 +12,11 @@ class MappingFilterCreate(BaseModel):
     regex_pattern: str | None = None
     # Omitted => server sets to new row id (own OR group; AND with other filters by default).
     or_group_id: int | None = None
+    allowed_sender_ids: str | None = None
+    denied_usernames: str | None = None
+    min_url_count: int | None = None
+    max_url_count: int | None = None
+    required_hashtags: str | None = None
 
 
 class MappingFilterUpdate(BaseModel):
@@ -20,6 +25,11 @@ class MappingFilterUpdate(BaseModel):
     media_types: str | None = None
     regex_pattern: str | None = None
     or_group_id: int | None = None
+    allowed_sender_ids: str | None = None
+    denied_usernames: str | None = None
+    min_url_count: int | None = None
+    max_url_count: int | None = None
+    required_hashtags: str | None = None
 
 
 class MappingFilterResponse(BaseModel):
@@ -30,6 +40,11 @@ class MappingFilterResponse(BaseModel):
     media_types: str | None
     regex_pattern: str | None
     or_group_id: int
+    allowed_sender_ids: str | None = None
+    denied_usernames: str | None = None
+    min_url_count: int | None = None
+    max_url_count: int | None = None
+    required_hashtags: str | None = None
 
 
 class MappingTransformCreate(BaseModel):
@@ -87,6 +102,12 @@ class ChannelMappingUpdate(BaseModel):
     enabled: bool | None = None
     source_chat_title: str | None = None
     dest_chat_title: str | None = None
+    send_delay_ms: int | None = None
+    sync_edits: bool | None = None
+    edit_strategy: str | None = None
+    sync_deletes: bool | None = None
+    copy_webhook_url: str | None = None
+    copy_webhook_secret: str | None = None
 
 
 class ChannelMappingResponse(BaseModel):
@@ -100,3 +121,22 @@ class ChannelMappingResponse(BaseModel):
     enabled: bool
     telegram_account_id: int | None
     created_at: str | None
+    send_delay_ms: int = 0
+    sync_edits: bool = False
+    edit_strategy: str = "replace_text"
+    sync_deletes: bool = False
+    copy_webhook_url: str | None = None
+    copy_webhook_secret: str | None = None
+
+
+class MappingPreviewRequest(BaseModel):
+    sample_text: str = ""
+    media_type: str = "text"
+    sender_id: int | None = None
+    sender_username: str | None = None
+
+
+class MappingPreviewResponse(BaseModel):
+    passes_filters: bool
+    passes_schedule: bool
+    transformed_text: str

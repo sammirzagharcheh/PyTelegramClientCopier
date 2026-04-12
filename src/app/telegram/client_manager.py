@@ -33,5 +33,20 @@ async def start_bot_client(bot_token: str) -> TelegramClient:
 
 
 def attach_handler(client: TelegramClient, handler) -> None:
+    """Register NewMessage handler only (backward compatible)."""
     client.add_event_handler(handler, events.NewMessage)
+
+
+def attach_message_handlers(
+    client: TelegramClient,
+    new_message_handler,
+    edited_handler=None,
+    deleted_handler=None,
+) -> None:
+    """Register NewMessage plus optional edit/delete sync handlers."""
+    client.add_event_handler(new_message_handler, events.NewMessage)
+    if edited_handler is not None:
+        client.add_event_handler(edited_handler, events.MessageEdited())
+    if deleted_handler is not None:
+        client.add_event_handler(deleted_handler, events.MessageDeleted())
 

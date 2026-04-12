@@ -13,6 +13,7 @@ type Worker = {
   pid: number | null;
   running: boolean;
   started_at?: string | null;
+  last_heartbeat_at?: string | null;
 };
 
 export function Workers() {
@@ -83,7 +84,14 @@ export function Workers() {
                 </div>
                 <div className="flex items-center gap-2">
                   {w.running && (
-                    <span className="text-green-600 text-sm">PID {w.pid} · {formatUptime(w.started_at)}</span>
+                    <span className="text-green-600 text-sm text-right">
+                      <span className="block">PID {w.pid} · {formatUptime(w.started_at)}</span>
+                      {w.last_heartbeat_at && (
+                        <span className="block text-xs text-gray-600 dark:text-gray-300">
+                          HB {new Date(w.last_heartbeat_at).toLocaleString()}
+                        </span>
+                      )}
+                    </span>
                   )}
                   <button
                     onClick={() => stopMutation.mutate(w.id)}

@@ -1,104 +1,65 @@
 from __future__ import annotations
 
+import asyncio
 import datetime
 import logging
-import re
-from collections import defaultdict
-from typing import Iterable
+from typing import Any
 
 import aiosqlite
-from telethon import events
-from telethon.errors import ChatIdInvalidError
+from telethon import events, utils
+from telethon.errors import ChatIdInvalidError, FloodWaitError
 from telethon.tl.custom.message import Message
 from telethon.tl.types import MessageMediaWebPage
 
-from app.services.mapping_service import ChannelMapping, MappingFilter, MappingTransform, Schedule
+from app.services.mapping_service import ChannelMapping, MappingFilter, MappingTransform
 from app.telegram.chat_ids import alternate_chat_id
-from app.utils.regex import regex_flags_from_string
+from app.telegram.pipeline_preview import (
+    MessagePreview,
+    apply_transforms,
+    media_type_for_telethon_message,
+    passes_filters,
+    passes_schedule,
+)
 
 logger = logging.getLogger(__name__)
-_TEMPLATE_TOKEN_RE = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
+
+# Aliases for unit tests and legacy imports
+_message_media_type = media_type_for_telethon_message
+_passes_schedule = passes_schedule
+_apply_transforms = apply_transforms
 
 
-def _message_media_type(message: Message) -> str:
-    if message.voice:
-        return "voice"
-    if message.video:
-        return "video"
-    if message.photo:
-        return "photo"
-    if message.text or message.message:
-        return "text"
-    return "other"
+def _mapping_needs_sender_info(filters: list[MappingFilter]) -> bool:
+    return any(
+        (f.allowed_sender_ids and f.allowed_sender_ids.strip())
+        or (f.denied_usernames and f.denied_usernames.strip())
+        for f in filters
+    )
 
 
-def _passes_schedule(now_utc: datetime.datetime, schedule: Schedule | None) -> bool:
-    """Check if now_utc falls within the schedule for its weekday. All times in UTC HH:MM."""
-    if schedule is None or schedule.is_empty():
-        return True
-    # Python weekday: 0=Monday, 6=Sunday
-    weekday = now_utc.weekday()
-    start_utc, end_utc = schedule.get_for_weekday(weekday)
-    if start_utc is None and end_utc is None:
-        return True
-    try:
-        now_t = now_utc.time()
-        start_t = datetime.datetime.strptime(start_utc or "00:00", "%H:%M").time()
-        end_t = datetime.datetime.strptime(end_utc or "23:59", "%H:%M").time()
-    except (ValueError, TypeError):
-        return True
-    if start_utc is None:
-        return now_t <= end_t
-    if end_utc is None:
-        return now_t >= start_t
-    if start_t <= end_t:
-        return start_t <= now_t <= end_t
-    # Overnight range (e.g. 22:00–02:00)
-    return now_t >= start_t or now_t <= end_t
-
-
-def _single_filter_matches(
+async def _message_preview_for_filters(
     message: Message,
-    filter_rule: MappingFilter,
-    *,
-    text: str,
-    media_type: str,
-) -> bool:
-    if filter_rule.media_types:
-        allowed = {
-            part.strip().lower()
-            for part in filter_rule.media_types.split(",")
-            if part.strip()
-        }
-        if allowed and media_type not in allowed:
-            return False
-    if filter_rule.include_text and filter_rule.include_text not in text:
-        return False
-    if filter_rule.exclude_text and filter_rule.exclude_text in text:
-        return False
-    if filter_rule.regex_pattern and not re.search(filter_rule.regex_pattern, text):
-        return False
-    return True
-
-
-def _passes_filters(message: Message, filters: Iterable[MappingFilter]) -> bool:
-    filter_list = list(filters)
-    if not filter_list:
-        return True
-
+    mapping: ChannelMapping,
+) -> MessagePreview:
     text = message.message or ""
-    media_type = _message_media_type(message)
-    by_group: dict[int, list[MappingFilter]] = defaultdict(list)
-    for f in filter_list:
-        by_group[f.or_group_id].append(f)
-    for gid in sorted(by_group.keys()):
-        group_filters = by_group[gid]
-        if not any(
-            _single_filter_matches(message, fr, text=text, media_type=media_type)
-            for fr in group_filters
-        ):
-            return False
-    return True
+    media_type = media_type_for_telethon_message(message)
+    sender_id = getattr(message, "sender_id", None)
+    sender_username: str | None = None
+    if _mapping_needs_sender_info(mapping.filters):
+        try:
+            sender = await message.get_sender()
+            if sender is not None:
+                sender_username = getattr(sender, "username", None)
+                if sender_id is None:
+                    sender_id = getattr(sender, "id", None)
+        except Exception:
+            pass
+    return MessagePreview(
+        text=text,
+        media_type=media_type,
+        sender_id=sender_id,
+        sender_username=sender_username,
+    )
 
 
 def _rule_applies_to_media_type(rule: MappingTransform, media_type: str) -> bool:
@@ -114,71 +75,17 @@ def _rule_applies_to_media_type(rule: MappingTransform, media_type: str) -> bool
     return media_type in allowed or "any" in allowed or "*" in allowed or "all" in allowed
 
 
-def _render_template(template: str, context: dict[str, object]) -> str:
-    def _sub(match: re.Match[str]) -> str:
-        key = match.group(1)
-        value = context.get(key, "")
-        if value is None:
-            return ""
-        return str(value)
-
-    return _TEMPLATE_TOKEN_RE.sub(_sub, template)
-
-
-def _apply_transforms(
-    text: str,
-    transforms: Iterable[MappingTransform],
-    *,
-    context: dict[str, object] | None = None,
-    media_type: str = "text",
-) -> str:
-    if not transforms:
-        return text
-    output = text
-    for rule in transforms:
-        if not rule.enabled:
-            continue
-        if rule.rule_type == "media":
-            continue
-        if not _rule_applies_to_media_type(rule, media_type):
-            continue
-        if rule.rule_type in {"text", "emoji"}:
-            if rule.find_text:
-                output = output.replace(rule.find_text, rule.replace_text or "")
-            continue
-        if rule.rule_type == "regex" and rule.regex_pattern:
-            try:
-                output = re.sub(
-                    rule.regex_pattern,
-                    rule.replace_text or "",
-                    output,
-                    flags=regex_flags_from_string(rule.regex_flags),
-                )
-            except re.error:
-                logger.warning(
-                    "Invalid regex transform skipped: rule_id=%s pattern=%r",
-                    rule.id,
-                    rule.regex_pattern,
-                )
-            continue
-        if rule.rule_type == "template":
-            template_context = dict(context or {})
-            template_context["text"] = output
-            output = _render_template(rule.replace_text or "", template_context)
-    return output
-
-
 def _media_rule_matches(rule: MappingTransform, media_type: str) -> bool:
     return rule.rule_type == "media" and _rule_applies_to_media_type(rule, media_type)
 
 
-def _pick_media_replacement(message: Message, transforms: Iterable[MappingTransform]) -> str | None:
+def _pick_media_replacement(message: Message, transforms: list[MappingTransform]) -> str | None:
     incoming_has_media = (
         message.media is not None and not isinstance(message.media, MessageMediaWebPage)
     )
     if not incoming_has_media:
         return None
-    media_type = _message_media_type(message)
+    media_type = media_type_for_telethon_message(message)
     for rule in transforms:
         if not rule.enabled:
             continue
@@ -205,6 +112,22 @@ async def _lookup_reply_dest_id(
     return row[0] if row else None
 
 
+async def _lookup_dest_msg_id(
+    db: aiosqlite.Connection,
+    user_id: int,
+    source_chat_id: int,
+    source_msg_id: int,
+    dest_chat_id: int,
+) -> int | None:
+    async with db.execute(
+        "SELECT dest_msg_id FROM dest_message_index "
+        "WHERE user_id = ? AND source_chat_id = ? AND source_msg_id = ? AND dest_chat_id = ?",
+        (user_id, source_chat_id, source_msg_id, dest_chat_id),
+    ) as cur:
+        row = await cur.fetchone()
+    return int(row[0]) if row else None
+
+
 async def _save_dest_mapping(
     db: aiosqlite.Connection,
     user_id: int,
@@ -223,12 +146,54 @@ async def _save_dest_mapping(
     await db.commit()
 
 
-def build_message_handler(
+async def _fire_copy_webhook(
+    mapping: ChannelMapping,
+    payload: dict[str, Any],
+) -> None:
+    if not mapping.copy_webhook_url or not str(mapping.copy_webhook_url).strip():
+        return
+    from app.services.http_notify import post_json_webhook
+
+    try:
+        await post_json_webhook(
+            str(mapping.copy_webhook_url).strip(),
+            mapping.copy_webhook_secret,
+            payload,
+        )
+    except Exception as e:
+        logger.warning("copy webhook failed mapping_id=%s: %s", mapping.id, e)
+
+
+def _schedule_album_flush(
+    *,
+    user_id: int,
+    source_chat_id: int,
+    grouped_id: int,
+    album_tasks: dict[tuple[int, int, int], asyncio.Task],
+    album_buffers: dict[tuple[int, int, int], list[dict[str, Any]]],
+    flush_coro,
+) -> None:
+    key = (user_id, source_chat_id, grouped_id)
+    old = album_tasks.pop(key, None)
+    if old is not None:
+        old.cancel()
+
+    async def _debounced() -> None:
+        try:
+            await asyncio.sleep(0.38)
+            await flush_coro(key)
+        except asyncio.CancelledError:
+            return
+
+    album_tasks[key] = asyncio.create_task(_debounced())
+
+
+def build_message_handlers(
     user_id: int,
     mappings: list[ChannelMapping],
     db: aiosqlite.Connection,
     mongo_db,
-):
+) -> tuple[Any, Any, Any]:
     mapping_by_source: dict[int, list[ChannelMapping]] = {}
     for mapping in mappings:
         cids: list[int] = [mapping.source_chat_id]
@@ -240,44 +205,29 @@ def build_message_handler(
 
     configured_sources = list(mapping_by_source.keys())
     logged_unknown: set[int] = set()
+    any_sync_edits = any(m.sync_edits for m in mappings)
+    any_sync_deletes = any(m.sync_deletes for m in mappings)
 
-    async def _handler(event: events.NewMessage.Event) -> None:
-        message = event.message
-        if not message:
-            return
+    album_tasks: dict[tuple[int, int, int], asyncio.Task] = {}
+    album_buffers: dict[tuple[int, int, int], list[dict[str, Any]]] = {}
 
-        source_chat_id = event.chat_id
-        candidates = [source_chat_id]
-        alt = alternate_chat_id(source_chat_id)
-        if alt is not None:
-            candidates.append(alt)
-        matched: list[ChannelMapping] = []
-        for cid in candidates:
-            if cid in mapping_by_source:
-                matched.extend(mapping_by_source[cid])
-        if not matched:
-            if source_chat_id not in logged_unknown:
-                logged_unknown.add(source_chat_id)
-                logger.info(
-                    "Message from chat_id=%s has no mapping (configured: %s). "
-                    "Verify source chat ID matches your mapping.",
-                    source_chat_id, configured_sources,
-                )
-            return
-        seen: set[int] = set()
-
+    async def _forward_single_message(
+        event: events.NewMessage.Event,
+        message: Message,
+        matched: list[ChannelMapping],
+        *,
+        source_chat_id: int,
+    ) -> None:
         for mapping in matched:
-            if mapping.id in seen:
-                continue
-            seen.add(mapping.id)
-            if not _passes_filters(message, mapping.filters):
+            preview = await _message_preview_for_filters(message, mapping)
+            if not passes_filters(preview, mapping.filters):
                 continue
             msg_time = message.date
             if msg_time.tzinfo is None:
                 msg_time = msg_time.replace(tzinfo=datetime.timezone.utc)
             else:
                 msg_time = msg_time.astimezone(datetime.timezone.utc)
-            if not _passes_schedule(msg_time, mapping.schedule):
+            if not passes_schedule(msg_time, mapping.schedule):
                 logger.debug("Skipped (outside schedule) msg_id=%s mapping_id=%s", message.id, mapping.id)
                 continue
 
@@ -286,8 +236,8 @@ def build_message_handler(
                 or mapping.source_chat_title
                 or ""
             )
-            media_type = _message_media_type(message)
-            template_context = {
+            media_type = preview.media_type
+            template_context: dict[str, object] = {
                 "original_text": message.message or "",
                 "source_chat_id": source_chat_id,
                 "dest_chat_id": mapping.dest_chat_id,
@@ -297,7 +247,7 @@ def build_message_handler(
                 "media_type": media_type,
                 "date_utc": msg_time.isoformat(),
             }
-            transformed_text = _apply_transforms(
+            transformed_text = apply_transforms(
                 message.message or "",
                 mapping.transforms,
                 context=template_context,
@@ -313,6 +263,9 @@ def build_message_handler(
                     source_reply_msg_id=message.reply_to.reply_to_msg_id,
                     dest_chat_id=mapping.dest_chat_id,
                 )
+
+            if mapping.send_delay_ms and mapping.send_delay_ms > 0:
+                await asyncio.sleep(mapping.send_delay_ms / 1000.0)
 
             sent = None
             dest_ids = [mapping.dest_chat_id]
@@ -366,6 +319,15 @@ def build_message_handler(
                             reply_to=reply_to_msg_id,
                         )
                     break
+                except FloodWaitError as fw:
+                    logger.warning(
+                        "FloodWait mapping_id=%s seconds=%s dest=%s",
+                        mapping.id,
+                        getattr(fw, "seconds", None),
+                        dest_id,
+                    )
+                    last_err = fw
+                    break
                 except ChatIdInvalidError as e:
                     last_err = e
                     continue
@@ -375,7 +337,9 @@ def build_message_handler(
             if sent is None and last_err:
                 logger.warning(
                     "Failed to send to dest_chat_id=%s (tried %s): %s",
-                    mapping.dest_chat_id, dest_ids, last_err,
+                    mapping.dest_chat_id,
+                    dest_ids,
+                    last_err,
                 )
 
             if sent:
@@ -393,7 +357,6 @@ def build_message_handler(
                 )
                 try:
                     source_title = str(source_chat_title) if source_chat_title else ""
-                    # Fetch dest title from Telegram; mapping rarely has it (Add Mapping doesn't set it)
                     dest_title = mapping.dest_chat_title or ""
                     if not dest_title:
                         for dest_id in (mapping.dest_chat_id, alternate_chat_id(mapping.dest_chat_id)):
@@ -424,6 +387,346 @@ def build_message_handler(
                     })
                 except Exception as e:
                     logger.warning("Failed to write message log (non-fatal): %s", e)
+                asyncio.create_task(
+                    _fire_copy_webhook(
+                        mapping,
+                        {
+                            "event": "message_copied",
+                            "user_id": user_id,
+                            "mapping_id": mapping.id,
+                            "source_chat_id": source_chat_id,
+                            "source_msg_id": message.id,
+                            "dest_chat_id": mapping.dest_chat_id,
+                            "dest_msg_id": sent.id,
+                        },
+                    )
+                )
 
-    return _handler
+    async def _flush_album_buffer(key: tuple[int, int, int]) -> None:
+        batch = album_buffers.pop(key, [])
+        album_tasks.pop(key, None)
+        if not batch:
+            return
+        first = batch[0]
+        event: events.NewMessage.Event = first["event"]
+        matched: list[ChannelMapping] = first["matched"]
+        source_chat_id = first["source_chat_id"]
+        messages: list[Message] = sorted([b["message"] for b in batch], key=lambda m: m.id)
+        if len(messages) == 1:
+            await _forward_single_message(
+                event, messages[0], matched, source_chat_id=source_chat_id
+            )
+            return
+        for mapping in matched:
+            previews = [await _message_preview_for_filters(m, mapping) for m in messages]
+            if not all(passes_filters(p, mapping.filters) for p in previews):
+                continue
+            msg_time = messages[-1].date
+            if msg_time.tzinfo is None:
+                msg_time = msg_time.replace(tzinfo=datetime.timezone.utc)
+            else:
+                msg_time = msg_time.astimezone(datetime.timezone.utc)
+            if not passes_schedule(msg_time, mapping.schedule):
+                continue
+            medias = []
+            captions: list[str] = []
+            for m in messages:
+                if m.media and not isinstance(m.media, MessageMediaWebPage):
+                    medias.append(m.media)
+                captions.append(m.message or "")
+            caption = "\n".join(c for c in captions if c).strip() or " "
+            source_chat_title = (
+                (getattr(event.chat, "title", None) if event.chat else None)
+                or mapping.source_chat_title
+                or ""
+            )
+            media_type = "photo" if any(m.photo for m in messages) else media_type_for_telethon_message(messages[0])
+            template_context = {
+                "original_text": caption,
+                "source_chat_id": source_chat_id,
+                "dest_chat_id": mapping.dest_chat_id,
+                "source_chat_title": source_chat_title,
+                "dest_chat_title": mapping.dest_chat_title or "",
+                "message_id": messages[0].id,
+                "media_type": media_type,
+                "date_utc": msg_time.isoformat(),
+            }
+            transformed_text = apply_transforms(
+                caption,
+                mapping.transforms,
+                context=template_context,
+                media_type=media_type,
+            )
+            reply_to_msg_id = None
+            if messages[0].reply_to and messages[0].reply_to.reply_to_msg_id:
+                reply_to_msg_id = await _lookup_reply_dest_id(
+                    db=db,
+                    user_id=user_id,
+                    source_chat_id=source_chat_id,
+                    source_reply_msg_id=messages[0].reply_to.reply_to_msg_id,
+                    dest_chat_id=mapping.dest_chat_id,
+                )
+            if mapping.send_delay_ms and mapping.send_delay_ms > 0:
+                await asyncio.sleep(mapping.send_delay_ms / 1000.0)
+            if not medias:
+                await _forward_single_message(
+                    event, messages[0], [mapping], source_chat_id=source_chat_id
+                )
+                continue
+            dest_ids = [mapping.dest_chat_id]
+            alt_dest = alternate_chat_id(mapping.dest_chat_id)
+            if alt_dest is not None:
+                dest_ids.append(alt_dest)
+            sent = None
+            for dest_id in dest_ids:
+                try:
+                    sent = await event.client.send_file(
+                        dest_id,
+                        medias,
+                        caption=transformed_text,
+                        reply_to=reply_to_msg_id,
+                    )
+                    break
+                except FloodWaitError as fw:
+                    logger.warning(
+                        "FloodWait (album) mapping_id=%s seconds=%s",
+                        mapping.id,
+                        getattr(fw, "seconds", None),
+                    )
+                    break
+                except ChatIdInvalidError:
+                    continue
+            if sent is None:
+                continue
+            for m in messages:
+                await _save_dest_mapping(
+                    db=db,
+                    user_id=user_id,
+                    source_chat_id=source_chat_id,
+                    source_msg_id=m.id,
+                    dest_chat_id=mapping.dest_chat_id,
+                    dest_msg_id=sent.id,
+                )
+            try:
+                await mongo_db.message_logs.insert_one({
+                    "user_id": user_id,
+                    "source_chat_id": source_chat_id,
+                    "source_msg_id": messages[0].id,
+                    "dest_chat_id": mapping.dest_chat_id,
+                    "dest_msg_id": sent.id,
+                    "source_chat_title": str(source_chat_title or ""),
+                    "dest_chat_title": str(mapping.dest_chat_title or ""),
+                    "timestamp": messages[0].date,
+                    "status": "ok_album",
+                })
+            except Exception as e:
+                logger.warning("Failed to write message log (non-fatal): %s", e)
+            asyncio.create_task(
+                _fire_copy_webhook(
+                    mapping,
+                    {
+                        "event": "album_copied",
+                        "user_id": user_id,
+                        "mapping_id": mapping.id,
+                        "source_chat_id": source_chat_id,
+                        "source_msg_ids": [m.id for m in messages],
+                        "dest_chat_id": mapping.dest_chat_id,
+                        "dest_msg_id": sent.id,
+                    },
+                )
+            )
 
+    async def _handler(event: events.NewMessage.Event) -> None:
+        message = event.message
+        if not message:
+            return
+
+        source_chat_id = event.chat_id
+        candidates = [source_chat_id]
+        alt = alternate_chat_id(source_chat_id)
+        if alt is not None:
+            candidates.append(alt)
+        matched: list[ChannelMapping] = []
+        for cid in candidates:
+            if cid in mapping_by_source:
+                matched.extend(mapping_by_source[cid])
+        if not matched:
+            if source_chat_id not in logged_unknown:
+                logged_unknown.add(source_chat_id)
+                logger.info(
+                    "Message from chat_id=%s has no mapping (configured: %s). "
+                    "Verify source chat ID matches your mapping.",
+                    source_chat_id,
+                    configured_sources,
+                )
+            return
+        seen: set[int] = set()
+        deduped: list[ChannelMapping] = []
+        for mapping in matched:
+            if mapping.id in seen:
+                continue
+            seen.add(mapping.id)
+            deduped.append(mapping)
+        matched = deduped
+
+        gid = getattr(message, "grouped_id", None)
+        if gid is not None:
+            key = (user_id, source_chat_id, int(gid))
+            album_buffers.setdefault(key, []).append(
+                {"event": event, "message": message, "matched": matched, "source_chat_id": source_chat_id}
+            )
+            _schedule_album_flush(
+                user_id=user_id,
+                source_chat_id=source_chat_id,
+                grouped_id=int(gid),
+                album_tasks=album_tasks,
+                album_buffers=album_buffers,
+                flush_coro=_flush_album_buffer,
+            )
+            return
+
+        await _forward_single_message(event, message, matched, source_chat_id=source_chat_id)
+
+    async def _edit_handler(event: events.MessageEdited.Event) -> None:
+        if not any_sync_edits:
+            return
+        message = event.message
+        if not message:
+            return
+        source_chat_id = event.chat_id
+        candidates = [source_chat_id]
+        alt = alternate_chat_id(source_chat_id)
+        if alt is not None:
+            candidates.append(alt)
+        matched: list[ChannelMapping] = []
+        for cid in candidates:
+            if cid in mapping_by_source:
+                matched.extend(mapping_by_source[cid])
+        seen: set[int] = set()
+        for mapping in matched:
+            if mapping.id in seen:
+                continue
+            seen.add(mapping.id)
+            if not mapping.sync_edits:
+                continue
+            preview = await _message_preview_for_filters(message, mapping)
+            if not passes_filters(preview, mapping.filters):
+                continue
+            dest_msg_id = await _lookup_dest_msg_id(
+                db, user_id, source_chat_id, message.id, mapping.dest_chat_id
+            )
+            if dest_msg_id is None:
+                continue
+            msg_time = message.date
+            if msg_time.tzinfo is None:
+                msg_time = msg_time.replace(tzinfo=datetime.timezone.utc)
+            else:
+                msg_time = msg_time.astimezone(datetime.timezone.utc)
+            if not passes_schedule(msg_time, mapping.schedule):
+                continue
+            media_type = preview.media_type
+            source_chat_title = (
+                (getattr(event.chat, "title", None) if event.chat else None)
+                or mapping.source_chat_title
+                or ""
+            )
+            template_context: dict[str, object] = {
+                "original_text": message.message or "",
+                "source_chat_id": source_chat_id,
+                "dest_chat_id": mapping.dest_chat_id,
+                "source_chat_title": source_chat_title,
+                "dest_chat_title": mapping.dest_chat_title or "",
+                "message_id": message.id,
+                "media_type": media_type,
+                "date_utc": msg_time.isoformat(),
+            }
+            new_text = apply_transforms(
+                message.message or "",
+                mapping.transforms,
+                context=template_context,
+                media_type=media_type,
+            )
+            dest_ids = [mapping.dest_chat_id]
+            alt_d = alternate_chat_id(mapping.dest_chat_id)
+            if alt_d is not None:
+                dest_ids.append(alt_d)
+            if mapping.edit_strategy == "append_notice":
+                notice = f"[edited src {message.id}] {new_text}"
+                for dest_id in dest_ids:
+                    try:
+                        await event.client.send_message(dest_id, notice)
+                        break
+                    except ChatIdInvalidError:
+                        continue
+                continue
+            for dest_id in dest_ids:
+                try:
+                    await event.client.edit_message(dest_id, dest_msg_id, text=new_text)
+                    break
+                except Exception as e:
+                    logger.debug("edit_message failed mapping_id=%s: %s", mapping.id, e)
+
+    async def _delete_handler(event: events.MessageDeleted.Event) -> None:
+        if not any_sync_deletes:
+            return
+        try:
+            chat_id = int(utils.get_peer_id(event.peer)) if event.peer else None
+        except Exception:
+            return
+        if chat_id is None:
+            return
+        candidates = [chat_id]
+        alt = alternate_chat_id(chat_id)
+        if alt is not None:
+            candidates.append(alt)
+        matched: list[ChannelMapping] = []
+        for cid in candidates:
+            if cid in mapping_by_source:
+                matched.extend(mapping_by_source[cid])
+        seen: set[int] = set()
+        for mapping in matched:
+            if mapping.id in seen:
+                continue
+            seen.add(mapping.id)
+            if not mapping.sync_deletes:
+                continue
+            dest_ids = [mapping.dest_chat_id]
+            alt_d = alternate_chat_id(mapping.dest_chat_id)
+            if alt_d is not None:
+                dest_ids.append(alt_d)
+            to_delete: list[int] = []
+            for mid in event.deleted_ids or []:
+                dmid = await _lookup_dest_msg_id(db, user_id, chat_id, int(mid), mapping.dest_chat_id)
+                if dmid is not None:
+                    to_delete.append(dmid)
+            if not to_delete:
+                continue
+            for dest_id in dest_ids:
+                try:
+                    await event.client.delete_messages(dest_id, to_delete)
+                    break
+                except ChatIdInvalidError:
+                    continue
+                except Exception as e:
+                    logger.warning("delete_messages failed mapping_id=%s: %s", mapping.id, e)
+
+    return _handler, _edit_handler, _delete_handler
+
+
+def build_message_handler(
+    user_id: int,
+    mappings: list[ChannelMapping],
+    db: aiosqlite.Connection,
+    mongo_db,
+):
+    """Backward-compatible: return only the NewMessage handler."""
+    h, _, _ = build_message_handlers(user_id, mappings, db, mongo_db)
+    return h
+
+
+def _passes_filters(message: Message, filters: list[MappingFilter]) -> bool:
+    """Used by tests; builds preview without async sender resolution."""
+    text = getattr(message, "message", None) or getattr(message, "text", None) or ""
+    mt = media_type_for_telethon_message(message)
+    preview = MessagePreview(text=str(text), media_type=mt)
+    return passes_filters(preview, filters)
