@@ -23,6 +23,17 @@ def test_mappings_pagination_contract(api_client, user_token):
     data = r.json()
     assert set(data.keys()) == {"items", "total", "page", "page_size", "total_pages"}
     assert isinstance(data["items"], list)
+    if data["items"]:
+        first = data["items"][0]
+        for key in (
+            "send_delay_ms",
+            "sync_edits",
+            "sync_deletes",
+            "edit_strategy",
+            "copy_webhook_url",
+            "webhook_secret_configured",
+        ):
+            assert key in first, f"list item missing {key} (needed for Edit from /mappings)"
 
 
 def test_workers_list_contract(api_client, user_token):

@@ -28,6 +28,8 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
   const [copyWebhookUrl, setCopyWebhookUrl] = useState(mapping.copy_webhook_url ?? '');
   const [copyWebhookSecret, setCopyWebhookSecret] = useState('');
   const [clearWebhookSecret, setClearWebhookSecret] = useState(false);
+  const webhookSecretPresent =
+    Boolean(mapping.copy_webhook_secret?.trim()) || Boolean(mapping.webhook_secret_configured);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
   const { show: showToast } = useToast();
@@ -70,6 +72,51 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
     },
     onSuccess: (data) => {
       if (data === null) return;
+      // Apply server response immediately so MappingDetail (sync flags, strategy, etc.)
+      // updates without waiting on refetch; staleTime + refetchOnWindowFocus: false otherwise
+      // leaves old values visible until a background refetch completes.
+      queryClient.setQueryData<ChannelMapping>(['mapping', String(mapping.id)], data);
+      // List page (`/mappings`) never had sync_* in row payloads; merge PATCH result into any
+      // paginated `['mappings', …]` cache so reopening Edit from the table shows saved toggles.
+      const secretTrim =
+        typeof data.copy_webhook_secret === 'string' ? data.copy_webhook_secret.trim() : '';
+      queryClient.setQueriesData({ queryKey: ['mappings'], exact: false }, (old) => {
+        if (!old || typeof old !== 'object' || !Array.isArray((old as { items?: unknown }).items)) {
+          return old;
+        }
+        const rec = old as {
+          items: Array<Record<string, unknown> & { id: number }>;
+          total: number;
+          page: number;
+          page_size: number;
+          total_pages: number;
+        };
+        return {
+          ...rec,
+          items: rec.items.map((it) =>
+            it.id === data.id
+              ? {
+                  ...it,
+                  name: data.name,
+                  source_chat_id: data.source_chat_id,
+                  dest_chat_id: data.dest_chat_id,
+                  source_chat_title: data.source_chat_title,
+                  dest_chat_title: data.dest_chat_title,
+                  enabled: data.enabled,
+                  telegram_account_id: data.telegram_account_id,
+                  created_at: data.created_at,
+                  send_delay_ms: data.send_delay_ms,
+                  sync_edits: data.sync_edits,
+                  sync_deletes: data.sync_deletes,
+                  edit_strategy: data.edit_strategy,
+                  copy_webhook_url: data.copy_webhook_url,
+                  copy_webhook_secret: null,
+                  webhook_secret_configured: Boolean(secretTrim),
+                }
+              : it
+          ),
+        };
+      });
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
       queryClient.invalidateQueries({ queryKey: ['mapping', String(mapping.id)] });
       showToast('Mapping updated. Workers restarting to apply changes.');
@@ -216,10 +263,12 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
                 value={copyWebhookSecret}
                 onChange={(e) => setCopyWebhookSecret(e.target.value)}
                 className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-mono text-sm"
-                placeholder={mapping.copy_webhook_secret ? 'Leave blank to keep; enter new to rotate' : 'Optional'}
+                placeholder={
+                  webhookSecretPresent ? 'Leave blank to keep; enter new to rotate' : 'Optional'
+                }
                 autoComplete="off"
               />
-              {mapping.copy_webhook_secret ? (
+              {webhookSecretPresent ? (
                 <label className="flex items-center gap-2 mt-2 text-sm cursor-pointer">
                   <input
                     type="checkbox"

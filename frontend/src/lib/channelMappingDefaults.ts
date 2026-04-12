@@ -21,5 +21,6 @@ export function coerceChannelMappingForEdit(
     sync_deletes: m.sync_deletes ?? false,
     copy_webhook_url: m.copy_webhook_url ?? null,
     copy_webhook_secret: m.copy_webhook_secret ?? null,
+    webhook_secret_configured: m.webhook_secret_configured,
   };
 }

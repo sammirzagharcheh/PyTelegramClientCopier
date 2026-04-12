@@ -78,7 +78,11 @@ async def list_mappings(
     async with db.execute(f"SELECT COUNT(*) {base}", params) as cur:
         total = (await cur.fetchone())[0]
 
-    cols = "id, user_id, source_chat_id, dest_chat_id, name, source_chat_title, dest_chat_title, enabled, telegram_account_id, created_at"
+    cols = (
+        "id, user_id, source_chat_id, dest_chat_id, name, source_chat_title, dest_chat_title, "
+        "enabled, telegram_account_id, created_at, send_delay_ms, sync_edits, edit_strategy, "
+        "sync_deletes, copy_webhook_url, copy_webhook_secret"
+    )
     params.extend([page_size, offset])
     async with db.execute(
         f"SELECT {cols} {base} {order} LIMIT ? OFFSET ?",
@@ -115,10 +119,26 @@ async def list_mappings(
         mid = r[0]
         sched = schedule_by_mapping.get(mid)
         summary = _schedule_summary(sched) if sched else "24/7"
+        secret_raw = r[15]
+        secret_set = bool(secret_raw and str(secret_raw).strip())
         items.append({
-            "id": r[0], "user_id": r[1], "source_chat_id": r[2], "dest_chat_id": r[3],
-            "name": r[4], "source_chat_title": r[5], "dest_chat_title": r[6],
-            "enabled": bool(r[7]), "telegram_account_id": r[8], "created_at": r[9],
+            "id": r[0],
+            "user_id": r[1],
+            "source_chat_id": r[2],
+            "dest_chat_id": r[3],
+            "name": r[4],
+            "source_chat_title": r[5],
+            "dest_chat_title": r[6],
+            "enabled": bool(r[7]),
+            "telegram_account_id": r[8],
+            "created_at": r[9],
+            "send_delay_ms": int(r[10] or 0),
+            "sync_edits": bool(r[11]),
+            "edit_strategy": str(r[12] or "replace_text"),
+            "sync_deletes": bool(r[13]),
+            "copy_webhook_url": r[14],
+            "copy_webhook_secret": None,
+            "webhook_secret_configured": secret_set,
             "schedule_summary": summary,
         })
     total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
@@ -377,11 +397,9 @@ async def update_mapping(
         "copy_webhook_url": row[14],
         "copy_webhook_secret": row[15],
     }
-    runtime_changed = any(
-        x is not None
-        for x in (data.enabled, data.source_chat_id, data.dest_chat_id)
-    )
-    if runtime_changed:
+    # Reload workers whenever persisted columns changed — not only routing/enabled.
+    # Otherwise sync_edits / sync_deletes / edit_strategy / send_delay / webhooks stay stale in memory.
+    if updates:
         try:
             await restart_workers_for_mapping(db, row[1], row[8])
         except Exception:

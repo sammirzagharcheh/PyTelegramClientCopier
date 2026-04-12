@@ -219,12 +219,15 @@ export function MappingDetail() {
 
   const enableMutation = useMutation({
     mutationFn: async (enabled: boolean) => {
-      return (await api.patch(`/mappings/${id}`, { enabled })).data;
+      return (await api.patch<ChannelMapping>(`/mappings/${id}`, { enabled })).data;
     },
-    onSuccess: (enabled) => {
+    onSuccess: (data, enabledFlag) => {
+      if (data) {
+        queryClient.setQueryData<ChannelMapping>(['mapping', id], data);
+      }
       queryClient.invalidateQueries({ queryKey: ['mapping', id] });
       showToast(
-        (enabled ? 'Mapping enabled' : 'Mapping disabled') + '. Workers restarting to apply changes.'
+        (enabledFlag ? 'Mapping enabled' : 'Mapping disabled') + '. Workers restarting to apply changes.'
       );
     },
   });
