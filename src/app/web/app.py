@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 
@@ -17,6 +18,8 @@ from app.web.routers import (
     admin_settings,
     admin_stats,
     admin_users,
+    alert_webhooks,
+    api_keys,
     auth,
     filters,
     mappings,
@@ -26,6 +29,7 @@ from app.web.routers import (
     schedules,
     stats,
     transforms,
+    user_feature_flags,
     worker_logs,
     workers,
 )
@@ -53,7 +57,31 @@ async def lifespan(app: FastAPI):
             await db.close()
 
     asyncio.create_task(_delayed_restore())
+
+    alert_task: asyncio.Task | None = None
+    if not settings.testing:
+
+        async def _alert_loop() -> None:
+            from app.services.alert_checker import check_stale_workers_and_alert
+
+            while True:
+                await asyncio.sleep(90)
+                db = await get_sqlite()
+                try:
+                    await check_stale_workers_and_alert(db)
+                except Exception as e:
+                    logger.warning("alert checker: %s", e)
+                finally:
+                    await db.close()
+
+        alert_task = asyncio.create_task(_alert_loop())
+
     yield
+
+    if alert_task is not None:
+        alert_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await alert_task
     db = await get_sqlite()
     try:
         await workers.terminate_all_workers(db)
@@ -76,6 +104,9 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(auth.router, prefix="/api")
+    app.include_router(alert_webhooks.router, prefix="/api")
+    app.include_router(api_keys.router, prefix="/api")
+    app.include_router(user_feature_flags.router, prefix="/api")
     app.include_router(admin_users.router, prefix="/api")
     app.include_router(admin_settings.router, prefix="/api")
     app.include_router(accounts.router, prefix="/api")

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 
 from app.config import settings
 from app.web.schemas.accounts import TelegramAccountUpdate
-from app.web.deps import AdminUser, CurrentUser, Db
+from app.web.deps import AdminUser, CurrentUser, Db, WriterUser
 from app.web.routers.workers import stop_workers_for_account
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
@@ -107,7 +107,7 @@ async def get_account(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_account(
     db: Db,
-    user: CurrentUser,
+    user: WriterUser,
     name: str = Form(...),
     type: str = Form(...),
     bot_token: str | None = Form(None),
@@ -173,7 +173,7 @@ async def update_account(
     account_id: int,
     data: TelegramAccountUpdate,
     db: Db,
-    user: CurrentUser,
+    user: WriterUser,
 ) -> dict:
     """Update telegram account."""
     async with db.execute(
@@ -218,7 +218,7 @@ async def update_account(
 async def delete_account(
     account_id: int,
     db: Db,
-    user: CurrentUser,
+    user: WriterUser,
 ) -> dict:
     """Delete telegram account and safely disable related mappings/workers."""
     async with db.execute(

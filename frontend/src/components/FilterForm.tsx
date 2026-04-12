@@ -15,6 +15,14 @@ export type FilterFormValues = {
   regex_pattern: string;
   /** Same number = OR within that group; different numbers = AND between groups. Omit on create for a new unique group. */
   or_group_id?: number;
+  /** Comma-separated numeric sender IDs (Telegram user ids). */
+  allowed_sender_ids: string;
+  /** Comma-separated usernames without @; server matches case-insensitively. */
+  denied_usernames: string;
+  min_url_count: string;
+  max_url_count: string;
+  /** Comma-separated hashtags (with or without leading #; server normalizes). */
+  required_hashtags: string;
 };
 
 function mediaArrayToString(arr: string[]): string {
@@ -54,6 +62,19 @@ export function FilterForm({
     initialValues?.media_types?.length ? initialValues.media_types : []
   );
   const [regexPattern, setRegexPattern] = useState(initialValues?.regex_pattern ?? '');
+  const [allowedSenderIds, setAllowedSenderIds] = useState(initialValues?.allowed_sender_ids ?? '');
+  const [deniedUsernames, setDeniedUsernames] = useState(initialValues?.denied_usernames ?? '');
+  const [minUrlCount, setMinUrlCount] = useState(
+    initialValues?.min_url_count != null && initialValues.min_url_count !== ''
+      ? String(initialValues.min_url_count)
+      : ''
+  );
+  const [maxUrlCount, setMaxUrlCount] = useState(
+    initialValues?.max_url_count != null && initialValues.max_url_count !== ''
+      ? String(initialValues.max_url_count)
+      : ''
+  );
+  const [requiredHashtags, setRequiredHashtags] = useState(initialValues?.required_hashtags ?? '');
   const [orGroupId, setOrGroupId] = useState(
     () =>
       initialValues?.or_group_id != null && initialValues.or_group_id !== undefined
@@ -72,6 +93,11 @@ export function FilterForm({
     setExcludeText(preset.exclude_text);
     setMediaTypes(preset.media_types);
     setRegexPattern(preset.regex_pattern);
+    setAllowedSenderIds(preset.allowed_sender_ids ?? '');
+    setDeniedUsernames(preset.denied_usernames ?? '');
+    setMinUrlCount(preset.min_url_count ?? '');
+    setMaxUrlCount(preset.max_url_count ?? '');
+    setRequiredHashtags(preset.required_hashtags ?? '');
     if (preset.or_group_id != null) setOrGroupId(String(preset.or_group_id));
   };
 
@@ -83,6 +109,11 @@ export function FilterForm({
         exclude_text: '',
         media_types: ['text'],
         regex_pattern: '',
+        allowed_sender_ids: '',
+        denied_usernames: '',
+        min_url_count: '',
+        max_url_count: '',
+        required_hashtags: '',
       },
     },
     {
@@ -92,6 +123,11 @@ export function FilterForm({
         exclude_text: '',
         media_types: ['voice', 'video'],
         regex_pattern: '',
+        allowed_sender_ids: '',
+        denied_usernames: '',
+        min_url_count: '',
+        max_url_count: '',
+        required_hashtags: '',
       },
     },
     {
@@ -101,6 +137,11 @@ export function FilterForm({
         exclude_text: 'spam',
         media_types: [],
         regex_pattern: '',
+        allowed_sender_ids: '',
+        denied_usernames: '',
+        min_url_count: '',
+        max_url_count: '',
+        required_hashtags: '',
       },
     },
   ];
@@ -113,8 +154,34 @@ export function FilterForm({
     const hasExclude = excludeText.trim().length > 0;
     const hasMedia = mediaStr.length > 0;
     const hasRegex = regexPattern.trim().length > 0;
-    if (!hasInclude && !hasExclude && !hasMedia && !hasRegex) {
+    const hasSenders = allowedSenderIds.trim().length > 0;
+    const hasDenied = deniedUsernames.trim().length > 0;
+    const hasUrls = minUrlCount.trim().length > 0 || maxUrlCount.trim().length > 0;
+    const hasTags = requiredHashtags.trim().length > 0;
+    if (!hasInclude && !hasExclude && !hasMedia && !hasRegex && !hasSenders && !hasDenied && !hasUrls && !hasTags) {
       setError('At least one filter rule is required.');
+      return;
+    }
+    let minU: number | undefined;
+    let maxU: number | undefined;
+    if (minUrlCount.trim() !== '') {
+      const n = parseInt(minUrlCount.trim(), 10);
+      if (Number.isNaN(n) || n < 0) {
+        setError('Min URL count must be a non-negative integer.');
+        return;
+      }
+      minU = n;
+    }
+    if (maxUrlCount.trim() !== '') {
+      const n = parseInt(maxUrlCount.trim(), 10);
+      if (Number.isNaN(n) || n < 0) {
+        setError('Max URL count must be a non-negative integer.');
+        return;
+      }
+      maxU = n;
+    }
+    if (minU !== undefined && maxU !== undefined && minU > maxU) {
+      setError('Min URL count cannot be greater than max URL count.');
       return;
     }
     let parsedGroup: number | undefined;
@@ -134,6 +201,11 @@ export function FilterForm({
       exclude_text: excludeText.trim() || '',
       media_types: mediaTypes,
       regex_pattern: regexPattern.trim() || '',
+      allowed_sender_ids: allowedSenderIds.trim(),
+      denied_usernames: deniedUsernames.trim(),
+      min_url_count: minUrlCount.trim(),
+      max_url_count: maxUrlCount.trim(),
+      required_hashtags: requiredHashtags.trim(),
     };
     if (parsedGroup !== undefined) {
       payload.or_group_id = parsedGroup;
@@ -208,6 +280,82 @@ export function FilterForm({
             </label>
           ))}
         </div>
+      </div>
+
+      <div>
+        <label className="flex items-center gap-2 text-sm font-medium mb-1">
+          Allowed sender IDs
+          <span
+            title="Comma-separated numeric Telegram user IDs; message must be from one of these senders"
+            className="text-gray-400 hover:text-gray-600 cursor-help"
+          >
+            (?)
+          </span>
+        </label>
+        <input
+          type="text"
+          value={allowedSenderIds}
+          onChange={(e) => setAllowedSenderIds(e.target.value)}
+          className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-mono text-sm"
+          placeholder="e.g. 123456789, 987654321"
+        />
+      </div>
+
+      <div>
+        <label className="flex items-center gap-2 text-sm font-medium mb-1">
+          Denied usernames
+          <span title="Comma-separated usernames without @; skip if sender matches" className="text-gray-400 hover:text-gray-600 cursor-help">
+            (?)
+          </span>
+        </label>
+        <input
+          type="text"
+          value={deniedUsernames}
+          onChange={(e) => setDeniedUsernames(e.target.value)}
+          className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-mono text-sm"
+          placeholder="e.g. spam_bot, bad_actor"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm font-medium mb-1">Min URL count</label>
+          <input
+            type="number"
+            min={0}
+            value={minUrlCount}
+            onChange={(e) => setMinUrlCount(e.target.value)}
+            className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+            placeholder="optional"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Max URL count</label>
+          <input
+            type="number"
+            min={0}
+            value={maxUrlCount}
+            onChange={(e) => setMaxUrlCount(e.target.value)}
+            className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+            placeholder="optional"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="flex items-center gap-2 text-sm font-medium mb-1">
+          Required hashtags
+          <span title="Message must contain all listed tags; # is optional in the list" className="text-gray-400 hover:text-gray-600 cursor-help">
+            (?)
+          </span>
+        </label>
+        <input
+          type="text"
+          value={requiredHashtags}
+          onChange={(e) => setRequiredHashtags(e.target.value)}
+          className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+          placeholder="e.g. news, breaking"
+        />
       </div>
 
       <div>

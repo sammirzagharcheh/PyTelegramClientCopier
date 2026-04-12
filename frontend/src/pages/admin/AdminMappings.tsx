@@ -2,6 +2,7 @@ import { Filter, Inbox, Layers, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { coerceChannelMappingForEdit } from '../../lib/channelMappingDefaults';
 import { EditMappingDialog } from '../../components/EditMappingDialog';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { MappingEnableToggle } from '../../components/MappingEnableToggle';
@@ -147,7 +148,10 @@ export function AdminMappings() {
         </select>
       </div>
       {editingMapping && (
-        <EditMappingDialog mapping={editingMapping} onClose={() => setEditingMapping(null)} />
+        <EditMappingDialog
+          mapping={coerceChannelMappingForEdit(editingMapping)}
+          onClose={() => setEditingMapping(null)}
+        />
       )}
       {mappingToDelete && (
         <ConfirmDialog

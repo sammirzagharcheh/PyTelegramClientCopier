@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import shutil
@@ -11,8 +12,8 @@ from app.db.mongo import get_mongo_db
 from app.db.sqlite import get_sqlite, init_sqlite
 from app.services.mapping_service import list_enabled_mappings
 from app.worker_log_handler import MongoWorkerLogHandler, test_mongo_connection
-from app.telegram.client_manager import attach_handler, start_user_client
-from app.telegram.handlers import build_message_handler
+from app.telegram.client_manager import attach_message_handlers, start_user_client
+from app.telegram.handlers import build_message_handlers
 
 logger = logging.getLogger(__name__)
 
@@ -87,10 +88,37 @@ async def run_worker(
         logger.debug("Using worker session copy: %s", worker_session)
         client = await start_user_client(worker_session)
         logger.info("Connected to Telegram: user_id=%s account_id=%s", user_id, telegram_account_id)
-        handler = build_message_handler(user_id=user_id, mappings=mappings, db=db, mongo_db=mongo_db)
-        attach_handler(client, handler)
+        h_new, h_edit, h_del = build_message_handlers(
+            user_id=user_id, mappings=mappings, db=db, mongo_db=mongo_db
+        )
+        attach_message_handlers(client, h_new, h_edit, h_del)
 
-        await client.run_until_disconnected()
+        async def _heartbeat_loop() -> None:
+            import datetime as dt_mod
+
+            pid = os.getpid()
+            while True:
+                await asyncio.sleep(30)
+                try:
+                    now = dt_mod.datetime.now(dt_mod.timezone.utc).isoformat()
+                    if telegram_account_id is not None:
+                        await db.execute(
+                            "UPDATE worker_registry SET last_heartbeat_at = ? "
+                            "WHERE account_id = ? AND pid = ?",
+                            (now, telegram_account_id, pid),
+                        )
+                        await db.commit()
+                except Exception as hb_err:
+                    logger.debug("heartbeat update skipped: %s", hb_err)
+
+        hb_task = asyncio.create_task(_heartbeat_loop())
+
+        try:
+            await client.run_until_disconnected()
+        finally:
+            hb_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await hb_task
         logger.info("Worker disconnected: user_id=%s account_id=%s (Telegram client closed)", user_id, telegram_account_id)
     except Exception as e:
         logger.exception(

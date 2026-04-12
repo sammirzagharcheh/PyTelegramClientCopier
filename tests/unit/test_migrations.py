@@ -136,3 +136,48 @@ async def test_migration_v17_adds_dest_message_index_updated_at(tmp_path):
         async with db.execute("PRAGMA table_info(dest_message_index)") as cur:
             cols = {r[1] for r in await cur.fetchall()}
         assert "updated_at" in cols
+
+
+@pytest.mark.asyncio
+async def test_migration_v18_through_v22_schema(tmp_path):
+    """v18 heartbeat, v19 alert webhooks, v20 mapping columns, v21 filter columns, v22 api keys."""
+    settings.sqlite_path = str(tmp_path / "migrations_v18_22.db")
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    await init_sqlite()
+    async with aiosqlite.connect(settings.sqlite_path) as db:
+        async with db.execute("PRAGMA table_info(worker_registry)") as cur:
+            wr_cols = {r[1] for r in await cur.fetchall()}
+        assert "last_heartbeat_at" in wr_cols
+
+        async with db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name = 'user_alert_webhooks'"
+        ) as cur:
+            assert await cur.fetchone()
+
+        async with db.execute("PRAGMA table_info(channel_mappings)") as cur:
+            cm_cols = {r[1] for r in await cur.fetchall()}
+        for c in (
+            "send_delay_ms",
+            "sync_edits",
+            "edit_strategy",
+            "sync_deletes",
+            "copy_webhook_url",
+            "copy_webhook_secret",
+        ):
+            assert c in cm_cols
+
+        async with db.execute("PRAGMA table_info(mapping_filters)") as cur:
+            mf_cols = {r[1] for r in await cur.fetchall()}
+        for c in (
+            "allowed_sender_ids",
+            "denied_usernames",
+            "min_url_count",
+            "max_url_count",
+            "required_hashtags",
+        ):
+            assert c in mf_cols
+
+        async with db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name = 'user_api_keys'"
+        ) as cur:
+            assert await cur.fetchone()

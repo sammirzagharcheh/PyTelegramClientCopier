@@ -70,6 +70,28 @@ def test_create_filter_with_all_fields(api_client, user_token):
     assert data["or_group_id"] == data["id"]
 
 
+def test_create_filter_with_extended_fields(api_client, user_token):
+    r = api_client.post(
+        "/api/mappings/1/filters",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "include_text": "x",
+            "allowed_sender_ids": "111,222",
+            "denied_usernames": "spam,bot",
+            "min_url_count": 1,
+            "max_url_count": 5,
+            "required_hashtags": "news, #breaking",
+        },
+    )
+    assert r.status_code == 201
+    data = r.json()
+    assert data["allowed_sender_ids"] == "111,222"
+    assert data["denied_usernames"] == "spam,bot"
+    assert data["min_url_count"] == 1
+    assert data["max_url_count"] == 5
+    assert "news" in (data.get("required_hashtags") or "")
+
+
 def test_create_filter_404_mapping(api_client, user_token):
     r = api_client.post(
         "/api/mappings/999/filters",

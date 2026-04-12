@@ -66,6 +66,11 @@ async def list_users(
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(data: UserCreate, db: Db, _admin: AdminUser) -> dict:
     """Create a new user."""
+    if data.role not in ("admin", "user", "viewer"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="role must be one of: admin, user, viewer",
+        )
     password_hash = hash_password(data.password)
     try:
         cursor = await db.execute(
@@ -128,6 +133,11 @@ async def update_user(
         updates.append("name = ?")
         params.append(data.name)
     if data.role is not None:
+        if data.role not in ("admin", "user", "viewer"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="role must be one of: admin, user, viewer",
+            )
         updates.append("role = ?")
         params.append(data.role)
     if data.status is not None:

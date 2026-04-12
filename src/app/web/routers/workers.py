@@ -16,7 +16,7 @@ from typing import Any
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.web.deps import CurrentUser, Db
+from app.web.deps import CurrentUser, Db, WriterUser
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/workers", tags=["workers"])
@@ -113,13 +113,15 @@ async def _list_workers_from_registry(
     """
     if user["role"] != "admin":
         async with db.execute(
-            "SELECT worker_id, user_id, account_id, session_path, pid, created_at FROM worker_registry WHERE user_id = ?",
+            "SELECT worker_id, user_id, account_id, session_path, pid, created_at, last_heartbeat_at "
+            "FROM worker_registry WHERE user_id = ?",
             (user["id"],),
         ) as cur:
             rows = await cur.fetchall()
     else:
         async with db.execute(
-            "SELECT worker_id, user_id, account_id, session_path, pid, created_at FROM worker_registry"
+            "SELECT worker_id, user_id, account_id, session_path, pid, created_at, last_heartbeat_at "
+            "FROM worker_registry"
         ) as cur:
             rows = await cur.fetchall()
 
@@ -129,8 +131,8 @@ async def _list_workers_from_registry(
     items: list[dict] = []
 
     for row in rows:
-        worker_id, uid, account_id, session_path, pid, created_at = (
-            row[0], row[1], row[2], row[3], row[4], row[5]
+        worker_id, uid, account_id, session_path, pid, created_at, last_heartbeat_at = (
+            row[0], row[1], row[2], row[3], row[4], row[5], row[6] if len(row) > 6 else None
         )
         if not _pid_alive(pid):
             await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
@@ -155,6 +157,9 @@ async def _list_workers_from_registry(
             }
             workers_reattached += 1
 
+        hb = last_heartbeat_at
+        if hb and "T" not in str(hb) and "Z" not in str(hb) and "+" not in str(hb):
+            hb = str(hb).replace(" ", "T") + "Z"
         items.append({
             "id": worker_id,
             "user_id": uid,
@@ -163,6 +168,7 @@ async def _list_workers_from_registry(
             "pid": pid,
             "running": True,
             "started_at": started_at,
+            "last_heartbeat_at": hb,
         })
 
     if workers_pruned:
@@ -202,6 +208,14 @@ def _account_has_running_worker(account_id: int) -> bool:
         if w.get("account_id") == account_id and _is_process_alive(w):
             return True
     return False
+
+
+def _running_worker_info_for_account(account_id: int) -> tuple[str | None, int | None]:
+    """Return (worker_id, pid) for a live in-memory worker for this account, else (None, None)."""
+    for wid, w in _workers.items():
+        if w.get("account_id") == account_id and _is_process_alive(w):
+            return wid, w.get("pid")
+    return None, None
 
 
 async def _account_has_worker_in_registry(db: aiosqlite.Connection, account_id: int) -> bool:
@@ -439,7 +453,7 @@ async def list_workers(user: CurrentUser, db: Db) -> list[dict]:
 
 @router.post("/start")
 async def start_worker(
-    user: CurrentUser,
+    user: WriterUser,
     db: Db,
     account_id: int,
     user_id: int | None = None,
@@ -473,9 +487,13 @@ async def start_worker(
     session_path = row[2]
     # Check in-memory registry
     if _account_has_running_worker(account_id):
+        wid, mpid = _running_worker_info_for_account(account_id)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Worker already running for this account",
+            detail=(
+                f"Worker already running for this account (in-memory worker_id={wid}, pid={mpid}). "
+                "Stop that worker from Admin → Workers (or POST /api/workers/{worker_id}/stop) before starting again."
+            ),
         )
     # Check persistent registry (orphans from prior API run). Prune dead entries.
     async with db.execute(
@@ -491,7 +509,10 @@ async def start_worker(
             continue
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Worker already running for this account",
+            detail=(
+                f"Worker already running for this account (registry worker_id={worker_id}, pid={reg_pid}). "
+                "Stop that worker or restart the API after confirming the PID is not a stale zombie."
+            ),
         )
     if reg_rows:
         await db.commit()
@@ -499,7 +520,10 @@ async def start_worker(
     if not spawned:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Worker already running for this account",
+            detail=(
+                "Could not start worker (race or duplicate): another live worker or registry row "
+                f"exists for account_id={account_id}. Retry after a moment or stop the existing worker."
+            ),
         )
     w = next(x for x in _workers.values() if x["account_id"] == account_id)
     return {
@@ -515,7 +539,7 @@ async def start_worker(
 @router.post("/{worker_id}/stop")
 async def stop_worker(
     worker_id: str,
-    user: CurrentUser,
+    user: WriterUser,
     db: Db,
 ) -> dict:
     """Stop a running worker."""

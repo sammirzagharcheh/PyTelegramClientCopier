@@ -12,6 +12,8 @@ type Worker = {
   pid: number | null;
   running: boolean;
   started_at?: string | null;
+  /** ISO timestamp from worker process heartbeat (UTC). */
+  last_heartbeat_at?: string | null;
 };
 
 export function UserWorkers() {
@@ -71,8 +73,13 @@ export function UserWorkers() {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {w.running && (
-                    <span className="text-green-600 text-sm font-medium">
-                      Running · {formatUptime(w.started_at)}
+                    <span className="text-green-600 text-sm font-medium text-right">
+                      <span className="block">Running · {formatUptime(w.started_at)}</span>
+                      {w.last_heartbeat_at && (
+                        <span className="block text-xs text-gray-600 dark:text-gray-300 font-normal">
+                          Heartbeat: {new Date(w.last_heartbeat_at).toLocaleString()}
+                        </span>
+                      )}
                     </span>
                   )}
                   <button

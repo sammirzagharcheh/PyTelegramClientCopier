@@ -62,6 +62,8 @@ Mappings can also apply transform rules before sending to destination channels:
 Transform rules are applied in priority order for each matched mapping, then the transformed
 message/caption is delivered. Media/template rules can be scoped by message/media type.
 
+**PII presets (web UI):** The mapping detail page can insert common regex redaction rules (emails, phone-like strings, etc.) as ordinary `regex` transforms. These are **client-side shortcuts** only; the API does not treat them differently from manually created transforms. Review patterns for false positives before relying on them in production.
+
 ## VPS Deployment (Ubuntu)
 
 Deploy on a fresh Ubuntu 20.04/22.04/24.04 VPS. The script installs nginx, Python 3.11+, Node.js 20, clones the repo, builds the frontend, configures systemd, and sets up nginx as a reverse proxy.
