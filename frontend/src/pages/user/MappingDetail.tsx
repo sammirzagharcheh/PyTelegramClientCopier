@@ -1,8 +1,11 @@
-import { ArrowLeft, Clock, Filter, GitBranch, Pencil, Plus, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowLeft, Clock, Eye, Filter, GitBranch, Pencil, Plus, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../lib/api';
+import type { ChannelMapping, MappingPreviewResponse, Transform, TransformCreate } from '../../lib/api';
+import { coerceChannelMappingForEdit } from '../../lib/channelMappingDefaults';
+import { PII_TRANSFORM_PRESETS } from '../../lib/piiTransformPresets';
 import type { FilterFormValues } from '../../components/FilterForm';
 import { EditMappingDialog } from '../../components/EditMappingDialog';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -19,7 +22,6 @@ import {
 } from '../../components/FilterForm';
 import { TransformForm } from '../../components/TransformForm';
 import { formatScheduleSummary } from '../../lib/formatDateTime';
-import type { Transform, TransformCreate } from '../../lib/api';
 
 type Filter = {
   id: number;
@@ -29,7 +31,32 @@ type Filter = {
   media_types: string | null;
   regex_pattern: string | null;
   or_group_id: number;
+  allowed_sender_ids?: string | null;
+  denied_usernames?: string | null;
+  min_url_count?: number | null;
+  max_url_count?: number | null;
+  required_hashtags?: string | null;
 };
+
+function filterValuesToApiBody(values: FilterFormValues): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    include_text: values.include_text || null,
+    exclude_text: values.exclude_text || null,
+    media_types: mediaArrayToString(values.media_types) || null,
+    regex_pattern: values.regex_pattern || null,
+    allowed_sender_ids: values.allowed_sender_ids?.trim() || null,
+    denied_usernames: values.denied_usernames?.trim() || null,
+    required_hashtags: values.required_hashtags?.trim() || null,
+  };
+  const minS = values.min_url_count?.trim();
+  const maxS = values.max_url_count?.trim();
+  body.min_url_count = minS ? parseInt(minS, 10) : null;
+  body.max_url_count = maxS ? parseInt(maxS, 10) : null;
+  if (values.or_group_id !== undefined) {
+    body.or_group_id = values.or_group_id;
+  }
+  return body;
+}
 
 function describeFilter(f: Filter): string[] {
   const parts: string[] = [];
@@ -38,6 +65,12 @@ function describeFilter(f: Filter): string[] {
   if (f.exclude_text) parts.push(`Must NOT contain "${f.exclude_text}"`);
   if (f.media_types) parts.push(`Media: ${formatMediaDisplay(f.media_types)}`);
   if (f.regex_pattern) parts.push(`Match regex: ${f.regex_pattern}`);
+  if (f.allowed_sender_ids?.trim()) parts.push(`Allowed senders (IDs): ${f.allowed_sender_ids.trim()}`);
+  if (f.denied_usernames?.trim()) parts.push(`Denied usernames: ${f.denied_usernames.trim()}`);
+  if (f.min_url_count != null || f.max_url_count != null) {
+    parts.push(`URL count: min ${f.min_url_count ?? '—'} max ${f.max_url_count ?? '—'}`);
+  }
+  if (f.required_hashtags?.trim()) parts.push(`Required hashtags: ${f.required_hashtags.trim()}`);
   return parts;
 }
 
@@ -80,10 +113,21 @@ export function MappingDetail() {
   const [transformDeleteConfirm, setTransformDeleteConfirm] = useState<number | null>(null);
   const [editingMapping, setEditingMapping] = useState<boolean>(false);
   const [mappingToDelete, setMappingToDelete] = useState<boolean>(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewSampleText, setPreviewSampleText] = useState('');
+  const [previewMediaType, setPreviewMediaType] = useState('text');
+  const [previewSenderId, setPreviewSenderId] = useState('');
+  const [previewSenderUsername, setPreviewSenderUsername] = useState('');
+  const [previewResult, setPreviewResult] = useState<MappingPreviewResponse | null>(null);
+  const [previewError, setPreviewError] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [transformCreateSeed, setTransformCreateSeed] = useState<TransformCreate | null>(null);
+
+  const canWrite = Boolean(user && user.role !== 'viewer');
 
   const { data: mapping } = useQuery({
     queryKey: ['mapping', id],
-    queryFn: async () => (await api.get(`/mappings/${id}`)).data,
+    queryFn: async () => (await api.get<ChannelMapping>(`/mappings/${id}`)).data,
     enabled: !!id,
   });
   const { data: filters } = useQuery({
@@ -122,15 +166,7 @@ export function MappingDetail() {
 
   const createMutation = useMutation({
     mutationFn: async (values: FilterFormValues) => {
-      const body: Record<string, unknown> = {
-        include_text: values.include_text || null,
-        exclude_text: values.exclude_text || null,
-        media_types: mediaArrayToString(values.media_types) || null,
-        regex_pattern: values.regex_pattern || null,
-      };
-      if (values.or_group_id !== undefined) {
-        body.or_group_id = values.or_group_id;
-      }
+      const body = filterValuesToApiBody(values);
       return (await api.post(`/mappings/${id}/filters`, body)).data;
     },
     onSuccess: () => {
@@ -150,15 +186,7 @@ export function MappingDetail() {
       filterId: number;
       values: FilterFormValues;
     }) => {
-      const body: Record<string, unknown> = {
-        include_text: values.include_text || null,
-        exclude_text: values.exclude_text || null,
-        media_types: mediaArrayToString(values.media_types) || null,
-        regex_pattern: values.regex_pattern || null,
-      };
-      if (values.or_group_id !== undefined) {
-        body.or_group_id = values.or_group_id;
-      }
+      const body = filterValuesToApiBody(values);
       return (await api.patch(`/mappings/${id}/filters/${filterId}`, body)).data;
     },
     onSuccess: () => {
@@ -231,6 +259,7 @@ export function MappingDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mapping', id, 'transforms'] });
+      setTransformCreateSeed(null);
       setTransformModalOpen(null);
       showToast('Transform added. Workers restarting to apply changes.');
     },
@@ -246,6 +275,7 @@ export function MappingDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mapping', id, 'transforms'] });
+      setTransformCreateSeed(null);
       setTransformModalOpen(null);
       showToast('Transform updated. Workers restarting to apply changes.');
     },
@@ -289,18 +319,37 @@ export function MappingDetail() {
   const editingFilter = typeof filterModalOpen === 'number' ? filters?.find((f) => f.id === filterModalOpen) : null;
   const editingTransform = typeof transformModalOpen === 'number' ? transforms?.find((t) => t.id === transformModalOpen) : null;
 
-  const mappingForEdit = mapping
-    ? {
-        id: mapping.id,
-        user_id: mapping.user_id,
-        source_chat_id: mapping.source_chat_id,
-        dest_chat_id: mapping.dest_chat_id,
-        name: mapping.name,
-        source_chat_title: mapping.source_chat_title,
-        dest_chat_title: mapping.dest_chat_title,
-        enabled: mapping.enabled,
+  const mappingForEdit = mapping ? coerceChannelMappingForEdit(mapping) : null;
+
+  const runPreview = async () => {
+    if (!id) return;
+    setPreviewError('');
+    setPreviewLoading(true);
+    setPreviewResult(null);
+    try {
+      const payload: Record<string, unknown> = {
+        sample_text: previewSampleText,
+        media_type: previewMediaType || 'text',
+      };
+      const sid = previewSenderId.trim();
+      if (sid !== '') {
+        const n = parseInt(sid, 10);
+        if (!Number.isNaN(n)) payload.sender_id = n;
       }
-    : null;
+      const su = previewSenderUsername.trim();
+      if (su !== '') payload.sender_username = su;
+      const { data } = await api.post<MappingPreviewResponse>(`/mappings/${id}/preview`, payload);
+      setPreviewResult(data);
+    } catch (e: unknown) {
+      const msg =
+        e && typeof e === 'object' && 'response' in e
+          ? String((e as { response?: { data?: { detail?: string } } }).response?.data?.detail ?? 'Preview failed')
+          : 'Preview failed';
+      setPreviewError(msg);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
 
   if (!mapping) return null;
 
@@ -319,22 +368,26 @@ export function MappingDetail() {
         subtitle={`Source: ${sourceLabel} → Dest: ${destLabel}`}
         actions={
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setEditingMapping(true)}
-              className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
-            >
-              <Pencil className="h-4 w-4" />
-              Edit
-            </button>
-            <button
-              type="button"
-              onClick={() => setMappingToDelete(true)}
-              className="flex items-center gap-2 text-sm text-red-600 hover:underline"
-            >
-              <Trash2 className="h-4 w-4" />
-              Delete
-            </button>
+            {canWrite ? (
+              <button
+                type="button"
+                onClick={() => setEditingMapping(true)}
+                className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
+              >
+                <Pencil className="h-4 w-4" />
+                Edit
+              </button>
+            ) : null}
+            {canWrite ? (
+              <button
+                type="button"
+                onClick={() => setMappingToDelete(true)}
+                className="flex items-center gap-2 text-sm text-red-600 hover:underline"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </button>
+            ) : null}
             <Link
               to={isAdminView ? '/admin/mappings' : '/mappings'}
               className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
@@ -397,10 +450,46 @@ export function MappingDetail() {
                 enabled={mapping.enabled}
                 onToggle={() => enableMutation.mutate(!mapping.enabled)}
                 isPending={enableMutation.isPending}
+                disabled={!canWrite}
               />
             </dd>
           </div>
+          <div>
+            <dt className="text-sm text-gray-500">Send delay</dt>
+            <dd className="font-mono text-sm">{mapping.send_delay_ms ?? 0} ms</dd>
+          </div>
+          <div>
+            <dt className="text-sm text-gray-500">Sync edits / deletes</dt>
+            <dd className="text-sm">
+              {mapping.sync_edits ? 'Edits on' : 'Edits off'} · {mapping.sync_deletes ? 'Deletes on' : 'Deletes off'}{' '}
+              · strategy: {mapping.edit_strategy || 'replace_text'}
+            </dd>
+          </div>
+          <div className="col-span-2">
+            <dt className="text-sm text-gray-500">Copy webhook</dt>
+            <dd className="text-sm font-mono break-all">
+              {mapping.copy_webhook_url?.trim() ? mapping.copy_webhook_url : '—'}
+              {mapping.copy_webhook_secret ? ' · secret stored' : ''}
+            </dd>
+          </div>
         </dl>
+        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              setPreviewOpen(true);
+              setPreviewResult(null);
+              setPreviewError('');
+            }}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
+          >
+            <Eye className="h-4 w-4" />
+            Preview pipeline
+          </button>
+          {!canWrite ? (
+            <span className="text-xs text-gray-500 dark:text-gray-400">Viewer: mapping details are read-only.</span>
+          ) : null}
+        </div>
       </div>
 
       <div className="mb-4">
@@ -426,7 +515,7 @@ export function MappingDetail() {
                   <button
                     type="button"
                     onClick={() => scheduleDeleteMutation.mutate()}
-                    disabled={scheduleDeleteMutation.isPending}
+                    disabled={scheduleDeleteMutation.isPending || !canWrite}
                     className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
                   >
                     <RotateCcw className="h-4 w-4" />
@@ -440,6 +529,7 @@ export function MappingDetail() {
                   isSaving={scheduleSaveMutation.isPending}
                   saveLabel="Save schedule"
                   showDescription={false}
+                  readOnly={!canWrite}
                 />
               </div>
             );
@@ -463,6 +553,7 @@ export function MappingDetail() {
                 )}
                 <button
                   type="button"
+                  disabled={!canWrite}
                   onClick={async () => {
                     const hasUserSchedule =
                       userSchedule && Object.values(userSchedule).some((v) => v != null && v !== '');
@@ -489,7 +580,7 @@ export function MappingDetail() {
                     queryClient.invalidateQueries({ queryKey: ['mappings'] });
                     showToast('Now using custom schedule. Edit below and save.');
                   }}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
                 >
                   Switch to custom
                 </button>
@@ -509,14 +600,40 @@ export function MappingDetail() {
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
           Transform copied messages before sending: replace text, regex patterns, emojis; use templates; or replace media with uploaded assets. Rules are applied by priority (lower first).
         </p>
-        <button
-          type="button"
-          onClick={() => setTransformModalOpen('add')}
-          className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm"
-        >
-          <Plus className="h-4 w-4" />
-          Add transform
-        </button>
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          {canWrite ? (
+            <button
+              type="button"
+              onClick={() => {
+                setTransformCreateSeed(null);
+                setTransformModalOpen('add');
+              }}
+              className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm"
+            >
+              <Plus className="h-4 w-4" />
+              Add transform
+            </button>
+          ) : null}
+          {canWrite ? (
+            <span className="text-xs text-gray-500 dark:text-gray-400 mr-1">PII presets (regex):</span>
+          ) : null}
+          {canWrite
+            ? PII_TRANSFORM_PRESETS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  title={p.description}
+                  onClick={() => {
+                    setTransformCreateSeed(p.payload);
+                    setTransformModalOpen('add');
+                  }}
+                  className="px-2 py-1 text-xs rounded border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50"
+                >
+                  {p.label}
+                </button>
+              ))
+            : null}
+        </div>
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg mb-6">
@@ -545,20 +662,27 @@ export function MappingDetail() {
                     <p className="text-sm mt-1">{describeTransform(t)}</p>
                   </div>
                   <div className="flex gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setTransformModalOpen(t.id)}
-                      className="px-3 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTransformDeleteConfirm(t.id)}
-                      className="px-3 py-1 text-sm rounded border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 dark:border-red-800"
-                    >
-                      Delete
-                    </button>
+                    {canWrite ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTransformCreateSeed(null);
+                          setTransformModalOpen(t.id);
+                        }}
+                        className="px-3 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
+                      >
+                        Edit
+                      </button>
+                    ) : null}
+                    {canWrite ? (
+                      <button
+                        type="button"
+                        onClick={() => setTransformDeleteConfirm(t.id)}
+                        className="px-3 py-1 text-sm rounded border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 dark:border-red-800"
+                      >
+                        Delete
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -566,13 +690,18 @@ export function MappingDetail() {
             {(transforms ?? []).length === 0 && (
               <div className="p-8 text-center text-gray-500 dark:text-gray-400">
                 No transforms. Messages are copied as-is.
-                <button
-                  type="button"
-                  onClick={() => setTransformModalOpen('add')}
-                  className="ml-2 inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline"
-                >
-                  <Plus className="h-4 w-4" /> Add your first transform
-                </button>
+                {canWrite ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTransformCreateSeed(null);
+                      setTransformModalOpen('add');
+                    }}
+                    className="ml-2 inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    <Plus className="h-4 w-4" /> Add your first transform
+                  </button>
+                ) : null}
               </div>
             )}
           </>
@@ -585,8 +714,16 @@ export function MappingDetail() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="transform-dialog-title"
-          onClick={() => setTransformModalOpen(null)}
-          onKeyDown={(e) => e.key === 'Escape' && setTransformModalOpen(null)}
+          onClick={() => {
+            setTransformCreateSeed(null);
+            setTransformModalOpen(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setTransformCreateSeed(null);
+              setTransformModalOpen(null);
+            }
+          }}
         >
           <div
             className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto"
@@ -599,11 +736,19 @@ export function MappingDetail() {
               </h2>
             </div>
             <TransformForm
-              key={transformModalOpen === 'add' ? 'new' : transformModalOpen}
+              key={
+                transformModalOpen === 'add'
+                  ? `new-${transformCreateSeed?.regex_pattern ?? 'plain'}`
+                  : transformModalOpen
+              }
               initialValues={editingTransform ?? undefined}
+              createSeed={transformModalOpen === 'add' ? transformCreateSeed : null}
               mediaAssets={mediaAssets ?? []}
               onSubmit={handleTransformSubmit}
-              onCancel={() => setTransformModalOpen(null)}
+              onCancel={() => {
+                setTransformCreateSeed(null);
+                setTransformModalOpen(null);
+              }}
               submitLabel={transformModalOpen === 'add' ? 'Add' : 'Save'}
               isSubmitting={transformCreateMutation.isPending || transformUpdateMutation.isPending}
             />
@@ -618,14 +763,16 @@ export function MappingDetail() {
           must pass (AND). Filters that share the same OR group number match as OR (any of them can satisfy that
           group). Different OR group numbers are combined with AND (each group must be satisfied).
         </p>
-        <button
-          type="button"
-          onClick={() => setFilterModalOpen('add')}
-          className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm"
-        >
-          <Plus className="h-4 w-4" />
-          Add filter
-        </button>
+        {canWrite ? (
+          <button
+            type="button"
+            onClick={() => setFilterModalOpen('add')}
+            className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm"
+          >
+            <Plus className="h-4 w-4" />
+            Add filter
+          </button>
+        ) : null}
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg">
@@ -644,14 +791,16 @@ export function MappingDetail() {
                 )}
               </div>
               <div className="flex gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setFilterModalOpen(f.id)}
-                  className="px-3 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
-                >
-                  Edit
-                </button>
-                {deleteConfirm === f.id ? (
+                {canWrite ? (
+                  <button
+                    type="button"
+                    onClick={() => setFilterModalOpen(f.id)}
+                    className="px-3 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    Edit
+                  </button>
+                ) : null}
+                {canWrite && deleteConfirm === f.id ? (
                   <div className="flex gap-1">
                     <button
                       type="button"
@@ -669,7 +818,7 @@ export function MappingDetail() {
                       Cancel
                     </button>
                   </div>
-                ) : (
+                ) : canWrite ? (
                   <button
                     type="button"
                     onClick={() => setDeleteConfirm(f.id)}
@@ -677,7 +826,7 @@ export function MappingDetail() {
                   >
                     Delete
                   </button>
-                )}
+                ) : null}
               </div>
             </div>
           ))}
@@ -685,13 +834,15 @@ export function MappingDetail() {
         {(filters ?? []).length === 0 && (
           <div className="p-8 text-center text-gray-500">
             No filters. All messages pass through.
-            <button
-              type="button"
-              onClick={() => setFilterModalOpen('add')}
-              className="ml-2 inline-flex items-center gap-1 text-blue-600 hover:underline"
-            >
-              <Plus className="h-4 w-4" /> Add your first filter
-            </button>
+            {canWrite ? (
+              <button
+                type="button"
+                onClick={() => setFilterModalOpen('add')}
+                className="ml-2 inline-flex items-center gap-1 text-blue-600 hover:underline"
+              >
+                <Plus className="h-4 w-4" /> Add your first filter
+              </button>
+            ) : null}
           </div>
         )}
       </div>
@@ -726,6 +877,13 @@ export function MappingDetail() {
                       media_types: stringToMediaArray(editingFilter.media_types),
                       regex_pattern: editingFilter.regex_pattern ?? '',
                       or_group_id: editingFilter.or_group_id,
+                      allowed_sender_ids: editingFilter.allowed_sender_ids ?? '',
+                      denied_usernames: editingFilter.denied_usernames ?? '',
+                      min_url_count:
+                        editingFilter.min_url_count != null ? String(editingFilter.min_url_count) : '',
+                      max_url_count:
+                        editingFilter.max_url_count != null ? String(editingFilter.max_url_count) : '',
+                      required_hashtags: editingFilter.required_hashtags ?? '',
                     }
                   : undefined
               }
@@ -733,6 +891,119 @@ export function MappingDetail() {
               onCancel={() => setFilterModalOpen(null)}
               submitLabel={filterModalOpen === 'add' ? 'Add' : 'Save'}
             />
+          </div>
+        </div>
+      )}
+
+      {previewOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="preview-dialog-title"
+          onClick={() => setPreviewOpen(false)}
+          onKeyDown={(e) => e.key === 'Escape' && setPreviewOpen(false)}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="preview-dialog-title" className="text-xl font-bold mb-4 flex items-center gap-2">
+              <Eye className="h-5 w-5" />
+              Preview pipeline
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Simulate one message through this mapping&apos;s filters, schedule check, and transforms (no Telegram send).
+            </p>
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Sample text</label>
+                <textarea
+                  aria-label="Sample message text for preview"
+                  value={previewSampleText}
+                  onChange={(e) => setPreviewSampleText(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
+                />
+              </div>
+              <div>
+                <label htmlFor="preview-media-type" className="block text-sm font-medium mb-1">
+                  Media type
+                </label>
+                <select
+                  id="preview-media-type"
+                  value={previewMediaType}
+                  onChange={(e) => setPreviewMediaType(e.target.value)}
+                  className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
+                >
+                  {['text', 'photo', 'video', 'voice', 'other'].map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Sender ID (optional)</label>
+                  <input
+                    type="text"
+                    value={previewSenderId}
+                    onChange={(e) => setPreviewSenderId(e.target.value)}
+                    className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm font-mono"
+                    placeholder="numeric"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Sender username (optional)</label>
+                  <input
+                    type="text"
+                    value={previewSenderUsername}
+                    onChange={(e) => setPreviewSenderUsername(e.target.value)}
+                    className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
+                    placeholder="without @"
+                  />
+                </div>
+              </div>
+            </div>
+            {previewError ? (
+              <div className="mb-3 p-2 rounded bg-red-50 dark:bg-red-900/20 text-red-600 text-sm">{previewError}</div>
+            ) : null}
+            {previewResult ? (
+              <dl className="text-sm space-y-1 mb-4 border border-gray-200 dark:border-gray-600 rounded p-3">
+                <div className="flex justify-between gap-2">
+                  <dt className="text-gray-500">Passes filters</dt>
+                  <dd className="font-medium">{previewResult.passes_filters ? 'Yes' : 'No'}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-gray-500">Passes schedule</dt>
+                  <dd className="font-medium">{previewResult.passes_schedule ? 'Yes' : 'No'}</dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500 mb-1">Transformed text</dt>
+                  <dd className="font-mono text-xs whitespace-pre-wrap break-words bg-gray-50 dark:bg-gray-900/50 p-2 rounded">
+                    {previewResult.transformed_text || '(empty)'}
+                  </dd>
+                </div>
+              </dl>
+            ) : null}
+            <div className="flex flex-wrap gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setPreviewOpen(false)}
+                className="px-4 py-2 rounded border border-gray-300 dark:border-gray-600"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                disabled={previewLoading}
+                onClick={() => void runPreview()}
+                className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
+              >
+                {previewLoading ? 'Running…' : 'Run preview'}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -100,3 +100,36 @@ export type MediaAsset = {
   size_bytes: number;
   created_at: string;
 };
+
+/** Channel mapping as returned by GET/PATCH `/mappings/{id}`. */
+export type ChannelMapping = {
+  id: number;
+  user_id: number;
+  source_chat_id: number;
+  dest_chat_id: number;
+  name: string | null;
+  source_chat_title: string | null;
+  dest_chat_title: string | null;
+  enabled: boolean;
+  telegram_account_id: number | null;
+  created_at: string | null;
+  send_delay_ms: number;
+  sync_edits: boolean;
+  edit_strategy: string;
+  sync_deletes: boolean;
+  copy_webhook_url: string | null;
+  copy_webhook_secret: string | null;
+};
+
+export type MappingPreviewRequest = {
+  sample_text?: string;
+  media_type?: string;
+  sender_id?: number | null;
+  sender_username?: string | null;
+};
+
+export type MappingPreviewResponse = {
+  passes_filters: boolean;
+  passes_schedule: boolean;
+  transformed_text: string;
+};

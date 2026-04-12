@@ -2,6 +2,7 @@ import { GitBranch, Inbox, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { coerceChannelMappingForEdit } from '../../lib/channelMappingDefaults';
 import { AddMappingDialog } from '../../components/AddMappingDialog';
 import { EditMappingDialog } from '../../components/EditMappingDialog';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -118,7 +119,10 @@ export function Mappings() {
       />
       {showAdd && <AddMappingDialog onClose={() => setShowAdd(false)} />}
       {editingMapping && (
-        <EditMappingDialog mapping={editingMapping} onClose={() => setEditingMapping(null)} />
+        <EditMappingDialog
+          mapping={coerceChannelMappingForEdit(editingMapping)}
+          onClose={() => setEditingMapping(null)}
+        />
       )}
       {mappingToDelete && (
         <ConfirmDialog

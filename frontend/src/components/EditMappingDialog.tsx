@@ -2,63 +2,95 @@ import { Pencil } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import type { ChannelMapping } from '../lib/api';
 import { MappingFormFields } from './MappingFormFields';
 import { useToast } from './Toast';
 
-export type Mapping = {
-  id: number;
-  user_id: number;
-  source_chat_id: number;
-  dest_chat_id: number;
-  name: string | null;
-  source_chat_title?: string | null;
-  dest_chat_title?: string | null;
-  enabled: boolean;
-};
+export type { ChannelMapping as Mapping } from '../lib/api';
 
 type Props = {
-  mapping: Mapping;
+  mapping: ChannelMapping;
   onClose: () => void;
 };
+
+const MAX_SEND_DELAY_MS = 60_000;
 
 export function EditMappingDialog({ mapping, onClose }: Props) {
   const [name, setName] = useState(mapping.name ?? '');
   const [sourceChatId, setSourceChatId] = useState(String(mapping.source_chat_id));
   const [destChatId, setDestChatId] = useState(String(mapping.dest_chat_id));
+  const [sendDelayMs, setSendDelayMs] = useState(String(mapping.send_delay_ms ?? 0));
+  const [syncEdits, setSyncEdits] = useState(Boolean(mapping.sync_edits));
+  const [syncDeletes, setSyncDeletes] = useState(Boolean(mapping.sync_deletes));
+  const [editStrategy, setEditStrategy] = useState<'replace_text' | 'append_notice'>(
+    mapping.edit_strategy === 'append_notice' ? 'append_notice' : 'replace_text'
+  );
+  const [copyWebhookUrl, setCopyWebhookUrl] = useState(mapping.copy_webhook_url ?? '');
+  const [copyWebhookSecret, setCopyWebhookSecret] = useState('');
+  const [clearWebhookSecret, setClearWebhookSecret] = useState(false);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
   const { show: showToast } = useToast();
 
   const mutation = useMutation({
     mutationFn: async () => {
-      return (
-        await api.patch(`/mappings/${mapping.id}`, {
-          name: name || undefined,
-          source_chat_id: parseInt(sourceChatId, 10),
-          dest_chat_id: parseInt(destChatId, 10),
-        })
-      ).data;
+      const body: Record<string, unknown> = {};
+      const nextName = name.trim() || null;
+      if (nextName !== (mapping.name ?? null)) body.name = nextName;
+      const src = parseInt(sourceChatId, 10);
+      const dst = parseInt(destChatId, 10);
+      if (src !== mapping.source_chat_id) body.source_chat_id = src;
+      if (dst !== mapping.dest_chat_id) body.dest_chat_id = dst;
+
+      const delay = parseInt(sendDelayMs, 10);
+      if (Number.isNaN(delay) || delay < 0 || delay > MAX_SEND_DELAY_MS) {
+        throw new Error(`Send delay must be between 0 and ${MAX_SEND_DELAY_MS} ms`);
+      }
+      if (delay !== (mapping.send_delay_ms ?? 0)) body.send_delay_ms = delay;
+      if (syncEdits !== Boolean(mapping.sync_edits)) body.sync_edits = syncEdits;
+      if (syncDeletes !== Boolean(mapping.sync_deletes)) body.sync_deletes = syncDeletes;
+      const strat = editStrategy;
+      if (strat !== (mapping.edit_strategy || 'replace_text')) body.edit_strategy = strat;
+
+      const urlTrim = copyWebhookUrl.trim();
+      const origUrl = (mapping.copy_webhook_url ?? '').trim();
+      if (urlTrim !== origUrl) body.copy_webhook_url = urlTrim || null;
+
+      if (clearWebhookSecret) {
+        body.copy_webhook_secret = '';
+      } else if (copyWebhookSecret.trim()) {
+        body.copy_webhook_secret = copyWebhookSecret.trim();
+      }
+
+      if (Object.keys(body).length === 0) {
+        onClose();
+        return null;
+      }
+      return (await api.patch(`/mappings/${mapping.id}`, body)).data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data === null) return;
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
       queryClient.invalidateQueries({ queryKey: ['mapping', String(mapping.id)] });
       showToast('Mapping updated. Workers restarting to apply changes.');
       onClose();
     },
     onError: (err: unknown) => {
-      setError(
-        err &&
-          typeof err === 'object' &&
-          'response' in err &&
-          err.response &&
-          typeof err.response === 'object' &&
-          'data' in err.response &&
-          err.response.data &&
-          typeof err.response.data === 'object' &&
-          'detail' in err.response.data
-          ? String((err.response.data as { detail: unknown }).detail)
-          : 'Failed to update mapping'
-      );
+      const msg =
+        err instanceof Error && err.message.startsWith('Send delay')
+          ? err.message
+          : err &&
+              typeof err === 'object' &&
+              'response' in err &&
+              err.response &&
+              typeof err.response === 'object' &&
+              'data' in err.response &&
+              err.response.data &&
+              typeof err.response.data === 'object' &&
+              'detail' in err.response.data
+            ? String((err.response.data as { detail: unknown }).detail)
+            : 'Failed to update mapping';
+      setError(msg);
     },
   });
 
@@ -71,13 +103,18 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
       setError('Invalid chat IDs');
       return;
     }
+    const delay = parseInt(sendDelayMs, 10);
+    if (isNaN(delay) || delay < 0 || delay > MAX_SEND_DELAY_MS) {
+      setError(`Send delay must be between 0 and ${MAX_SEND_DELAY_MS} ms`);
+      return;
+    }
     mutation.mutate();
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full"
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 mb-4">
@@ -96,6 +133,108 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
             onSourceChatIdChange={setSourceChatId}
             onDestChatIdChange={setDestChatId}
           />
+
+          <fieldset className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 space-y-3">
+            <legend className="text-sm font-medium px-1">Advanced</legend>
+            <div>
+              <label htmlFor="edit-mapping-send-delay" className="block text-sm font-medium mb-1">
+                Send delay (ms)
+              </label>
+              <input
+                id="edit-mapping-send-delay"
+                type="number"
+                min={0}
+                max={MAX_SEND_DELAY_MS}
+                value={sendDelayMs}
+                onChange={(e) => setSendDelayMs(e.target.value)}
+                className="w-full max-w-xs px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Extra delay before each forwarded message (0–{MAX_SEND_DELAY_MS} ms).
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={syncEdits}
+                  onChange={(e) => setSyncEdits(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                Sync edits to destination
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={syncDeletes}
+                  onChange={(e) => setSyncDeletes(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                Sync deletes to destination
+              </label>
+            </div>
+            <div>
+              <span className="block text-sm font-medium mb-1">Edit strategy</span>
+              <div className="flex flex-wrap gap-3 text-sm">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="edit_strategy"
+                    checked={editStrategy === 'replace_text'}
+                    onChange={() => setEditStrategy('replace_text')}
+                  />
+                  Replace destination text
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="edit_strategy"
+                    checked={editStrategy === 'append_notice'}
+                    onChange={() => setEditStrategy('append_notice')}
+                  />
+                  Append notice (new message)
+                </label>
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Use “Append notice” when destination messages cannot be edited (e.g. some media-only posts).
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Copy webhook URL (optional)</label>
+              <input
+                type="url"
+                value={copyWebhookUrl}
+                onChange={(e) => setCopyWebhookUrl(e.target.value)}
+                className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-mono text-sm"
+                placeholder="https://…"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Webhook secret (optional)</label>
+              <input
+                type="password"
+                value={copyWebhookSecret}
+                onChange={(e) => setCopyWebhookSecret(e.target.value)}
+                className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-mono text-sm"
+                placeholder={mapping.copy_webhook_secret ? 'Leave blank to keep; enter new to rotate' : 'Optional'}
+                autoComplete="off"
+              />
+              {mapping.copy_webhook_secret ? (
+                <label className="flex items-center gap-2 mt-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={clearWebhookSecret}
+                    onChange={(e) => {
+                      setClearWebhookSecret(e.target.checked);
+                      if (e.target.checked) setCopyWebhookSecret('');
+                    }}
+                  />
+                  Clear stored webhook secret
+                </label>
+              ) : null}
+            </div>
+          </fieldset>
+
           <div className="flex gap-2 justify-end">
             <button type="button" onClick={onClose} className="px-4 py-2 rounded border border-gray-300">
               Cancel

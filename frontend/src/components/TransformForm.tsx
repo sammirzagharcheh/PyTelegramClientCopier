@@ -14,6 +14,8 @@ import { mediaArrayToString, stringToMediaArray } from './FilterForm';
 
 type Props = {
   initialValues?: Transform | null;
+  /** When adding a transform, pre-fill the form (e.g. PII regex presets). Ignored if `initialValues` is set. */
+  createSeed?: TransformCreate | null;
   mediaAssets: MediaAsset[];
   onSubmit: (values: TransformCreate) => void | Promise<void>;
   onCancel?: () => void;
@@ -21,8 +23,21 @@ type Props = {
   isSubmitting?: boolean;
 };
 
+const DEFAULT_FORM: TransformFormValues = {
+  rule_type: 'text',
+  find_text: '',
+  replace_text: '',
+  regex_pattern: '',
+  regex_flags: '',
+  replacement_media_asset_id: null,
+  apply_to_media_types: '',
+  enabled: true,
+  priority: 100,
+};
+
 export function TransformForm({
   initialValues,
+  createSeed = null,
   mediaAssets,
   onSubmit,
   onCancel,
@@ -39,15 +54,19 @@ export function TransformForm({
   } = useForm<TransformFormValues>({
     resolver: zodResolver(transformFormSchema),
     defaultValues: {
-      rule_type: initialValues?.rule_type ?? 'text',
-      find_text: initialValues?.find_text ?? '',
-      replace_text: initialValues?.replace_text ?? '',
-      regex_pattern: initialValues?.regex_pattern ?? '',
-      regex_flags: initialValues?.regex_flags ?? '',
-      replacement_media_asset_id: initialValues?.replacement_media_asset_id ?? null,
-      apply_to_media_types: initialValues?.apply_to_media_types ?? '',
-      enabled: initialValues?.enabled ?? true,
-      priority: initialValues?.priority ?? 100,
+      rule_type: initialValues?.rule_type ?? createSeed?.rule_type ?? DEFAULT_FORM.rule_type,
+      find_text: initialValues?.find_text ?? createSeed?.find_text ?? DEFAULT_FORM.find_text,
+      replace_text: initialValues?.replace_text ?? createSeed?.replace_text ?? DEFAULT_FORM.replace_text,
+      regex_pattern: initialValues?.regex_pattern ?? createSeed?.regex_pattern ?? DEFAULT_FORM.regex_pattern,
+      regex_flags: initialValues?.regex_flags ?? createSeed?.regex_flags ?? DEFAULT_FORM.regex_flags,
+      replacement_media_asset_id:
+        initialValues?.replacement_media_asset_id ??
+        createSeed?.replacement_media_asset_id ??
+        DEFAULT_FORM.replacement_media_asset_id,
+      apply_to_media_types:
+        initialValues?.apply_to_media_types ?? createSeed?.apply_to_media_types ?? DEFAULT_FORM.apply_to_media_types,
+      enabled: initialValues?.enabled ?? createSeed?.enabled ?? DEFAULT_FORM.enabled,
+      priority: initialValues?.priority ?? createSeed?.priority ?? DEFAULT_FORM.priority,
     },
   });
 
@@ -68,8 +87,24 @@ export function TransformForm({
         enabled: initialValues.enabled,
         priority: initialValues.priority,
       });
+      return;
     }
-  }, [initialValues, reset]);
+    if (createSeed) {
+      reset({
+        rule_type: createSeed.rule_type as TransformFormValues['rule_type'],
+        find_text: createSeed.find_text ?? '',
+        replace_text: createSeed.replace_text ?? '',
+        regex_pattern: createSeed.regex_pattern ?? '',
+        regex_flags: createSeed.regex_flags ?? '',
+        replacement_media_asset_id: createSeed.replacement_media_asset_id ?? null,
+        apply_to_media_types: createSeed.apply_to_media_types ?? '',
+        enabled: createSeed.enabled ?? true,
+        priority: createSeed.priority ?? 100,
+      });
+    } else {
+      reset({ ...DEFAULT_FORM });
+    }
+  }, [initialValues, createSeed, reset]);
 
   const toggleMediaType = (value: string) => {
     const next = mediaTypesArr.includes(value)

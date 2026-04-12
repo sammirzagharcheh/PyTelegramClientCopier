@@ -23,6 +23,24 @@ from app.telegram.pipeline_preview import (
 
 logger = logging.getLogger(__name__)
 
+
+def _event_source_chat_id_for_sync(event: Any) -> int | None:
+    """Resolve source chat id for MessageEdited / MessageDeleted (peer shapes vary)."""
+    cid = getattr(event, "chat_id", None)
+    if cid is not None:
+        try:
+            return int(cid)
+        except (TypeError, ValueError):
+            pass
+    peer = getattr(event, "peer", None)
+    if peer is not None:
+        try:
+            return int(utils.get_peer_id(peer))
+        except Exception:
+            return None
+    return None
+
+
 # Aliases for unit tests and legacy imports
 _message_media_type = media_type_for_telethon_message
 _passes_schedule = passes_schedule
@@ -593,7 +611,9 @@ def build_message_handlers(
         message = event.message
         if not message:
             return
-        source_chat_id = event.chat_id
+        source_chat_id = _event_source_chat_id_for_sync(event)
+        if source_chat_id is None:
+            return
         candidates = [source_chat_id]
         alt = alternate_chat_id(source_chat_id)
         if alt is not None:
@@ -664,15 +684,16 @@ def build_message_handlers(
                     await event.client.edit_message(dest_id, dest_msg_id, text=new_text)
                     break
                 except Exception as e:
-                    logger.debug("edit_message failed mapping_id=%s: %s", mapping.id, e)
+                    logger.warning(
+                        "edit_message failed mapping_id=%s sync_edits=1: %s",
+                        mapping.id,
+                        e,
+                    )
 
     async def _delete_handler(event: events.MessageDeleted.Event) -> None:
         if not any_sync_deletes:
             return
-        try:
-            chat_id = int(utils.get_peer_id(event.peer)) if event.peer else None
-        except Exception:
-            return
+        chat_id = _event_source_chat_id_for_sync(event)
         if chat_id is None:
             return
         candidates = [chat_id]

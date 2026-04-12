@@ -84,6 +84,7 @@ type Props = {
   isSaving?: boolean;
   saveLabel?: string;
   showDescription?: boolean;
+  readOnly?: boolean;
 };
 
 export function MappingScheduleForm({
@@ -93,6 +94,7 @@ export function MappingScheduleForm({
   isSaving = false,
   saveLabel = 'Save schedule',
   showDescription = true,
+  readOnly = false,
 }: Props) {
   const [form, setForm] = useState<ScheduleData>({});
 
@@ -130,6 +132,7 @@ export function MappingScheduleForm({
             <button
               key={t.id}
               type="button"
+              disabled={readOnly}
               onClick={() => applyTemplate(t)}
               className="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
             >
@@ -146,6 +149,7 @@ export function MappingScheduleForm({
               type="time"
               aria-label={`${WEEKDAY_LABELS[d]} start`}
               title={`${WEEKDAY_LABELS[d]} start`}
+              disabled={readOnly}
               value={form[d]?.start ?? ''}
               onChange={(e) =>
                 setForm((prev) => ({
@@ -160,6 +164,7 @@ export function MappingScheduleForm({
               type="time"
               aria-label={`${WEEKDAY_LABELS[d]} end`}
               title={`${WEEKDAY_LABELS[d]} end`}
+              disabled={readOnly}
               value={form[d]?.end ?? ''}
               onChange={(e) =>
                 setForm((prev) => ({
@@ -177,7 +182,7 @@ export function MappingScheduleForm({
         <button
           type="button"
           onClick={handleSave}
-          disabled={isSaving}
+          disabled={isSaving || readOnly}
           className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
         >
           {saveLabel}
