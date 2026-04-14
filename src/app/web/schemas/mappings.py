@@ -108,6 +108,10 @@ class ChannelMappingUpdate(BaseModel):
     sync_deletes: bool | None = None
     copy_webhook_url: str | None = None
     copy_webhook_secret: str | None = None
+    copy_webhook_payload_template: str | None = None
+    copy_webhook_secret_header_name: str | None = None
+    copy_webhook_secret_header_value: str | None = None
+    copy_webhook_secret_mode: str | None = None
 
 
 class ChannelMappingResponse(BaseModel):
@@ -127,6 +131,10 @@ class ChannelMappingResponse(BaseModel):
     sync_deletes: bool = False
     copy_webhook_url: str | None = None
     copy_webhook_secret: str | None = None
+    copy_webhook_payload_template: str | None = None
+    copy_webhook_secret_header_name: str | None = None
+    copy_webhook_secret_mode: str | None = None
+    webhook_secret_header_configured: bool = False
 
 
 class MappingPreviewRequest(BaseModel):

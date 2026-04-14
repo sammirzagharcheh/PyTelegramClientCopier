@@ -107,6 +107,10 @@ class ChannelMapping:
     sync_deletes: bool = False
     copy_webhook_url: str | None = None
     copy_webhook_secret: str | None = None
+    copy_webhook_payload_template: str | None = None
+    copy_webhook_secret_header_name: str | None = None
+    copy_webhook_secret_header_value: str | None = None
+    copy_webhook_secret_mode: str = "hmac_sha256"
 
 
 async def load_mapping_by_id(
@@ -118,7 +122,9 @@ async def load_mapping_by_id(
     should pass the mapping owner's user_id."""
     async with db.execute(
         "SELECT id, user_id, source_chat_id, dest_chat_id, enabled, source_chat_title, dest_chat_title, "
-        "send_delay_ms, sync_edits, edit_strategy, sync_deletes, copy_webhook_url, copy_webhook_secret "
+        "send_delay_ms, sync_edits, edit_strategy, sync_deletes, copy_webhook_url, copy_webhook_secret, "
+        "copy_webhook_payload_template, copy_webhook_secret_header_name, copy_webhook_secret_header_value, "
+        "copy_webhook_secret_mode "
         "FROM channel_mappings WHERE id = ? AND user_id = ?",
         (mapping_id, user_id),
     ) as cur:
@@ -139,6 +145,10 @@ async def load_mapping_by_id(
         sync_deletes,
         copy_webhook_url,
         copy_webhook_secret,
+        copy_webhook_payload_template,
+        copy_webhook_secret_header_name,
+        copy_webhook_secret_header_value,
+        copy_webhook_secret_mode,
     ) = row
     user_schedule = await _load_user_schedule(db, uid)
     filters_by = await _list_filters_bulk(db, uid, [mid])
@@ -161,6 +171,10 @@ async def load_mapping_by_id(
         sync_deletes=bool(sync_deletes),
         copy_webhook_url=copy_webhook_url,
         copy_webhook_secret=copy_webhook_secret,
+        copy_webhook_payload_template=copy_webhook_payload_template,
+        copy_webhook_secret_header_name=copy_webhook_secret_header_name,
+        copy_webhook_secret_header_value=copy_webhook_secret_header_value,
+        copy_webhook_secret_mode=str(copy_webhook_secret_mode or "hmac_sha256"),
     )
 
 
@@ -174,7 +188,8 @@ async def list_enabled_mappings(
     """
     extra_cols = (
         ", send_delay_ms, sync_edits, edit_strategy, sync_deletes, "
-        "copy_webhook_url, copy_webhook_secret"
+        "copy_webhook_url, copy_webhook_secret, copy_webhook_payload_template, "
+        "copy_webhook_secret_header_name, copy_webhook_secret_header_value, copy_webhook_secret_mode"
     )
     if telegram_account_id is not None:
         q = (
@@ -219,6 +234,10 @@ async def list_enabled_mappings(
             sync_deletes,
             copy_webhook_url,
             copy_webhook_secret,
+            copy_webhook_payload_template,
+            copy_webhook_secret_header_name,
+            copy_webhook_secret_header_value,
+            copy_webhook_secret_mode,
         ) = row
         out.append(
             ChannelMapping(
@@ -238,6 +257,10 @@ async def list_enabled_mappings(
                 sync_deletes=bool(sync_deletes),
                 copy_webhook_url=copy_webhook_url,
                 copy_webhook_secret=copy_webhook_secret,
+                copy_webhook_payload_template=copy_webhook_payload_template,
+                copy_webhook_secret_header_name=copy_webhook_secret_header_name,
+                copy_webhook_secret_header_value=copy_webhook_secret_header_value,
+                copy_webhook_secret_mode=str(copy_webhook_secret_mode or "hmac_sha256"),
             )
         )
     return out

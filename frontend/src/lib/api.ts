@@ -119,8 +119,13 @@ export type ChannelMapping = {
   sync_deletes: boolean;
   copy_webhook_url: string | null;
   copy_webhook_secret: string | null;
+  copy_webhook_payload_template: string | null;
+  copy_webhook_secret_header_name: string | null;
+  copy_webhook_secret_mode: string | null;
   /** List API only: true when a webhook secret exists (secret value is never returned in list). */
   webhook_secret_configured?: boolean;
+  /** List/API only: true when secret header value is stored (value itself is never returned). */
+  webhook_secret_header_configured?: boolean;
 };
 
 export type MappingPreviewRequest = {

@@ -139,9 +139,9 @@ async def test_migration_v17_adds_dest_message_index_updated_at(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_migration_v18_through_v22_schema(tmp_path):
-    """v18 heartbeat, v19 alert webhooks, v20 mapping columns, v21 filter columns, v22 api keys."""
-    settings.sqlite_path = str(tmp_path / "migrations_v18_22.db")
+async def test_migration_v18_through_v23_schema(tmp_path):
+    """v18 heartbeat, v19 alert webhooks, v20+v23 mapping columns, v21 filter columns, v22 api keys."""
+    settings.sqlite_path = str(tmp_path / "migrations_v18_23.db")
     tmp_path.mkdir(parents=True, exist_ok=True)
     await init_sqlite()
     async with aiosqlite.connect(settings.sqlite_path) as db:
@@ -163,6 +163,10 @@ async def test_migration_v18_through_v22_schema(tmp_path):
             "sync_deletes",
             "copy_webhook_url",
             "copy_webhook_secret",
+            "copy_webhook_payload_template",
+            "copy_webhook_secret_header_name",
+            "copy_webhook_secret_header_value",
+            "copy_webhook_secret_mode",
         ):
             assert c in cm_cols
 

@@ -230,6 +230,13 @@ MIGRATIONS = [
     CREATE INDEX IF NOT EXISTS ix_user_api_keys_user_id ON user_api_keys(user_id);
     CREATE UNIQUE INDEX IF NOT EXISTS ix_user_api_keys_key_hash ON user_api_keys(key_hash);
     """,
+    # v23: customizable copy webhook payload/secret header config
+    """
+    ALTER TABLE channel_mappings ADD COLUMN copy_webhook_payload_template TEXT;
+    ALTER TABLE channel_mappings ADD COLUMN copy_webhook_secret_header_name TEXT;
+    ALTER TABLE channel_mappings ADD COLUMN copy_webhook_secret_header_value TEXT;
+    ALTER TABLE channel_mappings ADD COLUMN copy_webhook_secret_mode TEXT NOT NULL DEFAULT 'hmac_sha256';
+    """,
 ]
 
 

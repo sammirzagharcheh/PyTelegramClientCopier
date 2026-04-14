@@ -21,6 +21,10 @@ export function coerceChannelMappingForEdit(
     sync_deletes: m.sync_deletes ?? false,
     copy_webhook_url: m.copy_webhook_url ?? null,
     copy_webhook_secret: m.copy_webhook_secret ?? null,
+    copy_webhook_payload_template: m.copy_webhook_payload_template ?? null,
+    copy_webhook_secret_header_name: m.copy_webhook_secret_header_name ?? null,
+    copy_webhook_secret_mode: m.copy_webhook_secret_mode ?? 'hmac_sha256',
     webhook_secret_configured: m.webhook_secret_configured,
+    webhook_secret_header_configured: m.webhook_secret_header_configured,
   };
 }
