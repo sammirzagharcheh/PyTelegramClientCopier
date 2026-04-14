@@ -230,7 +230,6 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
     setClearWebhookHeaderSecret(false);
     setError('');
   }, [mapping]);
-
   const insertWebhookToken = (token: string) => {
     const textarea = payloadTemplateRef.current;
     if (!textarea) {
