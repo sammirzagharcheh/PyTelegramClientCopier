@@ -84,6 +84,7 @@ def _sample_docs() -> list[dict]:
                 "method": "POST",
                 "payload_size_bytes": 128,
                 "body_preview": '{"event":"message_copied","mapping_id":1}',
+                "headers": {"Content-Type": "application/json", "X-Tgc-Signature": "***"},
             },
             "response": {
                 "status_code": 200,
@@ -108,6 +109,7 @@ def _sample_docs() -> list[dict]:
                 "method": "POST",
                 "payload_size_bytes": 64,
                 "body_preview": '{"event":"message_copied","mapping_id":2}',
+                "headers": {"Content-Type": "application/json"},
             },
             "response": {
                 "status_code": 500,
@@ -144,6 +146,8 @@ def test_webhook_logs_user_scope_and_response_fields(api_client, user_token):
     item = data["items"][0]
     assert item["mapping_id"] == 1  # user token must stay scoped to own mappings
     assert item["request_body_preview"]
+    assert item["request_headers"]["Content-Type"] == "application/json"
+    assert item["request_headers"]["X-Tgc-Signature"] == "***"
     assert item["status_text"] == "OK"
     assert item["response_content_type"] == "application/json"
     assert item["response_body"] == '{"ok":true}'

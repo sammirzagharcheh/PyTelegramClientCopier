@@ -111,6 +111,7 @@ async def list_webhook_logs(
                 "request_method": req.get("method") or "POST",
                 "payload_size_bytes": req.get("payload_size_bytes"),
                 "request_body_preview": req.get("body_preview"),
+                "request_headers": req.get("headers") or {},
                 "status_code": res.get("status_code"),
                 "status_text": res.get("status_text"),
                 "latency_ms": res.get("latency_ms"),

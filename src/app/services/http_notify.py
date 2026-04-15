@@ -11,6 +11,29 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 MAX_LOG_BODY_CHARS = 8000
+SENSITIVE_HEADER_KEYS = {
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+    "set-cookie",
+    "x-api-key",
+    "x-webhook-secret",
+    "x-tgc-signature",
+}
+
+
+def _masked_headers(
+    headers: dict[str, str],
+    *,
+    additional_sensitive_keys: set[str] | None = None,
+) -> dict[str, str]:
+    masked: dict[str, str] = {}
+    sensitive = set(SENSITIVE_HEADER_KEYS)
+    if additional_sensitive_keys:
+        sensitive.update(k.strip().lower() for k in additional_sensitive_keys if k and k.strip())
+    for key, value in headers.items():
+        masked[key] = "***" if key.strip().lower() in sensitive else str(value)
+    return masked
 
 
 async def post_json_webhook(
@@ -44,6 +67,10 @@ async def post_json_webhook(
             response = await client.post(url, content=body, headers=headers)
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         request_body_preview = body.decode("utf-8", errors="replace")[:MAX_LOG_BODY_CHARS]
+        request_headers = _masked_headers(
+            headers,
+            additional_sensitive_keys={secret_header_name or ""},
+        )
         response_text = response.text or ""
         response_body = response_text[:MAX_LOG_BODY_CHARS]
         success = 200 <= int(response.status_code) < 300
@@ -65,11 +92,16 @@ async def post_json_webhook(
             "latency_ms": elapsed_ms,
             "payload_size_bytes": len(body),
             "request_body_preview": request_body_preview,
+            "request_headers": request_headers,
         }
     except Exception as e:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         logger.warning("Webhook POST failed url=%s err=%s", url, e)
         request_body_preview = body.decode("utf-8", errors="replace")[:MAX_LOG_BODY_CHARS]
+        request_headers = _masked_headers(
+            headers,
+            additional_sensitive_keys={secret_header_name or ""},
+        )
         return {
             "success": False,
             "status_code": None,
@@ -81,4 +113,5 @@ async def post_json_webhook(
             "latency_ms": elapsed_ms,
             "payload_size_bytes": len(body),
             "request_body_preview": request_body_preview,
+            "request_headers": request_headers,
         }

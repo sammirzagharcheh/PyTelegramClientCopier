@@ -20,6 +20,7 @@ type WebhookLog = {
   request_method: string;
   payload_size_bytes: number | null;
   request_body_preview: string | null;
+  request_headers: Record<string, string>;
   success: boolean;
   status_code: number | null;
   status_text: string | null;
@@ -192,10 +193,23 @@ export function AdminWebhookLogs() {
                   <div className="text-xs text-gray-500 dark:text-gray-400">
                     {log.request_method} {log.payload_size_bytes != null ? `· ${log.payload_size_bytes} B` : ''}
                   </div>
+                  {Object.keys(log.request_headers || {}).length > 0 ? (
+                    <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Headers: {Object.keys(log.request_headers).join(', ')}
+                    </div>
+                  ) : null}
                   {log.request_body_preview ? (
                     <details className="mt-1 text-xs">
                       <summary className="cursor-pointer text-blue-600 dark:text-blue-300">Request body</summary>
                       <pre className="mt-1 whitespace-pre-wrap break-all text-gray-600 dark:text-gray-300">{log.request_body_preview}</pre>
+                    </details>
+                  ) : null}
+                  {Object.keys(log.request_headers || {}).length > 0 ? (
+                    <details className="mt-1 text-xs">
+                      <summary className="cursor-pointer text-blue-600 dark:text-blue-300">Request headers</summary>
+                      <pre className="mt-1 whitespace-pre-wrap break-all text-gray-600 dark:text-gray-300">
+                        {JSON.stringify(log.request_headers, null, 2)}
+                      </pre>
                     </details>
                   ) : null}
                 </td>

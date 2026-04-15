@@ -8,6 +8,11 @@ from app.services.http_notify import post_json_webhook
 
 
 class _DummyResponse:
+    status_code = 200
+    reason_phrase = "OK"
+    text = '{"ok":true}'
+    headers = {"content-type": "application/json"}
+
     def raise_for_status(self) -> None:
         return None
 
@@ -37,7 +42,7 @@ async def test_post_json_webhook_custom_header_value_mode(monkeypatch):
     import httpx
 
     monkeypatch.setattr(httpx, "AsyncClient", _factory)
-    await post_json_webhook(
+    result = await post_json_webhook(
         "https://example.com/hook",
         secret=None,
         payload={"ok": True},
@@ -48,6 +53,8 @@ async def test_post_json_webhook_custom_header_value_mode(monkeypatch):
     assert calls
     assert calls[0]["headers"]["X-Custom-Secret"] == "abc123"
     assert json.loads(calls[0]["content"].decode("utf-8")) == {"ok": True}
+    assert result["request_headers"]["Content-Type"] == "application/json"
+    assert result["request_headers"]["X-Custom-Secret"] == "***"
 
 
 @pytest.mark.asyncio
@@ -60,7 +67,7 @@ async def test_post_json_webhook_hmac_mode_respects_custom_header_name(monkeypat
     import httpx
 
     monkeypatch.setattr(httpx, "AsyncClient", _factory)
-    await post_json_webhook(
+    result = await post_json_webhook(
         "https://example.com/hook",
         secret="topsecret",
         payload={"x": 1},
@@ -70,4 +77,5 @@ async def test_post_json_webhook_hmac_mode_respects_custom_header_name(monkeypat
     assert calls
     assert "X-Hmac" in calls[0]["headers"]
     assert "X-Tgc-Signature" not in calls[0]["headers"]
+    assert result["request_headers"]["X-Hmac"] == "***"
 

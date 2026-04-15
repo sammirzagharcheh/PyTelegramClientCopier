@@ -231,6 +231,7 @@ async def _fire_copy_webhook(
                 "secret_mode": secret_mode,
                 "payload_size_bytes": result.get("payload_size_bytes"),
                 "body_preview": result.get("request_body_preview"),
+                "headers": result.get("request_headers"),
             },
             "response": {
                 "status_code": result.get("status_code"),
