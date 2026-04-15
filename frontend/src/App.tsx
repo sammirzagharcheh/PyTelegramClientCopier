@@ -22,6 +22,7 @@ import { Schedule } from './pages/user/Schedule';
 import { MediaAssets } from './pages/user/MediaAssets';
 import { WorkerLogs } from './pages/user/WorkerLogs';
 import { AdminWorkerLogs } from './pages/admin/AdminWorkerLogs';
+import { AdminWebhookLogs } from './pages/admin/AdminWebhookLogs';
 import { ToastProvider } from './components/Toast';
 import { createQueryClient } from './lib/queryClient';
 
@@ -70,6 +71,7 @@ function AppRoutes() {
         <Route path="message-index" element={<AdminMessageIndex />} />
         <Route path="workers" element={<Workers />} />
         <Route path="worker-logs" element={<AdminWorkerLogs />} />
+        <Route path="webhook-logs" element={<AdminWebhookLogs />} />
         <Route path="media-assets" element={<MediaAssets />} />
         <Route path="settings" element={<Settings />} />
       </Route>

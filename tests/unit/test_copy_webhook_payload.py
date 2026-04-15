@@ -24,12 +24,28 @@ async def test_fire_copy_webhook_renders_dynamic_payload_and_custom_secret_heade
         copy_webhook_secret_mode="header_value",
     )
     captured: dict = {}
+    inserted: dict = {}
 
     async def _fake_post(url, secret, payload, **kwargs):
         captured["url"] = url
         captured["secret"] = secret
         captured["payload"] = payload
         captured["kwargs"] = kwargs
+        return {
+            "success": True,
+            "status_code": 200,
+            "response_body": "ok",
+            "error": None,
+            "latency_ms": 12,
+            "payload_size_bytes": 123,
+        }
+
+    class _WebhookLogCollection:
+        async def insert_one(self, doc):
+            inserted.update(doc)
+
+    class _MongoDb:
+        webhook_logs = _WebhookLogCollection()
 
     import app.services.http_notify as hn
 
@@ -45,10 +61,13 @@ async def test_fire_copy_webhook_renders_dynamic_payload_and_custom_secret_heade
             "mapping_id": 7,
             "user_id": 1,
         },
+        _MongoDb(),
     )
     assert captured["url"] == "https://example.com/hook"
     assert captured["payload"] == {"kind": "message_copied", "src": "123", "dst": "456"}
     assert captured["kwargs"]["secret_mode"] == "header_value"
     assert captured["kwargs"]["secret_header_name"] == "X-Webhook-Secret"
     assert captured["kwargs"]["secret_header_value"] == "my-secret"
+    assert inserted["mapping_id"] == 7
+    assert inserted["success"] is True
 

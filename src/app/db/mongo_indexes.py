@@ -1,4 +1,4 @@
-"""Ensure MongoDB indexes exist for message_logs and worker_logs collections."""
+"""Ensure MongoDB indexes exist for log collections."""
 
 from __future__ import annotations
 
@@ -15,6 +15,13 @@ INDEXES = {
         {"keys": [("user_id", 1), ("timestamp", -1)], "name": "ix_user_timestamp"},
         {"keys": [("timestamp", 1)], "name": "ix_timestamp"},
     ],
+    "webhook_logs": [
+        {"keys": [("timestamp", -1)], "name": "ix_timestamp_desc"},
+        {"keys": [("user_id", 1), ("timestamp", -1)], "name": "ix_user_timestamp"},
+        {"keys": [("mapping_id", 1), ("timestamp", -1)], "name": "ix_mapping_timestamp"},
+        {"keys": [("success", 1), ("timestamp", -1)], "name": "ix_success_timestamp"},
+        {"keys": [("timestamp", 1)], "name": "ix_ttl_30d", "expire_after_seconds": 60 * 60 * 24 * 30},
+    ],
 }
 
 
@@ -27,7 +34,11 @@ async def ensure_mongo_indexes() -> None:
         for coll_name, index_specs in INDEXES.items():
             coll = mongo_db[coll_name]
             for spec in index_specs:
-                await coll.create_index(spec["keys"], name=spec["name"])
+                await coll.create_index(
+                    spec["keys"],
+                    name=spec["name"],
+                    expireAfterSeconds=spec.get("expire_after_seconds"),
+                )
                 logger.info("MongoDB index %s.%s ensured", coll_name, spec["name"])
     except Exception as e:
         logger.warning("MongoDB index creation skipped (Mongo may be unconfigured): %s", e)

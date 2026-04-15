@@ -5,6 +5,7 @@ import datetime
 import json
 import logging
 from typing import Any
+from urllib.parse import urlsplit
 
 import aiosqlite
 from telethon import events, utils
@@ -169,6 +170,7 @@ async def _save_dest_mapping(
 async def _fire_copy_webhook(
     mapping: ChannelMapping,
     payload_context: dict[str, Any],
+    mongo_db,
 ) -> None:
     if not mapping.copy_webhook_url or not str(mapping.copy_webhook_url).strip():
         return
@@ -203,18 +205,42 @@ async def _fire_copy_webhook(
         except Exception as e:
             logger.warning("copy webhook payload template invalid mapping_id=%s: %s", mapping.id, e)
 
+    target_url = str(mapping.copy_webhook_url).strip()
+    secret_mode = str(mapping.copy_webhook_secret_mode or "hmac_sha256").strip().lower()
+    result = await post_json_webhook(
+        target_url,
+        mapping.copy_webhook_secret,
+        payload,
+        secret_mode=secret_mode,
+        secret_header_name=mapping.copy_webhook_secret_header_name,
+        secret_header_value=mapping.copy_webhook_secret_header_value,
+    )
     try:
-        secret_mode = str(mapping.copy_webhook_secret_mode or "hmac_sha256").strip().lower()
-        await post_json_webhook(
-            str(mapping.copy_webhook_url).strip(),
-            mapping.copy_webhook_secret,
-            payload,
-            secret_mode=secret_mode,
-            secret_header_name=mapping.copy_webhook_secret_header_name,
-            secret_header_value=mapping.copy_webhook_secret_header_value,
-        )
+        parsed = urlsplit(target_url)
+        safe_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}" if parsed.scheme and parsed.netloc else target_url
+        await mongo_db.webhook_logs.insert_one({
+            "timestamp": datetime.datetime.now(datetime.timezone.utc),
+            "user_id": payload_context.get("user_id"),
+            "mapping_id": payload_context.get("mapping_id"),
+            "source_chat_id": payload_context.get("source_chat_id"),
+            "dest_chat_id": payload_context.get("dest_chat_id"),
+            "event": payload_context.get("event"),
+            "request": {
+                "url": safe_url,
+                "method": "POST",
+                "secret_mode": secret_mode,
+                "payload_size_bytes": result.get("payload_size_bytes"),
+            },
+            "response": {
+                "status_code": result.get("status_code"),
+                "latency_ms": result.get("latency_ms"),
+                "body": result.get("response_body"),
+            },
+            "success": bool(result.get("success")),
+            "error": result.get("error"),
+        })
     except Exception as e:
-        logger.warning("copy webhook failed mapping_id=%s: %s", mapping.id, e)
+        logger.warning("Failed to write webhook log (non-fatal) mapping_id=%s: %s", mapping.id, e)
 
 
 def _schedule_album_flush(
@@ -457,6 +483,7 @@ def build_message_handlers(
                             "date_utc": msg_time.isoformat(),
                             "text": transformed_text,
                         },
+                        mongo_db,
                     )
                 )
 
@@ -596,6 +623,7 @@ def build_message_handlers(
                         "date_utc": msg_time.isoformat(),
                         "text": transformed_text,
                     },
+                    mongo_db,
                 )
             )
 

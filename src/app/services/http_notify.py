@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import logging
+import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,7 @@ async def post_json_webhook(
     secret_mode: str = "hmac_sha256",
     secret_header_name: str | None = None,
     secret_header_value: str | None = None,
-) -> None:
+) -> dict[str, Any]:
     """POST JSON body with configurable secret handling.
 
     Modes:
@@ -36,9 +37,36 @@ async def post_json_webhook(
         headers[(secret_header_name or "X-Tgc-Signature").strip()] = sig
     elif secret_mode == "header_value" and secret_header_name and secret_header_value:
         headers[secret_header_name.strip()] = str(secret_header_value)
+    started = time.perf_counter()
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.post(url, content=body, headers=headers)
-            r.raise_for_status()
+            response = await client.post(url, content=body, headers=headers)
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        response_body = (response.text or "")[:2000]
+        success = 200 <= int(response.status_code) < 300
+        if not success:
+            logger.warning(
+                "Webhook POST failed url=%s status=%s body=%s",
+                url,
+                response.status_code,
+                response_body,
+            )
+        return {
+            "success": success,
+            "status_code": int(response.status_code),
+            "response_body": response_body,
+            "error": None if success else f"HTTP {response.status_code}",
+            "latency_ms": elapsed_ms,
+            "payload_size_bytes": len(body),
+        }
     except Exception as e:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
         logger.warning("Webhook POST failed url=%s err=%s", url, e)
+        return {
+            "success": False,
+            "status_code": None,
+            "response_body": None,
+            "error": str(e),
+            "latency_ms": elapsed_ms,
+            "payload_size_bytes": len(body),
+        }
