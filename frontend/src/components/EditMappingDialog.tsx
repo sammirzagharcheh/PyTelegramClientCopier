@@ -28,6 +28,7 @@ const WEBHOOK_TEMPLATE_TOKENS = [
   { label: 'media_type', value: '{{media_type}}' },
   { label: 'date_utc', value: '{{date_utc}}' },
   { label: 'text', value: '{{text}}' },
+  { label: 'guid', value: '{{guid}}' },
 ];
 
 export function EditMappingDialog({ mapping, onClose }: Props) {

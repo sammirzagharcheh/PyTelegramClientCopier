@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from uuid import UUID
 
 from app.services.mapping_service import ChannelMapping
 from app.telegram.handlers import _fire_copy_webhook
@@ -78,3 +79,66 @@ async def test_fire_copy_webhook_renders_dynamic_payload_and_custom_secret_heade
     assert inserted["request"]["body_preview"] == '{"kind":"message_copied"}'
     assert inserted["request"]["headers"]["X-API-Key"] == "***"
 
+
+@pytest.mark.asyncio
+async def test_fire_copy_webhook_payload_template_supports_guid_variable(monkeypatch):
+    mapping = ChannelMapping(
+        id=9,
+        user_id=1,
+        source_chat_id=10,
+        dest_chat_id=20,
+        enabled=True,
+        filters=[],
+        source_chat_title=None,
+        dest_chat_title=None,
+        copy_webhook_url="https://example.com/hook",
+        copy_webhook_payload_template='{"id":"{{guid}}","event":"{{event}}"}',
+    )
+    captured: dict = {}
+
+    async def _fake_post(url, secret, payload, **kwargs):
+        captured["payload"] = payload
+        return {
+            "success": True,
+            "status_code": 200,
+            "response_body": "ok",
+            "error": None,
+            "latency_ms": 12,
+            "payload_size_bytes": 88,
+            "request_body_preview": '{"id":"...","event":"message_copied"}',
+            "request_headers": {"Content-Type": "application/json"},
+        }
+
+    class _WebhookLogCollection:
+        async def insert_one(self, doc):
+            return None
+
+    class _MongoDb:
+        webhook_logs = _WebhookLogCollection()
+
+    import app.services.http_notify as hn
+    import app.telegram.handlers as handlers
+
+    monkeypatch.setattr(hn, "post_json_webhook", _fake_post)
+    monkeypatch.setattr(
+        handlers.uuid,
+        "uuid4",
+        lambda: UUID("11111111-2222-3333-4444-555555555555"),
+    )
+    await _fire_copy_webhook(
+        mapping,
+        {
+            "event": "message_copied",
+            "source_msg_id": 123,
+            "dest_msg_id": 456,
+            "source_chat_id": 10,
+            "dest_chat_id": 20,
+            "mapping_id": 9,
+            "user_id": 1,
+        },
+        _MongoDb(),
+    )
+    assert captured["payload"] == {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "event": "message_copied",
+    }

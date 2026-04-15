@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import json
 import logging
+import uuid
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -193,7 +194,9 @@ async def _fire_copy_webhook(
     template = (mapping.copy_webhook_payload_template or "").strip()
     if template:
         try:
-            rendered = render_template(template, payload_context)
+            template_context = dict(payload_context)
+            template_context["guid"] = str(uuid.uuid4())
+            rendered = render_template(template, template_context)
             loaded = json.loads(rendered)
             if isinstance(loaded, dict):
                 payload = loaded
