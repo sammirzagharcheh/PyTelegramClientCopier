@@ -45,6 +45,7 @@ const navSections: NavSection[] = [
     title: 'Logs & Monitoring',
     items: [
       { to: '/worker-logs', label: 'Worker Logs', icon: ScrollText },
+      { to: '/webhook-logs', label: 'Webhook Logs', icon: Webhook },
       { to: '/logs', label: 'Message Logs', icon: MessageSquare },
       { to: '/message-index', label: 'Message Index', icon: Database },
     ],

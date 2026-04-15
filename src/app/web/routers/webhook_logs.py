@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, status
 from pymongo.errors import OperationFailure, ServerSelectionTimeoutError
 
 from app.db.mongo import get_mongo_db
-from app.web.deps import AdminUser, Db
+from app.web.deps import CurrentUser, Db
 
 router = APIRouter(prefix="/webhook-logs", tags=["webhook-logs"])
 
@@ -28,7 +28,7 @@ def _mongo_error_message(e: Exception) -> str:
 
 @router.get("")
 async def list_webhook_logs(
-    user: AdminUser,
+    user: CurrentUser,
     db: Db,
     user_id: int | None = None,
     mapping_id: int | None = None,
@@ -40,12 +40,17 @@ async def list_webhook_logs(
 ) -> dict:
     """List webhook delivery logs for currently enabled mappings."""
     try:
+        is_admin = user.get("role") == "admin"
+        current_user_id = int(user["id"])
         query = (
             "SELECT id, user_id, source_chat_id, dest_chat_id, source_chat_title, dest_chat_title "
             "FROM channel_mappings WHERE enabled = 1"
         )
         params: list[int] = []
-        if user_id is not None:
+        if not is_admin:
+            query += " AND user_id = ?"
+            params.append(current_user_id)
+        elif user_id is not None:
             query += " AND user_id = ?"
             params.append(int(user_id))
         if mapping_id is not None:

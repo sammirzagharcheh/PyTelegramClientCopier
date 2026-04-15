@@ -21,6 +21,7 @@ import { UserWorkers } from './pages/user/Workers';
 import { Schedule } from './pages/user/Schedule';
 import { MediaAssets } from './pages/user/MediaAssets';
 import { WorkerLogs } from './pages/user/WorkerLogs';
+import { WebhookLogs } from './pages/user/WebhookLogs';
 import { AdminWorkerLogs } from './pages/admin/AdminWorkerLogs';
 import { AdminWebhookLogs } from './pages/admin/AdminWebhookLogs';
 import { ToastProvider } from './components/Toast';
@@ -57,6 +58,7 @@ function AppRoutes() {
         <Route path="mappings/:id" element={<MappingDetail />} />
         <Route path="workers" element={<UserWorkers />} />
         <Route path="worker-logs" element={<WorkerLogs />} />
+        <Route path="webhook-logs" element={<WebhookLogs />} />
         <Route path="logs" element={<Logs />} />
         <Route path="message-index" element={<MessageIndex />} />
         <Route path="schedule" element={<Schedule />} />
