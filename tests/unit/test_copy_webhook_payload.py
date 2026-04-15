@@ -38,6 +38,11 @@ async def test_fire_copy_webhook_renders_dynamic_payload_and_custom_secret_heade
             "error": None,
             "latency_ms": 12,
             "payload_size_bytes": 123,
+            "request_body_preview": '{"kind":"message_copied"}',
+            "request_headers": {
+                "Content-Type": "application/json",
+                "X-API-Key": "***",
+            },
         }
 
     class _WebhookLogCollection:
@@ -70,4 +75,6 @@ async def test_fire_copy_webhook_renders_dynamic_payload_and_custom_secret_heade
     assert captured["kwargs"]["secret_header_value"] == "my-secret"
     assert inserted["mapping_id"] == 7
     assert inserted["success"] is True
+    assert inserted["request"]["body_preview"] == '{"kind":"message_copied"}'
+    assert inserted["request"]["headers"]["X-API-Key"] == "***"
 

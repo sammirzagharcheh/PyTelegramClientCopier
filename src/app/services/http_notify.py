@@ -58,8 +58,8 @@ async def post_json_webhook(
     headers = {"Content-Type": "application/json"}
     if secret_mode == "hmac_sha256" and secret:
         sig = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
-        headers[(secret_header_name or "X-Tgc-Signature").strip()] = sig
-    elif secret_mode == "header_value" and secret_header_name and secret_header_value:
+        headers["X-Tgc-Signature"] = sig
+    if secret_header_name and secret_header_value:
         headers[secret_header_name.strip()] = str(secret_header_value)
     started = time.perf_counter()
     try:

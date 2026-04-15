@@ -73,9 +73,11 @@ async def test_post_json_webhook_hmac_mode_respects_custom_header_name(monkeypat
         payload={"x": 1},
         secret_mode="hmac_sha256",
         secret_header_name="X-Hmac",
+        secret_header_value="custom-value",
     )
     assert calls
-    assert "X-Hmac" in calls[0]["headers"]
-    assert "X-Tgc-Signature" not in calls[0]["headers"]
+    assert calls[0]["headers"]["X-Tgc-Signature"]
+    assert calls[0]["headers"]["X-Hmac"] == "custom-value"
     assert result["request_headers"]["X-Hmac"] == "***"
+    assert result["request_headers"]["X-Tgc-Signature"] == "***"
 
