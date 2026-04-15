@@ -31,7 +31,11 @@ def test_mappings_pagination_contract(api_client, user_token):
             "sync_deletes",
             "edit_strategy",
             "copy_webhook_url",
+            "copy_webhook_payload_template",
+            "copy_webhook_secret_header_name",
+            "copy_webhook_secret_mode",
             "webhook_secret_configured",
+            "webhook_secret_header_configured",
         ):
             assert key in first, f"list item missing {key} (needed for Edit from /mappings)"
 

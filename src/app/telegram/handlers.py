@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import json
 import logging
 from typing import Any
 
@@ -19,6 +20,7 @@ from app.telegram.pipeline_preview import (
     media_type_for_telethon_message,
     passes_filters,
     passes_schedule,
+    render_template,
 )
 
 logger = logging.getLogger(__name__)
@@ -166,17 +168,50 @@ async def _save_dest_mapping(
 
 async def _fire_copy_webhook(
     mapping: ChannelMapping,
-    payload: dict[str, Any],
+    payload_context: dict[str, Any],
 ) -> None:
     if not mapping.copy_webhook_url or not str(mapping.copy_webhook_url).strip():
         return
     from app.services.http_notify import post_json_webhook
 
+    default_payload = {
+        "event": payload_context.get("event"),
+        "user_id": payload_context.get("user_id"),
+        "mapping_id": payload_context.get("mapping_id"),
+        "source_chat_id": payload_context.get("source_chat_id"),
+        "dest_chat_id": payload_context.get("dest_chat_id"),
+    }
+    if "source_msg_id" in payload_context:
+        default_payload["source_msg_id"] = payload_context.get("source_msg_id")
+    if "source_msg_ids" in payload_context:
+        default_payload["source_msg_ids"] = payload_context.get("source_msg_ids")
+    if "dest_msg_id" in payload_context:
+        default_payload["dest_msg_id"] = payload_context.get("dest_msg_id")
+    payload = default_payload
+    template = (mapping.copy_webhook_payload_template or "").strip()
+    if template:
+        try:
+            rendered = render_template(template, payload_context)
+            loaded = json.loads(rendered)
+            if isinstance(loaded, dict):
+                payload = loaded
+            else:
+                logger.warning(
+                    "copy webhook payload template must render object mapping_id=%s",
+                    mapping.id,
+                )
+        except Exception as e:
+            logger.warning("copy webhook payload template invalid mapping_id=%s: %s", mapping.id, e)
+
     try:
+        secret_mode = str(mapping.copy_webhook_secret_mode or "hmac_sha256").strip().lower()
         await post_json_webhook(
             str(mapping.copy_webhook_url).strip(),
             mapping.copy_webhook_secret,
             payload,
+            secret_mode=secret_mode,
+            secret_header_name=mapping.copy_webhook_secret_header_name,
+            secret_header_value=mapping.copy_webhook_secret_header_value,
         )
     except Exception as e:
         logger.warning("copy webhook failed mapping_id=%s: %s", mapping.id, e)
@@ -416,6 +451,11 @@ def build_message_handlers(
                             "source_msg_id": message.id,
                             "dest_chat_id": mapping.dest_chat_id,
                             "dest_msg_id": sent.id,
+                            "source_chat_title": source_title,
+                            "dest_chat_title": dest_title,
+                            "media_type": media_type,
+                            "date_utc": msg_time.isoformat(),
+                            "text": transformed_text,
                         },
                     )
                 )
@@ -550,6 +590,11 @@ def build_message_handlers(
                         "source_msg_ids": [m.id for m in messages],
                         "dest_chat_id": mapping.dest_chat_id,
                         "dest_msg_id": sent.id,
+                        "source_chat_title": str(source_chat_title or ""),
+                        "dest_chat_title": str(mapping.dest_chat_title or ""),
+                        "media_type": media_type,
+                        "date_utc": msg_time.isoformat(),
+                        "text": transformed_text,
                     },
                 )
             )

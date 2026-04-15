@@ -1,5 +1,5 @@
 import { Pencil } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { ChannelMapping } from '../lib/api';
@@ -14,6 +14,21 @@ type Props = {
 };
 
 const MAX_SEND_DELAY_MS = 60_000;
+const WEBHOOK_TEMPLATE_TOKENS = [
+  { label: 'event', value: '{{event}}' },
+  { label: 'user_id', value: '{{user_id}}' },
+  { label: 'mapping_id', value: '{{mapping_id}}' },
+  { label: 'source_chat_id', value: '{{source_chat_id}}' },
+  { label: 'source_msg_id', value: '{{source_msg_id}}' },
+  { label: 'source_msg_ids', value: '{{source_msg_ids}}' },
+  { label: 'source_chat_title', value: '{{source_chat_title}}' },
+  { label: 'dest_chat_id', value: '{{dest_chat_id}}' },
+  { label: 'dest_msg_id', value: '{{dest_msg_id}}' },
+  { label: 'dest_chat_title', value: '{{dest_chat_title}}' },
+  { label: 'media_type', value: '{{media_type}}' },
+  { label: 'date_utc', value: '{{date_utc}}' },
+  { label: 'text', value: '{{text}}' },
+];
 
 export function EditMappingDialog({ mapping, onClose }: Props) {
   const [name, setName] = useState(mapping.name ?? '');
@@ -27,9 +42,25 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
   );
   const [copyWebhookUrl, setCopyWebhookUrl] = useState(mapping.copy_webhook_url ?? '');
   const [copyWebhookSecret, setCopyWebhookSecret] = useState('');
+  const [copyWebhookPayloadTemplate, setCopyWebhookPayloadTemplate] = useState(
+    mapping.copy_webhook_payload_template ?? ''
+  );
+  const [copyWebhookSecretMode, setCopyWebhookSecretMode] = useState(
+    mapping.copy_webhook_secret_mode ?? 'hmac_sha256'
+  );
+  const [copyWebhookSecretHeaderName, setCopyWebhookSecretHeaderName] = useState(
+    mapping.copy_webhook_secret_header_name ?? ''
+  );
+  const [copyWebhookSecretHeaderValue, setCopyWebhookSecretHeaderValue] = useState('');
   const [clearWebhookSecret, setClearWebhookSecret] = useState(false);
+  const [clearWebhookHeaderSecret, setClearWebhookHeaderSecret] = useState(false);
+  const [selectedWebhookToken, setSelectedWebhookToken] = useState(
+    WEBHOOK_TEMPLATE_TOKENS[0]?.value ?? '{{event}}'
+  );
+  const payloadTemplateRef = useRef<HTMLTextAreaElement>(null);
   const webhookSecretPresent =
     Boolean(mapping.copy_webhook_secret?.trim()) || Boolean(mapping.webhook_secret_configured);
+  const webhookHeaderSecretPresent = Boolean(mapping.webhook_secret_header_configured);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
   const { show: showToast } = useToast();
@@ -57,11 +88,30 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
       const urlTrim = copyWebhookUrl.trim();
       const origUrl = (mapping.copy_webhook_url ?? '').trim();
       if (urlTrim !== origUrl) body.copy_webhook_url = urlTrim || null;
+      const payloadTemplate = copyWebhookPayloadTemplate.trim();
+      const origPayloadTemplate = (mapping.copy_webhook_payload_template ?? '').trim();
+      if (payloadTemplate !== origPayloadTemplate) {
+        body.copy_webhook_payload_template = payloadTemplate || null;
+      }
+      const secretMode = copyWebhookSecretMode.trim() || 'hmac_sha256';
+      if (secretMode !== (mapping.copy_webhook_secret_mode ?? 'hmac_sha256')) {
+        body.copy_webhook_secret_mode = secretMode;
+      }
+      const secretHeaderName = copyWebhookSecretHeaderName.trim();
+      const origSecretHeaderName = (mapping.copy_webhook_secret_header_name ?? '').trim();
+      if (secretHeaderName !== origSecretHeaderName) {
+        body.copy_webhook_secret_header_name = secretHeaderName || null;
+      }
 
       if (clearWebhookSecret) {
         body.copy_webhook_secret = '';
       } else if (copyWebhookSecret.trim()) {
         body.copy_webhook_secret = copyWebhookSecret.trim();
+      }
+      if (clearWebhookHeaderSecret) {
+        body.copy_webhook_secret_header_value = '';
+      } else if (copyWebhookSecretHeaderValue.trim()) {
+        body.copy_webhook_secret_header_value = copyWebhookSecretHeaderValue.trim();
       }
 
       if (Object.keys(body).length === 0) {
@@ -111,7 +161,11 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
                   edit_strategy: data.edit_strategy,
                   copy_webhook_url: data.copy_webhook_url,
                   copy_webhook_secret: null,
+                  copy_webhook_payload_template: data.copy_webhook_payload_template,
+                  copy_webhook_secret_header_name: data.copy_webhook_secret_header_name,
+                  copy_webhook_secret_mode: data.copy_webhook_secret_mode,
                   webhook_secret_configured: Boolean(secretTrim),
+                  webhook_secret_header_configured: Boolean(data.webhook_secret_header_configured),
                 }
               : it
           ),
@@ -156,6 +210,43 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
       return;
     }
     mutation.mutate();
+  };
+
+  useEffect(() => {
+    setName(mapping.name ?? '');
+    setSourceChatId(String(mapping.source_chat_id));
+    setDestChatId(String(mapping.dest_chat_id));
+    setSendDelayMs(String(mapping.send_delay_ms ?? 0));
+    setSyncEdits(Boolean(mapping.sync_edits));
+    setSyncDeletes(Boolean(mapping.sync_deletes));
+    setEditStrategy(mapping.edit_strategy === 'append_notice' ? 'append_notice' : 'replace_text');
+    setCopyWebhookUrl(mapping.copy_webhook_url ?? '');
+    setCopyWebhookSecret('');
+    setCopyWebhookPayloadTemplate(mapping.copy_webhook_payload_template ?? '');
+    setCopyWebhookSecretMode(mapping.copy_webhook_secret_mode ?? 'hmac_sha256');
+    setCopyWebhookSecretHeaderName(mapping.copy_webhook_secret_header_name ?? '');
+    setCopyWebhookSecretHeaderValue('');
+    setClearWebhookSecret(false);
+    setClearWebhookHeaderSecret(false);
+    setError('');
+  }, [mapping]);
+
+  const insertWebhookToken = (token: string) => {
+    const textarea = payloadTemplateRef.current;
+    if (!textarea) {
+      setCopyWebhookPayloadTemplate((prev) => `${prev}${token}`);
+      return;
+    }
+    const start = textarea.selectionStart ?? copyWebhookPayloadTemplate.length;
+    const end = textarea.selectionEnd ?? start;
+    const next =
+      copyWebhookPayloadTemplate.slice(0, start) + token + copyWebhookPayloadTemplate.slice(end);
+    setCopyWebhookPayloadTemplate(next);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      const caret = start + token.length;
+      textarea.setSelectionRange(caret, caret);
+    });
   };
 
   return (
@@ -279,6 +370,91 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
                     }}
                   />
                   Clear stored webhook secret
+                </label>
+              ) : null}
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Webhook payload template (JSON)</label>
+              <div className="flex flex-wrap gap-2 mb-2">
+                <select
+                  aria-label="Select webhook template variable"
+                  value={selectedWebhookToken}
+                  onChange={(e) => setSelectedWebhookToken(e.target.value)}
+                  className="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm font-mono"
+                >
+                  {WEBHOOK_TEMPLATE_TOKENS.map((tok) => (
+                    <option key={tok.value} value={tok.value}>
+                      {tok.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => insertWebhookToken(selectedWebhookToken)}
+                  className="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-sm"
+                >
+                  Insert variable
+                </button>
+              </div>
+              <textarea
+                ref={payloadTemplateRef}
+                value={copyWebhookPayloadTemplate}
+                onChange={(e) => setCopyWebhookPayloadTemplate(e.target.value)}
+                className="w-full min-h-24 px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-mono text-sm"
+                placeholder='{"event":"{{event}}","mapping_id":"{{mapping_id}}"}'
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Available variables: {WEBHOOK_TEMPLATE_TOKENS.map((t) => t.value).join(', ')}
+              </p>
+            </div>
+            <div>
+              <label htmlFor="edit-mapping-webhook-secret-mode" className="block text-sm font-medium mb-1">
+                Webhook secret mode
+              </label>
+              <select
+                id="edit-mapping-webhook-secret-mode"
+                value={copyWebhookSecretMode}
+                onChange={(e) => setCopyWebhookSecretMode(e.target.value)}
+                className="w-full max-w-xs px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+              >
+                <option value="hmac_sha256">HMAC SHA-256 signature</option>
+                <option value="header_value">Custom header value</option>
+                <option value="none">No secret header</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Webhook secret header name</label>
+              <input
+                type="text"
+                value={copyWebhookSecretHeaderName}
+                onChange={(e) => setCopyWebhookSecretHeaderName(e.target.value)}
+                className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-mono text-sm"
+                placeholder="X-Webhook-Secret"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Webhook secret header value</label>
+              <input
+                type="password"
+                value={copyWebhookSecretHeaderValue}
+                onChange={(e) => setCopyWebhookSecretHeaderValue(e.target.value)}
+                className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-mono text-sm"
+                placeholder={
+                  webhookHeaderSecretPresent ? 'Leave blank to keep; enter new to rotate' : 'Optional'
+                }
+                autoComplete="off"
+              />
+              {webhookHeaderSecretPresent ? (
+                <label className="flex items-center gap-2 mt-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={clearWebhookHeaderSecret}
+                    onChange={(e) => {
+                      setClearWebhookHeaderSecret(e.target.checked);
+                      if (e.target.checked) setCopyWebhookSecretHeaderValue('');
+                    }}
+                  />
+                  Clear stored webhook header secret value
                 </label>
               ) : null}
             </div>

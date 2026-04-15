@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 
 from fastapi import APIRouter, HTTPException, status
 
@@ -42,6 +43,34 @@ from app.web.schemas.mappings import (
 from app.web.schemas.schedules import ScheduleResponse, ScheduleUpdate
 
 router = APIRouter(prefix="/mappings", tags=["mappings"])
+_ALLOWED_WEBHOOK_SECRET_MODES = {"hmac_sha256", "header_value", "none"}
+_HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+
+
+def _normalize_webhook_secret_mode(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _ALLOWED_WEBHOOK_SECRET_MODES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="copy_webhook_secret_mode must be one of: hmac_sha256, header_value, none",
+        )
+    return normalized
+
+
+def _validate_header_name(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return ""
+    if not _HEADER_NAME_RE.fullmatch(cleaned):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid webhook secret header name",
+        )
+    return cleaned
 
 
 _ALLOWED_SORT = {"id", "name", "source_chat_id", "dest_chat_id", "enabled", "created_at", "user_id"}
@@ -81,7 +110,8 @@ async def list_mappings(
     cols = (
         "id, user_id, source_chat_id, dest_chat_id, name, source_chat_title, dest_chat_title, "
         "enabled, telegram_account_id, created_at, send_delay_ms, sync_edits, edit_strategy, "
-        "sync_deletes, copy_webhook_url, copy_webhook_secret"
+        "sync_deletes, copy_webhook_url, copy_webhook_secret, copy_webhook_payload_template, "
+        "copy_webhook_secret_header_name, copy_webhook_secret_header_value, copy_webhook_secret_mode"
     )
     params.extend([page_size, offset])
     async with db.execute(
@@ -120,7 +150,9 @@ async def list_mappings(
         sched = schedule_by_mapping.get(mid)
         summary = _schedule_summary(sched) if sched else "24/7"
         secret_raw = r[15]
+        header_secret_raw = r[18]
         secret_set = bool(secret_raw and str(secret_raw).strip())
+        header_secret_set = bool(header_secret_raw and str(header_secret_raw).strip())
         items.append({
             "id": r[0],
             "user_id": r[1],
@@ -138,7 +170,11 @@ async def list_mappings(
             "sync_deletes": bool(r[13]),
             "copy_webhook_url": r[14],
             "copy_webhook_secret": None,
+            "copy_webhook_payload_template": r[16],
+            "copy_webhook_secret_header_name": r[17],
+            "copy_webhook_secret_mode": str(r[19] or "hmac_sha256"),
             "webhook_secret_configured": secret_set,
+            "webhook_secret_header_configured": header_secret_set,
             "schedule_summary": summary,
         })
     total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
@@ -228,7 +264,9 @@ async def create_mapping(
                   source_chat_title, dest_chat_title, enabled,
                   telegram_account_id, created_at,
                   send_delay_ms, sync_edits, edit_strategy, sync_deletes,
-                  copy_webhook_url, copy_webhook_secret
+                  copy_webhook_url, copy_webhook_secret, copy_webhook_payload_template,
+                  copy_webhook_secret_header_name, copy_webhook_secret_header_value,
+                  copy_webhook_secret_mode
            FROM channel_mappings WHERE id = ?""",
         (mid,),
     ) as cur:
@@ -250,6 +288,10 @@ async def create_mapping(
         "sync_deletes": bool(row[13]),
         "copy_webhook_url": row[14],
         "copy_webhook_secret": row[15],
+        "copy_webhook_payload_template": row[16],
+        "copy_webhook_secret_header_name": row[17],
+        "copy_webhook_secret_mode": str(row[19] or "hmac_sha256"),
+        "webhook_secret_header_configured": bool(row[18] and str(row[18]).strip()),
     }
     try:
         await restart_workers_for_mapping(db, row[1], row[8])
@@ -270,7 +312,9 @@ async def get_mapping(
                   source_chat_title, dest_chat_title, enabled,
                   telegram_account_id, created_at,
                   send_delay_ms, sync_edits, edit_strategy, sync_deletes,
-                  copy_webhook_url, copy_webhook_secret
+                  copy_webhook_url, copy_webhook_secret, copy_webhook_payload_template,
+                  copy_webhook_secret_header_name, copy_webhook_secret_header_value,
+                  copy_webhook_secret_mode
            FROM channel_mappings WHERE id = ?""",
         (mapping_id,),
     ) as cur:
@@ -296,6 +340,10 @@ async def get_mapping(
         "sync_deletes": bool(row[13]),
         "copy_webhook_url": row[14],
         "copy_webhook_secret": row[15],
+        "copy_webhook_payload_template": row[16],
+        "copy_webhook_secret_header_name": row[17],
+        "copy_webhook_secret_mode": str(row[19] or "hmac_sha256"),
+        "webhook_secret_header_configured": bool(row[18] and str(row[18]).strip()),
     }
 
 
@@ -365,6 +413,18 @@ async def update_mapping(
     if data.copy_webhook_secret is not None:
         updates.append("copy_webhook_secret = ?")
         params.append(data.copy_webhook_secret)
+    if data.copy_webhook_payload_template is not None:
+        updates.append("copy_webhook_payload_template = ?")
+        params.append(data.copy_webhook_payload_template)
+    if data.copy_webhook_secret_header_name is not None:
+        updates.append("copy_webhook_secret_header_name = ?")
+        params.append(_validate_header_name(data.copy_webhook_secret_header_name))
+    if data.copy_webhook_secret_header_value is not None:
+        updates.append("copy_webhook_secret_header_value = ?")
+        params.append(data.copy_webhook_secret_header_value)
+    if data.copy_webhook_secret_mode is not None:
+        updates.append("copy_webhook_secret_mode = ?")
+        params.append(_normalize_webhook_secret_mode(data.copy_webhook_secret_mode))
     if updates:
         params.append(mapping_id)
         await db.execute(f"UPDATE channel_mappings SET {', '.join(updates)} WHERE id = ?", params)
@@ -374,7 +434,9 @@ async def update_mapping(
                   source_chat_title, dest_chat_title, enabled,
                   telegram_account_id, created_at,
                   send_delay_ms, sync_edits, edit_strategy, sync_deletes,
-                  copy_webhook_url, copy_webhook_secret
+                  copy_webhook_url, copy_webhook_secret, copy_webhook_payload_template,
+                  copy_webhook_secret_header_name, copy_webhook_secret_header_value,
+                  copy_webhook_secret_mode
            FROM channel_mappings WHERE id = ?""",
         (mapping_id,),
     ) as cur:
@@ -396,6 +458,10 @@ async def update_mapping(
         "sync_deletes": bool(row[13]),
         "copy_webhook_url": row[14],
         "copy_webhook_secret": row[15],
+        "copy_webhook_payload_template": row[16],
+        "copy_webhook_secret_header_name": row[17],
+        "copy_webhook_secret_mode": str(row[19] or "hmac_sha256"),
+        "webhook_secret_header_configured": bool(row[18] and str(row[18]).strip()),
     }
     # Reload workers whenever persisted columns changed — not only routing/enabled.
     # Otherwise sync_edits / sync_deletes / edit_strategy / send_delay / webhooks stay stale in memory.
@@ -465,7 +531,9 @@ async def clone_mapping(
         """SELECT id, user_id, source_chat_id, dest_chat_id, name, source_chat_title, dest_chat_title,
                   enabled, telegram_account_id, created_at,
                   send_delay_ms, sync_edits, edit_strategy, sync_deletes,
-                  copy_webhook_url, copy_webhook_secret
+                  copy_webhook_url, copy_webhook_secret, copy_webhook_payload_template,
+                  copy_webhook_secret_header_name, copy_webhook_secret_header_value,
+                  copy_webhook_secret_mode
            FROM channel_mappings WHERE id = ? AND user_id = ?""",
         (mapping_id, owner_id),
     ) as cur:
@@ -479,8 +547,10 @@ async def clone_mapping(
         """INSERT INTO channel_mappings (
             user_id, source_chat_id, dest_chat_id, name, source_chat_title, dest_chat_title,
             enabled, telegram_account_id, created_at,
-            send_delay_ms, sync_edits, edit_strategy, sync_deletes, copy_webhook_url, copy_webhook_secret
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            send_delay_ms, sync_edits, edit_strategy, sync_deletes, copy_webhook_url, copy_webhook_secret,
+            copy_webhook_payload_template, copy_webhook_secret_header_name, copy_webhook_secret_header_value,
+            copy_webhook_secret_mode
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             row[1],
             row[2],
@@ -497,6 +567,10 @@ async def clone_mapping(
             row[13] or 0,
             row[14],
             row[15],
+            row[16],
+            row[17],
+            row[18],
+            row[19] or "hmac_sha256",
         ),
     )
     await db.commit()
