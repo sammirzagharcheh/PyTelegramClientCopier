@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
+  ChevronRight,
   ChevronDown,
   Clock,
   Database,
@@ -84,6 +85,7 @@ export function MainLayout() {
   const isAdmin = user?.role === 'admin';
   const sections = isAdmin ? adminNavSections : navSections;
   const [menuOpen, setMenuOpen] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [timezoneOpen, setTimezoneOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -116,6 +118,10 @@ export function MainLayout() {
     setTimezoneOpen(true);
   };
 
+  const toggleSection = (title: string) => {
+    setCollapsedSections((prev) => ({ ...prev, [title]: !prev[title] }));
+  };
+
   return (
     <div className="min-h-screen flex">
       <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 shrink-0">
@@ -128,10 +134,19 @@ export function MainLayout() {
         <nav className="p-2 space-y-4">
           {sections.map((section) => (
             <div key={section.title}>
-              <div className="px-4 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                {section.title}
-              </div>
-              <div>
+              <button
+                type="button"
+                onClick={() => toggleSection(section.title)}
+                className="w-full px-4 pb-1 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+              >
+                <span>{section.title}</span>
+                {collapsedSections[section.title] ? (
+                  <ChevronRight className="h-3 w-3" />
+                ) : (
+                  <ChevronDown className="h-3 w-3" />
+                )}
+              </button>
+              <div className={collapsedSections[section.title] ? 'hidden' : ''}>
                 {section.items.map((item) => {
                   const Icon = item.icon;
                   return (

@@ -33,6 +33,7 @@ async def list_webhook_logs(
     user_id: int | None = None,
     mapping_id: int | None = None,
     success: bool | None = None,
+    failure_reason: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     page: int = 1,
@@ -79,6 +80,53 @@ async def list_webhook_logs(
         match: dict = {"mapping_id": {"$in": enabled_ids}}
         if success is not None:
             match["success"] = bool(success)
+        if failure_reason:
+            reason_key = failure_reason.strip().lower()
+            reason_match: dict | None = None
+            if reason_key == "http_401":
+                reason_match = {"response.status_code": 401}
+            elif reason_key == "http_403":
+                reason_match = {"response.status_code": 403}
+            elif reason_key == "http_404":
+                reason_match = {"response.status_code": 404}
+            elif reason_key == "http_429":
+                reason_match = {"response.status_code": 429}
+            elif reason_key == "http_5xx":
+                reason_match = {"response.status_code": {"$gte": 500, "$lte": 599}}
+            elif reason_key == "timeout":
+                reason_match = {"error": {"$regex": "timeout", "$options": "i"}}
+            elif reason_key == "network_connection":
+                reason_match = {
+                    "error": {
+                        "$regex": "connection|connect|network|dns|refused|unreachable",
+                        "$options": "i",
+                    }
+                }
+            elif reason_key == "other":
+                reason_match = {
+                    "$and": [
+                        {
+                            "$or": [
+                                {"response.status_code": None},
+                                {"response.status_code": {"$nin": [401, 403, 404, 429]}},
+                                {"response.status_code": {"$lt": 500}},
+                                {"response.status_code": {"$gt": 599}},
+                            ]
+                        },
+                        {"error": {"$not": {"$regex": "timeout", "$options": "i"}}},
+                        {
+                            "error": {
+                                "$not": {
+                                    "$regex": "connection|connect|network|dns|refused|unreachable",
+                                    "$options": "i",
+                                }
+                            }
+                        },
+                    ]
+                }
+            if reason_match is not None:
+                match["success"] = False
+                match.update(reason_match)
         if date_from or date_to:
             match["timestamp"] = {}
             if date_from:

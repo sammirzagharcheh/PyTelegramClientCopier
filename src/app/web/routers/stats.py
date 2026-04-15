@@ -51,6 +51,13 @@ async def get_dashboard_stats(user: CurrentUser, db: Db) -> dict:
     messages_prev_7d = 0
     messages_by_day: list[dict[str, str | int]] = []
     status_breakdown: list[dict[str, str | int]] = []
+    webhook_attempts_last_7d = 0
+    webhook_attempts_prev_7d = 0
+    webhook_success_last_7d = 0
+    webhook_failed_last_7d = 0
+    webhook_by_day: list[dict[str, str | int]] = []
+    top_failing_mappings: list[dict[str, str | int]] = []
+    webhook_failure_reasons: list[dict[str, str | int]] = []
 
     try:
         mongo_db = get_mongo_db()
@@ -59,6 +66,10 @@ async def get_dashboard_stats(user: CurrentUser, db: Db) -> dict:
 
         messages_last_7d = await mongo_db.message_logs.count_documents(match)
         messages_prev_7d = await mongo_db.message_logs.count_documents(match_prev)
+        match_webhook = {"user_id": current_user_id, "timestamp": {"$gte": start_7d_ts, "$lte": today_end}}
+        match_webhook_prev = {"user_id": current_user_id, "timestamp": {"$gte": start_14d_ts, "$lt": start_prev_end}}
+        webhook_attempts_last_7d = await mongo_db.webhook_logs.count_documents(match_webhook)
+        webhook_attempts_prev_7d = await mongo_db.webhook_logs.count_documents(match_webhook_prev)
 
         # Single $facet aggregation for by_day + status_breakdown
         pipeline = [
@@ -95,6 +106,128 @@ async def get_dashboard_stats(user: CurrentUser, db: Db) -> dict:
             for d in doc.get("by_status", []):
                 status_breakdown.append({"status": d["_id"], "count": d["count"]})
 
+        pipeline_webhook = [
+            {"$match": match_webhook},
+            {"$group": {"_id": {"$ifNull": ["$success", False]}, "count": {"$sum": 1}}},
+        ]
+        async for doc in mongo_db.webhook_logs.aggregate(pipeline_webhook):
+            if bool(doc.get("_id")):
+                webhook_success_last_7d = int(doc.get("count", 0))
+            else:
+                webhook_failed_last_7d = int(doc.get("count", 0))
+
+        webhook_by_day_map: dict[str, dict[str, int]] = {}
+        pipeline_webhook_by_day = [
+            {"$match": match_webhook},
+            {
+                "$group": {
+                    "_id": {
+                        "date": {
+                            "$dateToString": {
+                                "format": "%Y-%m-%d",
+                                "date": "$timestamp",
+                                "timezone": "UTC",
+                            }
+                        },
+                        "success": {"$ifNull": ["$success", False]},
+                    },
+                    "count": {"$sum": 1},
+                }
+            },
+        ]
+        async for doc in mongo_db.webhook_logs.aggregate(pipeline_webhook_by_day):
+            key = str((doc.get("_id") or {}).get("date") or "")
+            if not key:
+                continue
+            bucket = webhook_by_day_map.setdefault(key, {"success": 0, "failed": 0})
+            if bool((doc.get("_id") or {}).get("success")):
+                bucket["success"] += int(doc.get("count", 0))
+            else:
+                bucket["failed"] += int(doc.get("count", 0))
+
+        for i in range(7):
+            d = (now - timedelta(days=6 - i)).strftime("%Y-%m-%d")
+            bucket = webhook_by_day_map.get(d, {"success": 0, "failed": 0})
+            webhook_by_day.append({
+                "date": d,
+                "success": bucket["success"],
+                "failed": bucket["failed"],
+            })
+
+        pipeline_top_failed = [
+            {"$match": {**match_webhook, "success": False}},
+            {"$group": {"_id": "$mapping_id", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": 5},
+        ]
+        top_rows: list[dict] = []
+        async for doc in mongo_db.webhook_logs.aggregate(pipeline_top_failed):
+            top_rows.append(doc)
+        if top_rows:
+            mids = [int(d.get("_id")) for d in top_rows if d.get("_id") is not None]
+            mapping_name_by_id: dict[int, str] = {}
+            if mids:
+                placeholders = ",".join("?" for _ in mids)
+                async with db.execute(
+                    f"SELECT id, name, source_chat_title, dest_chat_title, source_chat_id, dest_chat_id "
+                    f"FROM channel_mappings WHERE user_id = ? AND id IN ({placeholders})",
+                    (current_user_id, *mids),
+                ) as cur:
+                    async for row in cur:
+                        mid = int(row[0])
+                        name_val = (row[1] or "").strip()
+                        mapping_name_by_id[mid] = (
+                            name_val if name_val else f"{row[2] or row[4]} → {row[3] or row[5]}"
+                        )
+            for d in top_rows:
+                mid = int(d.get("_id"))
+                top_failing_mappings.append({
+                    "name": f"M{mid}",
+                    "mapping_name": mapping_name_by_id.get(mid, f"Mapping {mid}"),
+                    "count": int(d.get("count", 0)),
+                })
+
+        pipeline_failure_reasons = [
+            {"$match": {**match_webhook, "success": False}},
+            {"$project": {"status_code": "$response.status_code", "error": {"$ifNull": ["$error", ""]}}},
+        ]
+        reason_counts: dict[str, int] = {
+            "HTTP 401": 0,
+            "HTTP 403": 0,
+            "HTTP 404": 0,
+            "HTTP 429": 0,
+            "HTTP 5xx": 0,
+            "Timeout": 0,
+            "Network/Connection": 0,
+            "Other": 0,
+        }
+        async for doc in mongo_db.webhook_logs.aggregate(pipeline_failure_reasons):
+            status_code = doc.get("status_code")
+            err = str(doc.get("error") or "").lower()
+            bucket = "Other"
+            if isinstance(status_code, int):
+                if status_code == 401:
+                    bucket = "HTTP 401"
+                elif status_code == 403:
+                    bucket = "HTTP 403"
+                elif status_code == 404:
+                    bucket = "HTTP 404"
+                elif status_code == 429:
+                    bucket = "HTTP 429"
+                elif 500 <= status_code <= 599:
+                    bucket = "HTTP 5xx"
+            if bucket == "Other":
+                if "timeout" in err:
+                    bucket = "Timeout"
+                elif any(x in err for x in ("connection", "connect", "network", "dns", "refused", "unreachable")):
+                    bucket = "Network/Connection"
+            reason_counts[bucket] += 1
+        webhook_failure_reasons = [
+            {"name": name, "count": count}
+            for name, count in reason_counts.items()
+            if count > 0
+        ]
+
         for i in range(7):
             d = (now - timedelta(days=6 - i)).strftime("%Y-%m-%d")
             messages_by_day.append({"date": d, "count": agg_by_day.get(d, 0)})
@@ -110,4 +243,16 @@ async def get_dashboard_stats(user: CurrentUser, db: Db) -> dict:
         "mappings_total": mappings_total,
         "mappings_enabled": mappings_enabled,
         "accounts_total": sum(account_status.values()),
+        "webhook_attempts_last_7d": webhook_attempts_last_7d,
+        "webhook_attempts_prev_7d": webhook_attempts_prev_7d,
+        "webhook_success_last_7d": webhook_success_last_7d,
+        "webhook_failed_last_7d": webhook_failed_last_7d,
+        "webhook_success_rate": round(
+            (webhook_success_last_7d / webhook_attempts_last_7d) * 100, 1
+        )
+        if webhook_attempts_last_7d > 0
+        else 0.0,
+        "webhook_by_day": webhook_by_day,
+        "top_failing_mappings": top_failing_mappings,
+        "webhook_failure_reasons": webhook_failure_reasons,
     }

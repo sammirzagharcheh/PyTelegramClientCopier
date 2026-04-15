@@ -1,5 +1,6 @@
 import { Filter, Inbox, Webhook } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { PageHeader } from '../../components/PageHeader';
 import { Pagination } from '../../components/Pagination';
@@ -54,11 +55,28 @@ function SuccessBadge({ success }: { success: boolean }) {
 
 export function AdminWebhookLogs() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
-  const [userId, setUserId] = useState<number | null>(null);
-  const [mappingId, setMappingId] = useState<string>('');
-  const [successFilter, setSuccessFilter] = useState<string>('');
+  const [userId, setUserId] = useState<number | null>(() => {
+    const raw = searchParams.get('user_id');
+    if (!raw) return null;
+    const parsed = parseInt(raw, 10);
+    return Number.isNaN(parsed) ? null : parsed;
+  });
+  const [mappingId, setMappingId] = useState<string>(searchParams.get('mapping_id') ?? '');
+  const [successFilter, setSuccessFilter] = useState<string>(searchParams.get('success') ?? '');
+  const [failureReason, setFailureReason] = useState<string>(searchParams.get('failure_reason') ?? '');
+  const failureReasonLabels: Record<string, string> = {
+    http_401: 'HTTP 401',
+    http_403: 'HTTP 403',
+    http_404: 'HTTP 404',
+    http_429: 'HTTP 429',
+    http_5xx: 'HTTP 5xx',
+    timeout: 'Timeout',
+    network_connection: 'Network/Connection',
+    other: 'Other',
+  };
 
   const { data: usersData } = useQuery({
     queryKey: ['admin', 'users', 'list'],
@@ -68,15 +86,25 @@ export function AdminWebhookLogs() {
   const users = usersData?.items ?? [];
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['admin', 'webhook-logs', page, pageSize, userId, mappingId, successFilter],
+    queryKey: ['admin', 'webhook-logs', page, pageSize, userId, mappingId, successFilter, failureReason],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
       if (userId != null) params.set('user_id', String(userId));
       if (mappingId.trim()) params.set('mapping_id', mappingId.trim());
       if (successFilter) params.set('success', successFilter);
+      if (failureReason) params.set('failure_reason', failureReason);
       return (await api.get<PaginatedWebhookLogs>(`/webhook-logs?${params}`)).data;
     },
   });
+
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (userId != null) next.set('user_id', String(userId));
+    if (mappingId.trim()) next.set('mapping_id', mappingId.trim());
+    if (successFilter) next.set('success', successFilter);
+    if (failureReason) next.set('failure_reason', failureReason);
+    setSearchParams(next, { replace: true });
+  }, [userId, mappingId, successFilter, failureReason, setSearchParams]);
 
   if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
 
@@ -101,6 +129,8 @@ export function AdminWebhookLogs() {
   }
 
   const items = data?.items ?? [];
+  const selectedUser = userId != null ? users.find((u) => u.id === userId) : null;
+  const hasActiveFilters = userId != null || mappingId.trim() || successFilter || failureReason;
   return (
     <div>
       <PageHeader
@@ -150,7 +180,11 @@ export function AdminWebhookLogs() {
           id="admin-webhook-logs-result"
           value={successFilter}
           onChange={(e) => {
-            setSuccessFilter(e.target.value);
+            const next = e.target.value;
+            setSuccessFilter(next);
+            if (next !== 'false' && failureReason) {
+              setFailureReason('');
+            }
             setPage(1);
           }}
           className="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
@@ -159,7 +193,97 @@ export function AdminWebhookLogs() {
           <option value="true">Success</option>
           <option value="false">Failed</option>
         </select>
+        <label htmlFor="admin-webhook-logs-failure-reason" className="text-sm font-medium">
+          Failure reason
+        </label>
+        <select
+          id="admin-webhook-logs-failure-reason"
+          value={failureReason}
+          onChange={(e) => {
+            setFailureReason(e.target.value);
+            if (e.target.value && successFilter !== 'false') {
+              setSuccessFilter('false');
+            }
+            setPage(1);
+          }}
+          className="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+        >
+          <option value="">All failures</option>
+          <option value="http_401">HTTP 401</option>
+          <option value="http_403">HTTP 403</option>
+          <option value="http_404">HTTP 404</option>
+          <option value="http_429">HTTP 429</option>
+          <option value="http_5xx">HTTP 5xx</option>
+          <option value="timeout">Timeout</option>
+          <option value="network_connection">Network/Connection</option>
+          <option value="other">Other</option>
+        </select>
       </div>
+      {hasActiveFilters ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {userId != null ? (
+            <button
+              type="button"
+              onClick={() => {
+                setUserId(null);
+                setPage(1);
+              }}
+              className="inline-flex items-center rounded-full bg-violet-100 px-3 py-1 text-xs font-medium text-violet-800 dark:bg-violet-900/40 dark:text-violet-200"
+            >
+              User: {selectedUser ? `${selectedUser.id} (${selectedUser.email})` : userId} ×
+            </button>
+          ) : null}
+          {mappingId.trim() ? (
+            <button
+              type="button"
+              onClick={() => {
+                setMappingId('');
+                setPage(1);
+              }}
+              className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800 dark:bg-blue-900/40 dark:text-blue-200"
+            >
+              Mapping: {mappingId.trim()} ×
+            </button>
+          ) : null}
+          {successFilter ? (
+            <button
+              type="button"
+              onClick={() => {
+                setSuccessFilter('');
+                setPage(1);
+              }}
+              className="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+            >
+              Result: {successFilter === 'true' ? 'Success' : 'Failed'} ×
+            </button>
+          ) : null}
+          {failureReason ? (
+            <button
+              type="button"
+              onClick={() => {
+                setFailureReason('');
+                setPage(1);
+              }}
+              className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+            >
+              Reason: {failureReasonLabels[failureReason] ?? failureReason} ×
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              setUserId(null);
+              setMappingId('');
+              setSuccessFilter('');
+              setFailureReason('');
+              setPage(1);
+            }}
+            className="ml-1 text-xs font-medium text-gray-600 underline dark:text-gray-300"
+          >
+            Clear all
+          </button>
+        </div>
+      ) : null}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg">
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-700">
