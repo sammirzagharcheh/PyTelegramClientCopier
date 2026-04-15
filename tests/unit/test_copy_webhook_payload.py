@@ -142,3 +142,73 @@ async def test_fire_copy_webhook_payload_template_supports_guid_variable(monkeyp
         "id": "11111111-2222-3333-4444-555555555555",
         "event": "message_copied",
     }
+
+
+@pytest.mark.asyncio
+async def test_fire_copy_webhook_payload_template_escapes_text_for_json(monkeypatch):
+    mapping = ChannelMapping(
+        id=11,
+        user_id=1,
+        source_chat_id=10,
+        dest_chat_id=20,
+        enabled=True,
+        filters=[],
+        source_chat_title=None,
+        dest_chat_title=None,
+        copy_webhook_url="https://example.com/hook",
+        copy_webhook_payload_template=(
+            '{"source":"telegram","topic_key":"gold-scalp","external_id":"{{guid}}","message":"{{text}}","magic":150}'
+        ),
+    )
+    captured: dict = {}
+
+    async def _fake_post(url, secret, payload, **kwargs):
+        captured["payload"] = payload
+        return {
+            "success": True,
+            "status_code": 200,
+            "response_body": "ok",
+            "error": None,
+            "latency_ms": 12,
+            "payload_size_bytes": 88,
+            "request_body_preview": '{"source":"telegram"}',
+            "request_headers": {"Content-Type": "application/json"},
+        }
+
+    class _WebhookLogCollection:
+        async def insert_one(self, doc):
+            return None
+
+    class _MongoDb:
+        webhook_logs = _WebhookLogCollection()
+
+    import app.services.http_notify as hn
+    import app.telegram.handlers as handlers
+
+    monkeypatch.setattr(hn, "post_json_webhook", _fake_post)
+    monkeypatch.setattr(
+        handlers.uuid,
+        "uuid4",
+        lambda: UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+    )
+    await _fire_copy_webhook(
+        mapping,
+        {
+            "event": "message_copied",
+            "source_msg_id": 123,
+            "dest_msg_id": 456,
+            "source_chat_id": 10,
+            "dest_chat_id": 20,
+            "mapping_id": 11,
+            "user_id": 1,
+            "text": 'Signal "BUY" at 1920\nTP 1930',
+        },
+        _MongoDb(),
+    )
+    assert captured["payload"] == {
+        "source": "telegram",
+        "topic_key": "gold-scalp",
+        "external_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "message": 'Signal "BUY" at 1920\nTP 1930',
+        "magic": 150,
+    }

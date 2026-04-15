@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import json
 import logging
+import re
 import uuid
 from typing import Any
 from urllib.parse import urlsplit
@@ -26,6 +27,10 @@ from app.telegram.pipeline_preview import (
 )
 
 logger = logging.getLogger(__name__)
+_TEMPLATE_TOKEN_RE = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
+_QUOTED_TEMPLATE_TOKEN_RE = re.compile(
+    r'"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}"'
+)
 
 
 def _event_source_chat_id_for_sync(event: Any) -> int | None:
@@ -197,7 +202,26 @@ async def _fire_copy_webhook(
             template_context = dict(payload_context)
             template_context["guid"] = str(uuid.uuid4())
             rendered = render_template(template, template_context)
-            loaded = json.loads(rendered)
+            try:
+                loaded = json.loads(rendered)
+            except json.JSONDecodeError:
+                # Second pass for JSON payload templates: ensure token values are JSON-escaped.
+                # This handles messages containing quotes/newlines (common for {{text}}).
+                def _safe_quoted_sub(match: re.Match[str]) -> str:
+                    key = match.group(1)
+                    value = template_context.get(key, "")
+                    return json.dumps("" if value is None else str(value), ensure_ascii=False)
+
+                def _safe_raw_sub(match: re.Match[str]) -> str:
+                    key = match.group(1)
+                    value = template_context.get(key, "")
+                    if value is None:
+                        return "null"
+                    return json.dumps(value, ensure_ascii=False, default=str)
+
+                safe_rendered = _QUOTED_TEMPLATE_TOKEN_RE.sub(_safe_quoted_sub, template)
+                safe_rendered = _TEMPLATE_TOKEN_RE.sub(_safe_raw_sub, safe_rendered)
+                loaded = json.loads(safe_rendered)
             if isinstance(loaded, dict):
                 payload = loaded
             else:

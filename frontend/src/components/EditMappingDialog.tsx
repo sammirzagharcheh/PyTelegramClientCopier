@@ -406,6 +406,10 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 Available variables: {WEBHOOK_TEMPLATE_TOKENS.map((t) => t.value).join(', ')}
               </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Tip: use quoted placeholders for string values (for example, message uses the text token in quotes),
+                and unquoted placeholders for numbers/arrays (for example, ids token without quotes).
+              </p>
             </div>
             <div>
               <label htmlFor="edit-mapping-webhook-secret-mode" className="block text-sm font-medium mb-1">
