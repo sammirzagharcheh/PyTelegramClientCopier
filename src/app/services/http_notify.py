@@ -10,6 +10,7 @@ import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
+MAX_LOG_BODY_CHARS = 8000
 
 
 async def post_json_webhook(
@@ -42,7 +43,9 @@ async def post_json_webhook(
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.post(url, content=body, headers=headers)
         elapsed_ms = int((time.perf_counter() - started) * 1000)
-        response_body = (response.text or "")[:2000]
+        request_body_preview = body.decode("utf-8", errors="replace")[:MAX_LOG_BODY_CHARS]
+        response_text = response.text or ""
+        response_body = response_text[:MAX_LOG_BODY_CHARS]
         success = 200 <= int(response.status_code) < 300
         if not success:
             logger.warning(
@@ -54,19 +57,28 @@ async def post_json_webhook(
         return {
             "success": success,
             "status_code": int(response.status_code),
+            "status_text": getattr(response, "reason_phrase", None),
             "response_body": response_body,
+            "response_body_truncated": len(response_text) > MAX_LOG_BODY_CHARS,
+            "response_content_type": (response.headers.get("content-type") if getattr(response, "headers", None) else None),
             "error": None if success else f"HTTP {response.status_code}",
             "latency_ms": elapsed_ms,
             "payload_size_bytes": len(body),
+            "request_body_preview": request_body_preview,
         }
     except Exception as e:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         logger.warning("Webhook POST failed url=%s err=%s", url, e)
+        request_body_preview = body.decode("utf-8", errors="replace")[:MAX_LOG_BODY_CHARS]
         return {
             "success": False,
             "status_code": None,
+            "status_text": None,
             "response_body": None,
+            "response_body_truncated": False,
+            "response_content_type": None,
             "error": str(e),
             "latency_ms": elapsed_ms,
             "payload_size_bytes": len(body),
+            "request_body_preview": request_body_preview,
         }

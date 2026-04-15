@@ -19,11 +19,15 @@ type WebhookLog = {
   request_url: string | null;
   request_method: string;
   payload_size_bytes: number | null;
+  request_body_preview: string | null;
   success: boolean;
   status_code: number | null;
+  status_text: string | null;
   latency_ms: number | null;
+  response_content_type: string | null;
   error: string | null;
   response_body: string | null;
+  response_body_truncated: boolean;
 };
 
 type User = { id: number; email: string; name: string | null };
@@ -188,12 +192,31 @@ export function AdminWebhookLogs() {
                   <div className="text-xs text-gray-500 dark:text-gray-400">
                     {log.request_method} {log.payload_size_bytes != null ? `· ${log.payload_size_bytes} B` : ''}
                   </div>
+                  {log.request_body_preview ? (
+                    <details className="mt-1 text-xs">
+                      <summary className="cursor-pointer text-blue-600 dark:text-blue-300">Request body</summary>
+                      <pre className="mt-1 whitespace-pre-wrap break-all text-gray-600 dark:text-gray-300">{log.request_body_preview}</pre>
+                    </details>
+                  ) : null}
                 </td>
                 <td className="px-6 py-4 text-sm">
-                  <div>{log.status_code != null ? `HTTP ${log.status_code}` : 'No status'}</div>
+                  <div>
+                    {log.status_code != null
+                      ? `HTTP ${log.status_code}${log.status_text ? ` ${log.status_text}` : ''}`
+                      : 'No status'}
+                  </div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">
                     {log.latency_ms != null ? `${log.latency_ms} ms` : '—'}
+                    {log.response_content_type ? ` · ${log.response_content_type}` : ''}
                   </div>
+                  {log.response_body ? (
+                    <details className="mt-1 text-xs">
+                      <summary className="cursor-pointer text-blue-600 dark:text-blue-300">
+                        Response body{log.response_body_truncated ? ' (truncated)' : ''}
+                      </summary>
+                      <pre className="mt-1 whitespace-pre-wrap break-all text-gray-600 dark:text-gray-300">{log.response_body}</pre>
+                    </details>
+                  ) : null}
                 </td>
                 <td className="px-6 py-4 text-sm">
                   <SuccessBadge success={log.success} />

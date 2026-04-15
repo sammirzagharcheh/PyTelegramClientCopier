@@ -110,9 +110,13 @@ async def list_webhook_logs(
                 "request_url": req.get("url"),
                 "request_method": req.get("method") or "POST",
                 "payload_size_bytes": req.get("payload_size_bytes"),
+                "request_body_preview": req.get("body_preview"),
                 "status_code": res.get("status_code"),
+                "status_text": res.get("status_text"),
                 "latency_ms": res.get("latency_ms"),
+                "response_content_type": res.get("content_type"),
                 "response_body": res.get("body"),
+                "response_body_truncated": bool(res.get("body_truncated")),
                 **meta,
             })
 
