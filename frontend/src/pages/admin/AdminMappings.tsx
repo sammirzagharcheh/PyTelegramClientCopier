@@ -22,6 +22,11 @@ type Mapping = {
   dest_chat_title?: string | null;
   enabled: boolean;
   schedule_summary?: string;
+  copy_webhook_payload_template?: string | null;
+  copy_webhook_secret_header_name?: string | null;
+  copy_webhook_secret_mode?: string | null;
+  webhook_secret_configured?: boolean;
+  webhook_secret_header_configured?: boolean;
 };
 
 type User = { id: number; email: string; name: string | null };

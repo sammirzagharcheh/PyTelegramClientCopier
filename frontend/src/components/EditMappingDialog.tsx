@@ -1,5 +1,5 @@
 import { Pencil } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { ChannelMapping } from '../lib/api';
@@ -211,6 +211,25 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
     }
     mutation.mutate();
   };
+
+  useEffect(() => {
+    setName(mapping.name ?? '');
+    setSourceChatId(String(mapping.source_chat_id));
+    setDestChatId(String(mapping.dest_chat_id));
+    setSendDelayMs(String(mapping.send_delay_ms ?? 0));
+    setSyncEdits(Boolean(mapping.sync_edits));
+    setSyncDeletes(Boolean(mapping.sync_deletes));
+    setEditStrategy(mapping.edit_strategy === 'append_notice' ? 'append_notice' : 'replace_text');
+    setCopyWebhookUrl(mapping.copy_webhook_url ?? '');
+    setCopyWebhookSecret('');
+    setCopyWebhookPayloadTemplate(mapping.copy_webhook_payload_template ?? '');
+    setCopyWebhookSecretMode(mapping.copy_webhook_secret_mode ?? 'hmac_sha256');
+    setCopyWebhookSecretHeaderName(mapping.copy_webhook_secret_header_name ?? '');
+    setCopyWebhookSecretHeaderValue('');
+    setClearWebhookSecret(false);
+    setClearWebhookHeaderSecret(false);
+    setError('');
+  }, [mapping]);
 
   const insertWebhookToken = (token: string) => {
     const textarea = payloadTemplateRef.current;
