@@ -15,6 +15,7 @@ import {
   Settings,
   Smartphone,
   Users,
+  Webhook,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
@@ -23,36 +24,64 @@ import { TimezonePreferencesDialog } from '../components/TimezonePreferencesDial
 import { useAuth } from '../store/AuthContext';
 
 type NavItem = { to: string; label: string; icon: LucideIcon };
+type NavSection = { title: string; items: NavItem[] };
 
-const navItems: NavItem[] = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/accounts', label: 'Accounts', icon: Smartphone },
-  { to: '/mappings', label: 'Mappings', icon: GitBranch },
-  { to: '/workers', label: 'Workers', icon: Activity },
-  { to: '/worker-logs', label: 'Worker Logs', icon: ScrollText },
-  { to: '/logs', label: 'Message Logs', icon: MessageSquare },
-  { to: '/message-index', label: 'Message Index', icon: Database },
-  { to: '/schedule', label: 'Schedule', icon: Clock },
-  { to: '/media-assets', label: 'Media Assets', icon: Image },
+const navSections: NavSection[] = [
+  {
+    title: 'Overview',
+    items: [{ to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }],
+  },
+  {
+    title: 'Operations',
+    items: [
+      { to: '/accounts', label: 'Accounts', icon: Smartphone },
+      { to: '/mappings', label: 'Mappings', icon: GitBranch },
+      { to: '/workers', label: 'Workers', icon: Activity },
+      { to: '/schedule', label: 'Schedule', icon: Clock },
+      { to: '/media-assets', label: 'Media Assets', icon: Image },
+    ],
+  },
+  {
+    title: 'Logs & Monitoring',
+    items: [
+      { to: '/worker-logs', label: 'Worker Logs', icon: ScrollText },
+      { to: '/logs', label: 'Message Logs', icon: MessageSquare },
+      { to: '/message-index', label: 'Message Index', icon: Database },
+    ],
+  },
 ];
 
-const adminNavItems: NavItem[] = [
-  { to: '/admin', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/admin/users', label: 'Users', icon: Users },
-  { to: '/admin/settings', label: 'Settings', icon: Settings },
-  { to: '/admin/mappings', label: 'Mappings', icon: GitBranch },
-  { to: '/admin/logs', label: 'Logs', icon: MessageSquare },
-  { to: '/admin/message-index', label: 'Message Index', icon: Database },
-  { to: '/admin/workers', label: 'Workers', icon: Activity },
-  { to: '/admin/worker-logs', label: 'Worker Logs', icon: ScrollText },
-  { to: '/admin/media-assets', label: 'Media Assets', icon: Image },
+const adminNavSections: NavSection[] = [
+  {
+    title: 'Overview',
+    items: [{ to: '/admin', label: 'Dashboard', icon: LayoutDashboard }],
+  },
+  {
+    title: 'Administration',
+    items: [
+      { to: '/admin/users', label: 'Users', icon: Users },
+      { to: '/admin/settings', label: 'Settings', icon: Settings },
+      { to: '/admin/mappings', label: 'Mappings', icon: GitBranch },
+      { to: '/admin/workers', label: 'Workers', icon: Activity },
+      { to: '/admin/media-assets', label: 'Media Assets', icon: Image },
+    ],
+  },
+  {
+    title: 'Logs & Monitoring',
+    items: [
+      { to: '/admin/logs', label: 'Logs', icon: MessageSquare },
+      { to: '/admin/worker-logs', label: 'Worker Logs', icon: ScrollText },
+      { to: '/admin/webhook-logs', label: 'Webhook Logs', icon: Webhook },
+      { to: '/admin/message-index', label: 'Message Index', icon: Database },
+    ],
+  },
 ];
 
 export function MainLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const isAdmin = user?.role === 'admin';
-  const items = isAdmin ? adminNavItems : navItems;
+  const sections = isAdmin ? adminNavSections : navSections;
   const [menuOpen, setMenuOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [timezoneOpen, setTimezoneOpen] = useState(false);
@@ -95,26 +124,35 @@ export function MainLayout() {
             Telegram Copier
           </Link>
         </div>
-        <nav className="p-2">
-          {items.map((item) => {
-            const Icon = item.icon;
-            return (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-4 py-2 rounded-md mb-1 ${
-                    isActive
-                      ? 'bg-gray-100 dark:bg-gray-700 text-blue-600 dark:text-blue-400'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-                  }`
-                }
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                {item.label}
-              </NavLink>
-            );
-          })}
+        <nav className="p-2 space-y-4">
+          {sections.map((section) => (
+            <div key={section.title}>
+              <div className="px-4 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                {section.title}
+              </div>
+              <div>
+                {section.items.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 px-4 py-2 rounded-md mb-1 ${
+                          isActive
+                            ? 'bg-gray-100 dark:bg-gray-700 text-blue-600 dark:text-blue-400'
+                            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                        }`
+                      }
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      {item.label}
+                    </NavLink>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
       </aside>
       <div className="flex-1 flex flex-col">

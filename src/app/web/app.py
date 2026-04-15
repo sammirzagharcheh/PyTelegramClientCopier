@@ -30,6 +30,7 @@ from app.web.routers import (
     stats,
     transforms,
     user_feature_flags,
+    webhook_logs,
     worker_logs,
     workers,
 )
@@ -119,6 +120,7 @@ def create_app() -> FastAPI:
     app.include_router(message_index.router, prefix="/api")
     app.include_router(message_logs.router, prefix="/api")
     app.include_router(worker_logs.router, prefix="/api")
+    app.include_router(webhook_logs.router, prefix="/api")
     app.include_router(workers.router, prefix="/api")
     app.include_router(stats.router, prefix="/api")
     app.include_router(admin_stats.router, prefix="/api")
