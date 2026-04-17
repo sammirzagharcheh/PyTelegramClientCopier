@@ -7,6 +7,30 @@ from app.services.mapping_service import ChannelMapping
 from app.telegram.handlers import _fire_copy_webhook
 
 
+def _mongo_db_noop_logs():
+    class _WebhookLogCollection:
+        async def insert_one(self, doc):
+            return None
+
+    class _MongoDb:
+        webhook_logs = _WebhookLogCollection()
+
+    return _MongoDb()
+
+
+def _webhook_post_ok_minimal():
+    return {
+        "success": True,
+        "status_code": 200,
+        "response_body": "ok",
+        "error": None,
+        "latency_ms": 1,
+        "payload_size_bytes": 1,
+        "request_body_preview": "{}",
+        "request_headers": {"Content-Type": "application/json"},
+    }
+
+
 @pytest.mark.asyncio
 async def test_fire_copy_webhook_renders_dynamic_payload_and_custom_secret_header(monkeypatch):
     mapping = ChannelMapping(
@@ -53,9 +77,7 @@ async def test_fire_copy_webhook_renders_dynamic_payload_and_custom_secret_heade
     class _MongoDb:
         webhook_logs = _WebhookLogCollection()
 
-    import app.services.http_notify as hn
-
-    monkeypatch.setattr(hn, "post_json_webhook", _fake_post)
+    monkeypatch.setattr("app.services.http_notify.post_json_webhook", _fake_post)
     await _fire_copy_webhook(
         mapping,
         {
@@ -109,17 +131,9 @@ async def test_fire_copy_webhook_payload_template_supports_guid_variable(monkeyp
             "request_headers": {"Content-Type": "application/json"},
         }
 
-    class _WebhookLogCollection:
-        async def insert_one(self, doc):
-            return None
-
-    class _MongoDb:
-        webhook_logs = _WebhookLogCollection()
-
-    import app.services.http_notify as hn
     import app.telegram.handlers as handlers
 
-    monkeypatch.setattr(hn, "post_json_webhook", _fake_post)
+    monkeypatch.setattr("app.services.http_notify.post_json_webhook", _fake_post)
     monkeypatch.setattr(
         handlers.uuid,
         "uuid4",
@@ -136,7 +150,7 @@ async def test_fire_copy_webhook_payload_template_supports_guid_variable(monkeyp
             "mapping_id": 9,
             "user_id": 1,
         },
-        _MongoDb(),
+        _mongo_db_noop_logs(),
     )
     assert captured["payload"] == {
         "id": "11111111-2222-3333-4444-555555555555",
@@ -175,17 +189,9 @@ async def test_fire_copy_webhook_payload_template_escapes_text_for_json(monkeypa
             "request_headers": {"Content-Type": "application/json"},
         }
 
-    class _WebhookLogCollection:
-        async def insert_one(self, doc):
-            return None
-
-    class _MongoDb:
-        webhook_logs = _WebhookLogCollection()
-
-    import app.services.http_notify as hn
     import app.telegram.handlers as handlers
 
-    monkeypatch.setattr(hn, "post_json_webhook", _fake_post)
+    monkeypatch.setattr("app.services.http_notify.post_json_webhook", _fake_post)
     monkeypatch.setattr(
         handlers.uuid,
         "uuid4",
@@ -203,7 +209,7 @@ async def test_fire_copy_webhook_payload_template_escapes_text_for_json(monkeypa
             "user_id": 1,
             "text": 'Signal "BUY" at 1920\nTP 1930',
         },
-        _MongoDb(),
+        _mongo_db_noop_logs(),
     )
     assert captured["payload"] == {
         "source": "telegram",
@@ -212,3 +218,130 @@ async def test_fire_copy_webhook_payload_template_escapes_text_for_json(monkeypa
         "message": 'Signal "BUY" at 1920\nTP 1930',
         "magic": 150,
     }
+
+
+@pytest.mark.asyncio
+async def test_fire_copy_webhook_includes_reply_ids_in_default_payload(monkeypatch):
+    mapping = ChannelMapping(
+        id=12,
+        user_id=1,
+        source_chat_id=10,
+        dest_chat_id=20,
+        enabled=True,
+        filters=[],
+        source_chat_title=None,
+        dest_chat_title=None,
+        copy_webhook_url="https://example.com/hook",
+        copy_webhook_payload_template=None,
+    )
+    captured: dict = {}
+
+    async def _fake_post(url, secret, payload, **kwargs):
+        captured["payload"] = payload
+        return _webhook_post_ok_minimal()
+
+    monkeypatch.setattr("app.services.http_notify.post_json_webhook", _fake_post)
+    await _fire_copy_webhook(
+        mapping,
+        {
+            "event": "message_copied",
+            "user_id": 1,
+            "mapping_id": 12,
+            "source_chat_id": 10,
+            "dest_chat_id": 20,
+            "source_msg_id": 100,
+            "dest_msg_id": 200,
+            "source_reply_msg_id": 99,
+            "dest_reply_msg_id": 888,
+        },
+        _mongo_db_noop_logs(),
+    )
+    assert captured["payload"] == {
+        "event": "message_copied",
+        "user_id": 1,
+        "mapping_id": 12,
+        "source_chat_id": 10,
+        "dest_chat_id": 20,
+        "source_msg_id": 100,
+        "dest_msg_id": 200,
+        "source_reply_msg_id": 99,
+        "dest_reply_msg_id": 888,
+    }
+
+
+@pytest.mark.asyncio
+async def test_fire_copy_webhook_template_renders_reply_ids_raw_json(monkeypatch):
+    mapping = ChannelMapping(
+        id=13,
+        user_id=1,
+        source_chat_id=10,
+        dest_chat_id=20,
+        enabled=True,
+        filters=[],
+        source_chat_title=None,
+        dest_chat_title=None,
+        copy_webhook_url="https://example.com/hook",
+        copy_webhook_payload_template='{"src_parent":{{source_reply_msg_id}},"dst_parent":{{dest_reply_msg_id}}}',
+    )
+    captured: dict = {}
+
+    async def _fake_post(url, secret, payload, **kwargs):
+        captured["payload"] = payload
+        return _webhook_post_ok_minimal()
+
+    monkeypatch.setattr("app.services.http_notify.post_json_webhook", _fake_post)
+    await _fire_copy_webhook(
+        mapping,
+        {
+            "event": "message_copied",
+            "user_id": 1,
+            "mapping_id": 13,
+            "source_chat_id": 10,
+            "dest_chat_id": 20,
+            "source_msg_id": 100,
+            "dest_msg_id": 200,
+            "source_reply_msg_id": 99,
+            "dest_reply_msg_id": None,
+        },
+        _mongo_db_noop_logs(),
+    )
+    assert captured["payload"] == {"src_parent": 99, "dst_parent": None}
+
+
+@pytest.mark.asyncio
+async def test_fire_copy_webhook_template_reply_ids_both_null(monkeypatch):
+    mapping = ChannelMapping(
+        id=14,
+        user_id=1,
+        source_chat_id=10,
+        dest_chat_id=20,
+        enabled=True,
+        filters=[],
+        source_chat_title=None,
+        dest_chat_title=None,
+        copy_webhook_url="https://example.com/hook",
+        copy_webhook_payload_template='{"src_parent":{{source_reply_msg_id}},"dst_parent":{{dest_reply_msg_id}}}',
+    )
+    captured: dict = {}
+
+    async def _fake_post(url, secret, payload, **kwargs):
+        captured["payload"] = payload
+        return _webhook_post_ok_minimal()
+
+    monkeypatch.setattr("app.services.http_notify.post_json_webhook", _fake_post)
+    await _fire_copy_webhook(
+        mapping,
+        {
+            "event": "message_copied",
+            "user_id": 1,
+            "mapping_id": 14,
+            "source_chat_id": 10,
+            "dest_chat_id": 20,
+            "source_msg_id": 100,
+            "dest_msg_id": 200,
+            "source_reply_msg_id": None,
+            "dest_reply_msg_id": None,
+        },
+        _mongo_db_noop_logs(),
+    )
+    assert captured["payload"] == {"src_parent": None, "dst_parent": None}

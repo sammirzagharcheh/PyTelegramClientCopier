@@ -24,6 +24,14 @@ const WEBHOOK_TEMPLATE_TOKENS = [
   { label: 'source_chat_title', value: '{{source_chat_title}}' },
   { label: 'dest_chat_id', value: '{{dest_chat_id}}' },
   { label: 'dest_msg_id', value: '{{dest_msg_id}}' },
+  {
+    label: 'source_reply_msg_id (parent in source, if reply)',
+    value: '{{source_reply_msg_id}}',
+  },
+  {
+    label: 'dest_reply_msg_id (mapped parent in dest, if known)',
+    value: '{{dest_reply_msg_id}}',
+  },
   { label: 'dest_chat_title', value: '{{dest_chat_title}}' },
   { label: 'media_type', value: '{{media_type}}' },
   { label: 'date_utc', value: '{{date_utc}}' },

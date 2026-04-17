@@ -195,6 +195,10 @@ async def _fire_copy_webhook(
         default_payload["source_msg_ids"] = payload_context.get("source_msg_ids")
     if "dest_msg_id" in payload_context:
         default_payload["dest_msg_id"] = payload_context.get("dest_msg_id")
+    if "source_reply_msg_id" in payload_context:
+        default_payload["source_reply_msg_id"] = payload_context.get("source_reply_msg_id")
+    if "dest_reply_msg_id" in payload_context:
+        default_payload["dest_reply_msg_id"] = payload_context.get("dest_reply_msg_id")
     payload = default_payload
     template = (mapping.copy_webhook_payload_template or "").strip()
     if template:
@@ -374,6 +378,12 @@ def build_message_handlers(
                     source_reply_msg_id=message.reply_to.reply_to_msg_id,
                     dest_chat_id=mapping.dest_chat_id,
                 )
+            source_reply_msg_id = (
+                int(message.reply_to.reply_to_msg_id)
+                if message.reply_to and message.reply_to.reply_to_msg_id
+                else None
+            )
+            dest_reply_msg_id = reply_to_msg_id
 
             if mapping.send_delay_ms and mapping.send_delay_ms > 0:
                 await asyncio.sleep(mapping.send_delay_ms / 1000.0)
@@ -509,6 +519,8 @@ def build_message_handlers(
                             "source_msg_id": message.id,
                             "dest_chat_id": mapping.dest_chat_id,
                             "dest_msg_id": sent.id,
+                            "source_reply_msg_id": source_reply_msg_id,
+                            "dest_reply_msg_id": dest_reply_msg_id,
                             "source_chat_title": source_title,
                             "dest_chat_title": dest_title,
                             "media_type": media_type,
@@ -583,6 +595,12 @@ def build_message_handlers(
                     source_reply_msg_id=messages[0].reply_to.reply_to_msg_id,
                     dest_chat_id=mapping.dest_chat_id,
                 )
+            source_reply_msg_id = (
+                int(messages[0].reply_to.reply_to_msg_id)
+                if messages[0].reply_to and messages[0].reply_to.reply_to_msg_id
+                else None
+            )
+            dest_reply_msg_id = reply_to_msg_id
             if mapping.send_delay_ms and mapping.send_delay_ms > 0:
                 await asyncio.sleep(mapping.send_delay_ms / 1000.0)
             if not medias:
@@ -649,6 +667,8 @@ def build_message_handlers(
                         "source_msg_ids": [m.id for m in messages],
                         "dest_chat_id": mapping.dest_chat_id,
                         "dest_msg_id": sent.id,
+                        "source_reply_msg_id": source_reply_msg_id,
+                        "dest_reply_msg_id": dest_reply_msg_id,
                         "source_chat_title": str(source_chat_title or ""),
                         "dest_chat_title": str(mapping.dest_chat_title or ""),
                         "media_type": media_type,
