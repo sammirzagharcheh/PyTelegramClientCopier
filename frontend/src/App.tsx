@@ -26,6 +26,7 @@ import { AdminWorkerLogs } from './pages/admin/AdminWorkerLogs';
 import { AdminWebhookLogs } from './pages/admin/AdminWebhookLogs';
 import { ToastProvider } from './components/Toast';
 import { createQueryClient } from './lib/queryClient';
+import { ThemeProvider } from './theme/ThemeProvider';
 
 const queryClient = createQueryClient();
 
@@ -84,14 +85,16 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <ToastProvider>
-            <AppRoutes />
-          </ToastProvider>
-        </AuthProvider>
-      </QueryClientProvider>
-    </BrowserRouter>
+    <ThemeProvider>
+      <BrowserRouter>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <ToastProvider>
+              <AppRoutes />
+            </ToastProvider>
+          </AuthProvider>
+        </QueryClientProvider>
+      </BrowserRouter>
+    </ThemeProvider>
   );
 }

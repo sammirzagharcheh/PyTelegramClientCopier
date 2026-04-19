@@ -1,5 +1,22 @@
 @import "tailwindcss";
 
+/* Class-driven dark mode so users can override OS (light / dark / system via JS on <html>). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 body {
   @apply bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 antialiased;
+}
+
+/*
+ * Recharts DefaultTooltipContent sets inline itemStyle color to #000. With a dark
+ * tooltip background, text must be light. ThemeProvider keeps `dark` on <html> in sync
+ * with the user's light / dark / system choice.
+ */
+html.dark .recharts-default-tooltip,
+html.dark .recharts-tooltip-label {
+  color: rgb(229, 231, 235);
+}
+
+html.dark .recharts-tooltip-item {
+  color: rgb(229, 231, 235) !important;
 }

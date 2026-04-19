@@ -19,9 +19,11 @@ import {
   Webhook,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { ChangePasswordDialog } from '../components/ChangePasswordDialog';
+import { ThemeSwitcher } from '../components/ThemeSwitcher';
 import { TimezonePreferencesDialog } from '../components/TimezonePreferencesDialog';
+import { getBreadcrumbs } from '../lib/breadcrumbs';
 import { useAuth } from '../store/AuthContext';
 
 type NavItem = { to: string; label: string; icon: LucideIcon };
@@ -82,6 +84,8 @@ const adminNavSections: NavSection[] = [
 export function MainLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const breadcrumbs = getBreadcrumbs(location.pathname);
   const isAdmin = user?.role === 'admin';
   const sections = isAdmin ? adminNavSections : navSections;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -172,45 +176,84 @@ export function MainLayout() {
         </nav>
       </aside>
       <div className="flex-1 flex flex-col">
-        <header className="h-14 border-b border-gray-200 dark:border-gray-700 flex items-center justify-end px-6 bg-white dark:bg-gray-800">
-          <div className="relative" ref={menuRef}>
-            <button
-              type="button"
-              onClick={() => setMenuOpen(!menuOpen)}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors"
-            >
-              <span>{user?.email}</span>
-              <span className="text-gray-400 dark:text-gray-500">({user?.role})</span>
-              <ChevronDown className="h-4 w-4" />
-            </button>
-            {menuOpen && (
-              <div className="absolute right-0 mt-1 w-48 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-600 z-50">
-                <button
-                  type="button"
-                  onClick={handleTimezoneClick}
-                  className="flex items-center gap-2 w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                >
-                  <Globe className="h-4 w-4" />
-                  Timezone
-                </button>
-                <button
-                  type="button"
-                  onClick={handleChangePasswordClick}
-                  className="flex items-center gap-2 w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                >
-                  <KeyRound className="h-4 w-4" />
-                  Change password
-                </button>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="flex items-center gap-2 w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                >
-                  <LogOut className="h-4 w-4" />
-                  Logout
-                </button>
-              </div>
+        <header className="h-14 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-4 px-6 bg-white dark:bg-gray-800">
+          <div className="min-w-0 flex-1">
+            {breadcrumbs.length > 0 && (
+              <nav aria-label="Breadcrumb" className="min-w-0">
+                <ol className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-sm">
+                  {breadcrumbs.map((crumb, index) => {
+                    const isLast = index === breadcrumbs.length - 1;
+                    return (
+                      <li key={`${crumb.to}-${index}`} className="flex items-center gap-1 min-w-0">
+                        {index > 0 && (
+                          <ChevronRight
+                            className="h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500"
+                            aria-hidden
+                          />
+                        )}
+                        {isLast ? (
+                          <span
+                            className="font-medium text-gray-900 dark:text-gray-100 truncate"
+                            aria-current="page"
+                          >
+                            {crumb.label}
+                          </span>
+                        ) : (
+                          <Link
+                            to={crumb.to}
+                            className="truncate text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
+                          >
+                            {crumb.label}
+                          </Link>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ol>
+              </nav>
             )}
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <ThemeSwitcher />
+            <div className="relative" ref={menuRef}>
+              <button
+                type="button"
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors"
+              >
+                <span>{user?.email}</span>
+                <span className="text-gray-400 dark:text-gray-500">({user?.role})</span>
+                <ChevronDown className="h-4 w-4" />
+              </button>
+              {menuOpen && (
+                <div className="absolute right-0 mt-1 w-48 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-600 z-50">
+                  <button
+                    type="button"
+                    onClick={handleTimezoneClick}
+                    className="flex items-center gap-2 w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    <Globe className="h-4 w-4" />
+                    Timezone
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleChangePasswordClick}
+                    className="flex items-center gap-2 w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    <KeyRound className="h-4 w-4" />
+                    Change password
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="flex items-center gap-2 w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Logout
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
         {changePasswordOpen && (
