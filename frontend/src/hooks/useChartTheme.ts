@@ -1,27 +1,17 @@
 import { useMemo, useEffect, useState } from 'react';
 
-/** Detects if dark mode is active (class on html or system preference). */
+/** Reflects resolved theme: ThemeProvider syncs `dark` on <html> for light / dark / system. */
 function useIsDark(): boolean {
-  const [isDark, setIsDark] = useState(() => {
-    if (typeof document === 'undefined') return false;
-    const el = document.documentElement;
-    if (el.classList.contains('dark')) return true;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
+  const [isDark, setIsDark] = useState(() =>
+    typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : false
+  );
 
   useEffect(() => {
     const el = document.documentElement;
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const check = () => {
-      setIsDark(el.classList.contains('dark') || media.matches);
-    };
+    const check = () => setIsDark(el.classList.contains('dark'));
     const mo = new MutationObserver(check);
     mo.observe(el, { attributes: true, attributeFilter: ['class'] });
-    media.addEventListener('change', check);
-    return () => {
-      mo.disconnect();
-      media.removeEventListener('change', check);
-    };
+    return () => mo.disconnect();
   }, []);
 
   return isDark;
