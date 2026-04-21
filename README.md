@@ -22,7 +22,65 @@ Multi-tenant Telegram copier with admin controls, filtering, and media forwardin
    - `tg-copier api`
 6. Run the web panel:
    - `cd frontend && npm install && npm run dev`
-7. Open http://localhost:5173 and log in.
+7. Open <http://localhost:5173> and log in.
+
+## Docker (Local, production-like)
+
+Run frontend + backend + MongoDB in containers for local development using the latest code in this repo.
+
+1. Create Docker env file:
+   - Linux/macOS: `cp docker.env.example docker.env`
+   - PowerShell: `Copy-Item docker.env.example docker.env`
+   - Fill `API_ID`, `API_HASH`, and set a strong `JWT_SECRET`
+2. Build and start:
+   - `docker compose up --build -d`
+   - Podman: `podman compose up --build -d`
+3. Open:
+   - Frontend: <http://localhost>
+   - API docs: <http://localhost/api/docs>
+   - Health: <http://localhost/health>
+4. Create first admin (inside backend container):
+   - `docker compose exec backend tg-copier db create-admin your@email.com yourpassword`
+
+### Docker update to latest local main
+
+After pulling latest changes:
+
+1. Rebuild and restart:
+   - `docker compose down`
+   - `docker compose up --build -d`
+2. Check logs:
+   - `docker compose logs -f backend`
+   - `docker compose logs -f frontend-proxy`
+   - Podman: `podman compose logs -f backend`
+
+### Docker hot-reload mode (optional)
+
+Use this mode for active coding with backend and frontend live reload in containers.
+
+1. Start dev stack:
+   - `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build`
+   - Podman: `podman compose -f docker-compose.yml -f docker-compose.dev.yml up --build`
+2. Open:
+   - Frontend (Vite): <http://localhost:5173>
+   - API docs: <http://localhost:8000/api/docs>
+3. Stop:
+   - `docker compose -f docker-compose.yml -f docker-compose.dev.yml down`
+   - Podman: `podman compose -f docker-compose.yml -f docker-compose.dev.yml down`
+
+Notes:
+
+- `frontend-proxy` is disabled in this mode.
+- Source changes in `src/` and `frontend/` are reflected automatically.
+- If frontend dependencies changed, recreate the dev stack so `npm ci` re-runs.
+
+### Docker troubleshooting
+
+- Port in use: stop local services using ports `80`, `8000`, or `27017`.
+- Mongo not ready yet: wait a few seconds and recheck `docker compose logs -f backend`.
+- Reset all local container state (destructive):
+  - `docker compose down -v`
+- CORS/browser errors: open app via `http://localhost` (not a different host).
 
 ## Web Panel
 
