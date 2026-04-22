@@ -96,3 +96,26 @@ def test_patch_user_404(api_client, admin_token):
         json={"name": "X"},
     )
     assert r.status_code == 404
+
+
+def test_list_users_search_by_email_or_name(api_client, admin_token):
+    """Admin can search users by email or name."""
+    r = api_client.get(
+        "/api/admin/users?search=other",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] >= 1
+    assert any(item["email"] == "other@test.com" for item in data["items"])
+
+
+def test_patch_user_400_invalid_status(api_client, admin_token):
+    """Reject unknown status values on update."""
+    r = api_client.patch(
+        "/api/admin/users/1",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"status": "paused"},
+    )
+    assert r.status_code == 400
+    assert "status must be one of" in r.json()["detail"]

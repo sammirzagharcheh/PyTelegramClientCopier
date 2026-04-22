@@ -22,6 +22,7 @@ async def list_users(
     page_size: int = 20,
     role: str | None = None,
     status_filter: str | None = None,
+    search: str | None = None,
     sort_by: str = "id",
     sort_order: str = "asc",
 ) -> dict:
@@ -40,6 +41,11 @@ async def list_users(
     if status_filter:
         base += " AND status = ?"
         params.append(status_filter)
+    if search:
+        like = f"%{search.strip()}%"
+        if like != "%%":
+            base += " AND (LOWER(email) LIKE LOWER(?) OR LOWER(COALESCE(name, '')) LIKE LOWER(?))"
+            params.extend([like, like])
 
     async with db.execute(f"SELECT COUNT(*) {base}", params) as cur:
         total = (await cur.fetchone())[0]
@@ -141,6 +147,11 @@ async def update_user(
         updates.append("role = ?")
         params.append(data.role)
     if data.status is not None:
+        if data.status not in ("active", "inactive"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="status must be one of: active, inactive",
+            )
         updates.append("status = ?")
         params.append(data.status)
     if data.password is not None:

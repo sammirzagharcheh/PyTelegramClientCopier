@@ -95,6 +95,7 @@ export function EditUserDialog({ user, onClose }: Props) {
               className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
             >
               <option value="user">User</option>
+              <option value="viewer">Viewer</option>
               <option value="admin">Admin</option>
             </select>
           </div>
