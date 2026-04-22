@@ -1,9 +1,11 @@
-import { Filter, Pencil, Plus, Search, Users, X } from 'lucide-react';
+import { Filter, Lock, Pencil, Plus, Search, Trash2, Users, X } from 'lucide-react';
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { CreateUserDialog } from '../../components/CreateUserDialog';
 import { EditUserDialog } from '../../components/EditUserDialog';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { useAuth } from '../../store/AuthContext';
 import { PageHeader } from '../../components/PageHeader';
 import { SortableTh } from '../../components/SortableTh';
 import { StatusBadge } from '../../components/StatusBadge';
@@ -21,8 +23,11 @@ type User = {
 type PaginatedUsers = { items: User[]; total: number; page: number; page_size: number; total_pages: number };
 
 export function AdminUsers() {
+  const { user: currentUser } = useAuth();
   const [showCreate, setShowCreate] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [deletingUser, setDeletingUser] = useState<User | null>(null);
+  const [actionError, setActionError] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [roleFilter, setRoleFilter] = useState<string>('');
@@ -30,6 +35,34 @@ export function AdminUsers() {
   const [search, setSearch] = useState<string>('');
   const [sortBy, setSortBy] = useState<string>('id');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const queryClient = useQueryClient();
+
+  const deleteMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      await api.delete(`/admin/users/${userId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      setDeletingUser(null);
+      setActionError('');
+    },
+    onError: (err: unknown) => {
+      setActionError(
+        err &&
+          typeof err === 'object' &&
+          'response' in err &&
+          err.response &&
+          typeof err.response === 'object' &&
+          'data' in err.response &&
+          err.response.data &&
+          typeof err.response.data === 'object' &&
+          'detail' in err.response.data
+          ? String((err.response.data as { detail: unknown }).detail)
+          : 'Failed to delete user'
+      );
+    },
+  });
+
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'users', page, pageSize, roleFilter, statusFilter, search, sortBy, sortOrder],
     queryFn: async () => {
@@ -107,6 +140,20 @@ export function AdminUsers() {
       </div>
       {showCreate && <CreateUserDialog onClose={() => setShowCreate(false)} />}
       {editingUser && <EditUserDialog user={editingUser} onClose={() => setEditingUser(null)} />}
+      {deletingUser && (
+        <ConfirmDialog
+          title="Delete User"
+          message={`Are you sure you want to delete ${deletingUser.email}? This action permanently removes this user and related data.`}
+          confirmLabel="Delete"
+          variant="danger"
+          isPending={deleteMutation.isPending}
+          onCancel={() => setDeletingUser(null)}
+          onConfirm={() => deleteMutation.mutate(deletingUser.id)}
+        />
+      )}
+      {actionError && (
+        <div className="mb-4 p-3 rounded bg-red-50 dark:bg-red-900/20 text-red-600 text-sm">{actionError}</div>
+      )}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg">
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-700">
@@ -123,7 +170,20 @@ export function AdminUsers() {
             {users.map((u) => (
               <tr key={u.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                 <td className="px-6 py-4 text-sm">{u.id}</td>
-                <td className="px-6 py-4 text-sm">{u.email}</td>
+                <td className="px-6 py-4 text-sm">
+                  <span className="inline-flex items-center gap-2">
+                    {u.email}
+                    {u.id === currentUser?.id && (
+                      <span
+                        title="Current account"
+                        className="inline-flex items-center gap-1 rounded-full border border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300"
+                      >
+                        <Lock className="h-3 w-3" />
+                        You
+                      </span>
+                    )}
+                  </span>
+                </td>
                 <td className="px-6 py-4 text-sm">{u.name || '—'}</td>
                 <td className="px-6 py-4 text-sm">
                   <StatusBadge status={u.role} variant="role" />
@@ -132,13 +192,25 @@ export function AdminUsers() {
                   <StatusBadge status={u.status} variant="status" />
                 </td>
                 <td className="px-6 py-4 text-sm">
-                  <button
-                    onClick={() => setEditingUser(u)}
-                    className="flex items-center gap-1 px-3 py-1 rounded bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-sm"
-                  >
-                    <Pencil className="h-3 w-3" />
-                    Edit
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setEditingUser(u)}
+                      className="flex items-center gap-1 px-3 py-1 rounded bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-sm"
+                    >
+                      <Pencil className="h-3 w-3" />
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      disabled={u.id === currentUser?.id}
+                      onClick={() => { setActionError(''); setDeletingUser(u); }}
+                      title={u.id === currentUser?.id ? 'You cannot delete your own account' : 'Delete user'}
+                      className="flex items-center gap-1 px-3 py-1 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50 text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-100 dark:disabled:hover:bg-red-900/30"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      Delete
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

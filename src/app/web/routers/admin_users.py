@@ -179,3 +179,49 @@ async def update_user(
         "status": row[4],
         "created_at": row[5],
     }
+
+
+@router.delete("/{user_id}")
+async def delete_user(user_id: int, db: Db, admin: AdminUser) -> dict:
+    """Delete user and related data."""
+    if user_id == admin["id"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot delete your own account",
+        )
+
+    async with db.execute(
+        "SELECT id, email, role, status FROM users WHERE id = ?",
+        (user_id,),
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Clean up mapping-dependent rows first, then user-owned rows, then the user row.
+    await db.execute(
+        "DELETE FROM mapping_filters WHERE mapping_id IN (SELECT id FROM channel_mappings WHERE user_id = ?)",
+        (user_id,),
+    )
+    await db.execute(
+        "DELETE FROM mapping_schedules WHERE mapping_id IN (SELECT id FROM channel_mappings WHERE user_id = ?)",
+        (user_id,),
+    )
+    await db.execute(
+        "DELETE FROM mapping_transform_rules WHERE mapping_id IN (SELECT id FROM channel_mappings WHERE user_id = ?)",
+        (user_id,),
+    )
+    await db.execute("DELETE FROM channel_mappings WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM telegram_accounts WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM refresh_tokens WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM login_sessions WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM worker_registry WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM user_schedules WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM media_assets WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM user_alert_webhooks WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM user_api_keys WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM dest_message_index WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM admin_invites WHERE created_by = ?", (user_id,))
+    await db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    await db.commit()
+    return {"status": "ok"}
