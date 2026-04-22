@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11.12-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -13,9 +13,30 @@ COPY pyproject.toml ./
 COPY src ./src
 
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -e .
+    pip wheel --no-cache-dir --wheel-dir /tmp/wheels .
+
+FROM python:3.11.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd --create-home --uid 10001 --shell /bin/bash appuser
+
+COPY --from=builder /tmp/wheels /tmp/wheels
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir /tmp/wheels/*.whl && \
+    rm -rf /tmp/wheels
 
 RUN mkdir -p /app/data
+RUN chown -R appuser:appuser /app
+
+USER appuser
 
 EXPOSE 8000
 
