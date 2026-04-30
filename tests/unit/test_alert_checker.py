@@ -1,6 +1,5 @@
 """Unit tests for stale worker alert checker."""
 
-import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -45,10 +44,14 @@ async def test_alert_checker_sends_when_stale_heartbeat(tmp_path, monkeypatch):
         async def fake_post(url, secret, payload):
             posted.append({"url": url, "payload": payload})
 
+        async def fake_hooks(_db, _user_id):
+            return [("http://example.invalid/webhook", None)]
+
         import app.services.alert_checker as ac
 
         ac._last_alert_at.clear()
         monkeypatch.setattr(ac, "post_json_webhook", fake_post)
+        monkeypatch.setattr(ac, "_list_alert_webhooks", fake_hooks)
         monkeypatch.setattr(ac, "_pid_alive", lambda _pid: True)
         n = await check_stale_workers_and_alert(db)
         assert n >= 1
