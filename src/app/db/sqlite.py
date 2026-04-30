@@ -5,6 +5,7 @@ from pathlib import Path
 import aiosqlite
 
 from app.config import settings
+from app.db.postgres import get_postgres_connection, init_postgres, using_postgres
 
 
 SCHEMA_SQL = """
@@ -59,6 +60,9 @@ CREATE TABLE IF NOT EXISTS dest_message_index (
 
 
 async def init_sqlite() -> None:
+    if using_postgres():
+        await init_postgres()
+        return
     db_path = Path(settings.sqlite_path)
     if db_path.parent:
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -70,6 +74,8 @@ async def init_sqlite() -> None:
         await run_migrations(db)
 
 
-async def get_sqlite() -> aiosqlite.Connection:
+async def get_sqlite():
+    if using_postgres():
+        return await get_postgres_connection()
     return await aiosqlite.connect(settings.sqlite_path)
 

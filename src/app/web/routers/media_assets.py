@@ -124,14 +124,20 @@ async def upload_media_asset(
     dest.write_bytes(data)
 
     display_name = (name or raw_filename).strip() or raw_filename
-    cursor = await db.execute(
+    async with db.execute(
         "INSERT INTO media_assets (user_id, name, file_path, media_kind, mime_type, size_bytes, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
         (user["id"], display_name, str(dest), kind, file.content_type, len(data), now),
-    )
+    ) as cur:
+        inserted = await cur.fetchone()
     await db.commit()
 
-    asset_id = cursor.lastrowid
+    if not inserted:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to persist media asset",
+        )
+    asset_id = int(inserted[0])
     async with db.execute(
         "SELECT id, user_id, name, file_path, media_kind, mime_type, size_bytes, created_at "
         "FROM media_assets WHERE id = ?",

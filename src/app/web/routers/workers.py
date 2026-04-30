@@ -16,6 +16,7 @@ from typing import Any
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.db.postgres import retry_transient_postgres, using_postgres
 from app.web.deps import CurrentUser, Db, WriterUser
 
 logger = logging.getLogger(__name__)
@@ -246,22 +247,27 @@ async def _spawn_worker_for_account(
     """
     lock = await _get_account_worker_lock(account_id)
     async with lock:
+        if using_postgres():
+            # Lock the account row to serialize concurrent cross-process starts.
+            async with db.execute(
+                "SELECT id FROM telegram_accounts WHERE id = ? FOR UPDATE",
+                (account_id,),
+            ) as cur:
+                await cur.fetchone()
+
         if _account_has_running_worker(account_id):
             return False
 
         worker_id = _next_worker_id()
-        transaction_started = False
-        try:
-            await db.execute("BEGIN IMMEDIATE")
-            transaction_started = True
-            async with db.execute(
-                "SELECT worker_id, pid FROM worker_registry WHERE account_id = ?",
-                (account_id,),
-            ) as cur:
+
+        async def _reserve_worker_slot() -> bool:
+            select_sql = "SELECT worker_id, pid FROM worker_registry WHERE account_id = ?"
+            if using_postgres():
+                select_sql += " FOR UPDATE"
+            async with db.execute(select_sql, (account_id,)) as cur:
                 rows = await cur.fetchall()
             for existing_worker_id, existing_pid in rows:
                 if _pid_alive(existing_pid):
-                    await db.execute("ROLLBACK")
                     return False
                 await db.execute(
                     "DELETE FROM worker_registry WHERE worker_id = ?",
@@ -273,16 +279,15 @@ async def _spawn_worker_for_account(
                 (worker_id, user_id, account_id, session_path, -1),
             )
             await db.commit()
-            transaction_started = False
+            return True
+
+        try:
+            reserved = await retry_transient_postgres(_reserve_worker_slot)
+            if not reserved:
+                return False
         except aiosqlite.IntegrityError:
-            if transaction_started:
-                with contextlib.suppress(Exception):
-                    await db.execute("ROLLBACK")
             return False
         except Exception:
-            if transaction_started:
-                with contextlib.suppress(Exception):
-                    await db.execute("ROLLBACK")
             raise
 
     project_root = Path(__file__).resolve().parents[4]

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.auth.password import hash_password
@@ -79,13 +81,20 @@ async def create_user(data: UserCreate, db: Db, _admin: AdminUser) -> dict:
         )
     password_hash = hash_password(data.password)
     try:
-        cursor = await db.execute(
+        async with db.execute(
             """INSERT INTO users (email, password_hash, name, role, status)
-               VALUES (?, ?, ?, ?, 'active')""",
+               VALUES (?, ?, ?, ?, 'active')
+               RETURNING id""",
             (data.email.lower(), password_hash, data.name or "", data.role),
-        )
+        ) as cur:
+            inserted = await cur.fetchone()
         await db.commit()
-        uid = cursor.lastrowid
+        if not inserted:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create user",
+            )
+        uid = int(inserted[0])
     except Exception as e:
         if "UNIQUE" in str(e) or "unique" in str(e).lower():
             raise HTTPException(
@@ -159,9 +168,10 @@ async def update_user(
         params.append(hash_password(data.password))
     if updates:
         params.append(user_id)
+        now = datetime.now(timezone.utc).isoformat()
         await db.execute(
-            f"UPDATE users SET {', '.join(updates)}, updated_at = datetime('now') WHERE id = ?",
-            params,
+            f"UPDATE users SET {', '.join(updates)}, updated_at = ? WHERE id = ?",
+            [*params[:-1], now, params[-1]],
         )
         await db.commit()
     async with db.execute(

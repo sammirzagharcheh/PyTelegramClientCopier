@@ -2,6 +2,7 @@
 import os
 
 os.environ["TESTING"] = "1"  # Skip Mongo indexes, 3s worker restore delay in API tests
+os.environ["DB_BACKEND"] = "sqlite"  # Keep legacy test suites on SQLite by default
 
 import asyncio
 

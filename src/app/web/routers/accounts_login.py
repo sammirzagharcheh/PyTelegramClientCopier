@@ -70,15 +70,22 @@ async def begin_login(data: BeginLoginRequest, user: CurrentUser, db: Db) -> dic
             detail=f"Failed to send code: {e}",
         ) from e
 
-    cursor = await db.execute(
+    async with db.execute(
         """
         INSERT INTO login_sessions (user_id, phone, tmp_session_name, status, phone_code_hash)
         VALUES (?, ?, ?, 'pending', ?)
+        RETURNING id
         """,
         (user["id"], phone, tmp_session_name, phone_code_hash),
-    )
+    ) as cur:
+        inserted = await cur.fetchone()
     await db.commit()
-    login_session_id = cursor.lastrowid
+    if not inserted:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create login session",
+        )
+    login_session_id = int(inserted[0])
 
     await client.disconnect()
 
@@ -166,15 +173,22 @@ async def complete_login(data: CompleteLoginRequest, user: CurrentUser, db: Db) 
         now = datetime.now(timezone.utc).isoformat()
         account_name = data.account_name or "User account"
 
-        cursor = await db.execute(
+        async with db.execute(
             """
             INSERT INTO telegram_accounts (user_id, type, status, name, created_at)
             VALUES (?, 'user', 'active', ?, ?)
+            RETURNING id
             """,
             (login_user_id, account_name, now),
-        )
+        ) as cur:
+            inserted = await cur.fetchone()
         await db.commit()
-        account_id = cursor.lastrowid
+        if not inserted:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create telegram account",
+            )
+        account_id = int(inserted[0])
 
         sessions_base = Path(settings.sessions_dir) / str(login_user_id)
         sessions_base.mkdir(parents=True, exist_ok=True)

@@ -154,3 +154,33 @@ def test_list_workers_reattaches_from_registry_when_missing_from_memory(api_clie
     assert w["running"] is True
     assert w["pid"] == alive_pid
     assert "w99" in workers._workers
+
+
+def test_spawn_worker_concurrent_start_collision_single_reservation(api_client):
+    """Concurrent starts for same account should reserve only one worker slot."""
+
+    async def run_collision():
+        db = await get_sqlite()
+        fake_proc = MagicMock()
+        fake_proc.pid = os.getpid()
+        fake_proc.poll.return_value = None
+
+        with patch("app.web.routers.workers.subprocess.Popen", return_value=fake_proc):
+            first, second = await asyncio.gather(
+                workers._spawn_worker_for_account(db, 1, 1, "data/user1.session"),
+                workers._spawn_worker_for_account(db, 1, 1, "data/user1.session"),
+            )
+
+        async with db.execute(
+            "SELECT COUNT(*) FROM worker_registry WHERE account_id = ?",
+            (1,),
+        ) as cur:
+            cnt = (await cur.fetchone())[0]
+        await db.close()
+        return first, second, cnt
+
+    first, second, cnt = _run_async(run_collision())
+    assert (first, second).count(True) == 1
+    assert cnt == 1
+
+

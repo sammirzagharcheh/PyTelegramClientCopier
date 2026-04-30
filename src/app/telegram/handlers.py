@@ -165,9 +165,11 @@ async def _save_dest_mapping(
 ) -> None:
     now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
     await db.execute(
-        "INSERT OR REPLACE INTO dest_message_index "
+        "INSERT INTO dest_message_index "
         "(user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(user_id, source_chat_id, source_msg_id, dest_chat_id) "
+        "DO UPDATE SET dest_msg_id = excluded.dest_msg_id, updated_at = excluded.updated_at",
         (user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id, now_utc),
     )
     await db.commit()

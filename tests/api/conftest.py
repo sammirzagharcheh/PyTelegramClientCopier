@@ -15,6 +15,8 @@ def api_client(tmp_path):
     """Create TestClient with tmp SQLite DB, seeded with user and mapping."""
     from app.config import settings
 
+    settings.db_backend = "sqlite"
+    settings.database_url = None
     settings.sqlite_path = str(tmp_path / "test.db")
     settings.media_assets_dir = str(tmp_path / "media_assets")
     settings.testing = True

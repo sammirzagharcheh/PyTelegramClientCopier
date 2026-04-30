@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 
-import aiosqlite
-
-from app.config import settings
+from app.db.sqlite import get_sqlite
 
 logger = logging.getLogger(__name__)
 
@@ -19,17 +18,21 @@ async def purge_old_login_sessions(retention_days: int) -> int:
     """
     deleted = 0
     try:
-        async with aiosqlite.connect(settings.sqlite_path) as db:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+        db = await get_sqlite()
+        try:
             cursor = await db.execute(
                 """
                 DELETE FROM login_sessions
                 WHERE status IN ('completed', 'cancelled')
-                AND created_at < datetime('now', '-' || ? || ' days')
+                AND created_at < ?
                 """,
-                (retention_days,),
+                (cutoff,),
             )
             await db.commit()
             deleted = cursor.rowcount
+        finally:
+            await db.close()
         if deleted:
             logger.info("Purged %d old login_sessions rows (retention=%d days)", deleted, retention_days)
     except Exception as e:

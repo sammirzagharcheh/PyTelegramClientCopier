@@ -11,10 +11,11 @@ Multi-tenant Telegram copier with admin controls, filtering, and media forwardin
    - `BOT_TOKEN` (optional, for live Telegram test; from @BotFather)
    - `MONGO_URI` (optional)
    - `MONGO_DB` (optional)
-   - `SQLITE_PATH` (optional)
+   - `DB_BACKEND=postgres`
+   - `DATABASE_URL=postgresql+asyncpg://...`
 2. Install dependencies:
    - `pip install -e .`
-3. Initialize SQLite:
+3. Initialize DB schema:
    - `tg-copier db init-db`
 4. Create first admin:
    - `tg-copier db create-admin your@email.com yourpassword`
@@ -23,6 +24,12 @@ Multi-tenant Telegram copier with admin controls, filtering, and media forwardin
 6. Run the web panel:
    - `cd frontend && npm install && npm run dev`
 7. Open <http://localhost:5173> and log in.
+
+## Database Cutover And Rollback
+
+- Default runtime backend is PostgreSQL (`DB_BACKEND=postgres`).
+- Required for Postgres mode: `DATABASE_URL` must be set.
+- Rollback path (temporary/legacy): set `DB_BACKEND=sqlite` and `SQLITE_PATH=data/app.db`, then re-run `tg-copier db init-db`.
 
 ## Docker (Local, production-like)
 
