@@ -142,3 +142,57 @@ def test_retry_wrapper_retries_on_transient_sqlstate():
     assert ok is True
     assert cnt == 1
     assert attempts == 2
+
+
+def test_prune_orphaned_registry_keeps_inflight_reservations():
+    """Reservation rows (pid=-1) must not be pruned as dead workers."""
+
+    async def run_case():
+        await init_sqlite()
+        db = await get_sqlite()
+        await db.execute("DELETE FROM worker_registry WHERE account_id = ?", (1,))
+        await db.execute(
+            "INSERT INTO worker_registry (worker_id, user_id, account_id, session_path, pid) VALUES (?, ?, ?, ?, ?)",
+            ("w_reserve", 1, 1, "data/user1.session", -1),
+        )
+        await db.commit()
+        await workers._prune_orphaned_registry_rows(db)
+        async with db.execute(
+            "SELECT COUNT(*) FROM worker_registry WHERE worker_id = ?",
+            ("w_reserve",),
+        ) as cur:
+            cnt = (await cur.fetchone())[0]
+        await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", ("w_reserve",))
+        await db.commit()
+        await db.close()
+        return cnt
+
+    remaining = _run_async(run_case())
+    assert remaining == 1
+
+
+def test_stop_workers_preserves_inflight_reservation_rows():
+    """Stopping account workers should not delete a still-inflight reservation row."""
+
+    async def run_case():
+        await init_sqlite()
+        db = await get_sqlite()
+        await db.execute("DELETE FROM worker_registry WHERE account_id = ?", (1,))
+        await db.execute(
+            "INSERT INTO worker_registry (worker_id, user_id, account_id, session_path, pid) VALUES (?, ?, ?, ?, ?)",
+            ("w_reserve_stop", 1, 1, "data/user1.session", -1),
+        )
+        await db.commit()
+        await workers.stop_workers_for_account(1, db)
+        async with db.execute(
+            "SELECT COUNT(*) FROM worker_registry WHERE worker_id = ?",
+            ("w_reserve_stop",),
+        ) as cur:
+            cnt = (await cur.fetchone())[0]
+        await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", ("w_reserve_stop",))
+        await db.commit()
+        await db.close()
+        return cnt
+
+    remaining = _run_async(run_case())
+    assert remaining == 1
