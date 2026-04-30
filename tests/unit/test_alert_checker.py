@@ -14,6 +14,11 @@ from app.services.alert_checker import check_stale_workers_and_alert
 
 @pytest.mark.asyncio
 async def test_alert_checker_sends_when_stale_heartbeat(tmp_path, monkeypatch):
+    old_backend = settings.db_backend
+    old_database_url = settings.database_url
+    old_sqlite_path = settings.sqlite_path
+    settings.db_backend = "sqlite"
+    settings.database_url = None
     settings.sqlite_path = str(tmp_path / "alert.db")
     await init_sqlite()
     db = await aiosqlite.connect(settings.sqlite_path)
@@ -50,3 +55,6 @@ async def test_alert_checker_sends_when_stale_heartbeat(tmp_path, monkeypatch):
         assert posted and posted[0]["payload"]["type"] == "worker_stale_heartbeat"
     finally:
         await db.close()
+        settings.db_backend = old_backend
+        settings.database_url = old_database_url
+        settings.sqlite_path = old_sqlite_path
