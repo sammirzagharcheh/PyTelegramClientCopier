@@ -2,6 +2,8 @@
 
 Feature-to-files and test-command map for day-to-day work in this project.
 
+See also: `docs/CONCURRENCY_CONTROL_MATRIX.md` for Phase 6.1 race-condition controls and test evidence.
+
 ## Feature -> files -> tests
 
 | Feature change | Edit files | Run tests |
