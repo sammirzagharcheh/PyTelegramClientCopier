@@ -307,3 +307,7 @@ Optional connection overrides:
 - `PGUSER` (default `8n8user`)
 - `PGHOST` (default `localhost`)
 - `PGPORT` (default `5432`)
+
+For full, step-by-step migration procedures by platform, see:
+
+- `docs/DATABASE_MIGRATION_RUNBOOK.md`
