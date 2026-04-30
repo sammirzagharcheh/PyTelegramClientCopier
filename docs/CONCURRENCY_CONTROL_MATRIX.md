@@ -30,6 +30,16 @@ This matrix defines:
 - Do not retry logic/constraint errors (permission, not-found, validation, deterministic integrity failures).
 - Lock order is account-centric for worker lifecycle operations.
 - Reserved-start rows (`pid <= 0`) represent in-progress work and must be treated as protected state.
+- Shared retry wrapper emits structured retry logs with operation name, attempt number, SQLSTATE, and backoff.
+
+### Shared Rule Implementation Targets
+
+| Rule | Implementation |
+| --- | --- |
+| retry classifier | `src/app/db/postgres.py::is_transient_postgres_error()` |
+| retry executor | `src/app/db/postgres.py::retry_transient_postgres()` |
+| worker reservation policy | `src/app/web/routers/workers.py::_spawn_worker_for_account()` via `operation_name=\"workers.reserve_worker_slot\"` |
+| message index upsert policy | `src/app/telegram/handlers.py::_save_dest_mapping()` via `operation_name=\"handlers.save_dest_mapping\"` |
 
 ## CI Acceptance Gate
 

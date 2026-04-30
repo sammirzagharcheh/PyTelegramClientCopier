@@ -295,7 +295,10 @@ async def _spawn_worker_for_account(
             return True
 
         try:
-            reserved = await retry_transient_postgres(_reserve_worker_slot)
+            reserved = await retry_transient_postgres(
+                _reserve_worker_slot,
+                operation_name="workers.reserve_worker_slot",
+            )
             if not reserved:
                 return False
         except aiosqlite.IntegrityError:

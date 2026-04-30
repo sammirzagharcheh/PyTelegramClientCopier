@@ -144,6 +144,45 @@ def test_retry_wrapper_retries_on_transient_sqlstate():
     assert attempts == 2
 
 
+def test_retry_wrapper_does_not_retry_non_transient_errors():
+    """Non-transient failures should not be retried by shared retry policy."""
+
+    class FakeNonTransientError(Exception):
+        def __init__(self, msg: str, sqlstate: str):
+            super().__init__(msg)
+            self.sqlstate = sqlstate
+
+    async def run_case():
+        await init_sqlite()
+        db = await get_sqlite()
+        try:
+            await db.execute("DELETE FROM worker_registry WHERE account_id = ?", (1,))
+            await db.commit()
+            attempts = {"count": 0}
+            original_impl = db._execute_impl
+
+            async def failing_impl(self, sql, params=None):
+                if "INSERT INTO worker_registry" in str(sql):
+                    attempts["count"] += 1
+                    raise FakeNonTransientError("simulated non-transient", "23505")
+                return await original_impl(sql, params)
+
+            db._execute_impl = types.MethodType(failing_impl, db)
+
+            fake_proc = MagicMock()
+            fake_proc.pid = os.getpid()
+            fake_proc.poll.return_value = None
+            with patch("app.web.routers.workers.subprocess.Popen", return_value=fake_proc):
+                with pytest.raises(FakeNonTransientError):
+                    await workers._spawn_worker_for_account(db, 1, 1, "data/user1.session")
+            return attempts["count"]
+        finally:
+            await db.close()
+
+    attempts = _run_async(run_case())
+    assert attempts == 1
+
+
 def test_prune_orphaned_registry_keeps_inflight_reservations():
     """Reservation rows (pid=-1) must not be pruned as dead workers."""
 

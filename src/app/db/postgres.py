@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import random
 import asyncio
+import logging
 from collections.abc import Iterable, Sequence
 from datetime import datetime, timezone
 from typing import Any
@@ -15,6 +16,8 @@ from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 POSTGRES_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS users (
@@ -224,6 +227,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS ix_user_api_keys_key_hash ON user_api_keys(key
 _QMARK_RE = re.compile(r"\?")
 _INSERT_TABLE_RE = re.compile(r"^\s*INSERT\s+INTO\s+([a-zA-Z_][a-zA-Z0-9_]*)", re.IGNORECASE)
 _ENGINE: AsyncEngine | None = None
+TRANSIENT_POSTGRES_SQLSTATES = {"40P01", "40001"}
 _TABLES_WITH_ID = {
     "users",
     "telegram_accounts",
@@ -286,7 +290,6 @@ def _as_db_exception(err: Exception) -> Exception:
 
 def is_transient_postgres_error(err: Exception) -> bool:
     """True for retryable PostgreSQL concurrency/transaction conflicts."""
-    transient_codes = {"40P01", "40001"}
     cursor: Exception | None = err
     while cursor is not None:
         sqlstate = (
@@ -295,7 +298,7 @@ def is_transient_postgres_error(err: Exception) -> bool:
             or getattr(getattr(cursor, "orig", None), "sqlstate", None)
             or getattr(getattr(cursor, "orig", None), "pgcode", None)
         )
-        if isinstance(sqlstate, str) and sqlstate in transient_codes:
+        if isinstance(sqlstate, str) and sqlstate in TRANSIENT_POSTGRES_SQLSTATES:
             return True
         text = str(cursor)
         if "40P01" in text or "40001" in text:
@@ -309,6 +312,7 @@ async def retry_transient_postgres(
     *,
     retries: int = 3,
     base_delay_s: float = 0.05,
+    operation_name: str = "postgres_operation",
 ):
     """Retry wrapper for transient PostgreSQL transaction conflicts."""
     attempt = 0
@@ -320,7 +324,16 @@ async def retry_transient_postgres(
             if attempt >= retries or not is_transient_postgres_error(err):
                 raise
             jitter = random.uniform(0.0, base_delay_s)
-            await asyncio.sleep(base_delay_s * attempt + jitter)
+            sleep_s = base_delay_s * attempt + jitter
+            logger.warning(
+                "retry_transient_postgres: retrying op=%s attempt=%d/%d sqlstate=%s sleep_s=%.3f",
+                operation_name,
+                attempt,
+                retries,
+                getattr(err, "sqlstate", None) or getattr(getattr(err, "orig", None), "sqlstate", None),
+                sleep_s,
+            )
+            await asyncio.sleep(sleep_s)
 
 
 class PostgresCompatCursor:
