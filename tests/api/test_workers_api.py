@@ -79,20 +79,24 @@ def test_start_worker_with_stale_registry_succeeds(api_client, user_token):
 def test_list_workers_returns_started_at(api_client, user_token):
     """GET /workers includes started_at for each running worker."""
     fake_proc = MagicMock()
-    fake_proc.pid = os.getpid()  # Use current process PID so registry liveness check passes
+    fake_proc.pid = 424241
     fake_proc.poll.return_value = None
 
-    with patch("app.web.routers.workers.subprocess.Popen", return_value=fake_proc):
+    # Avoid relying on a real OS PID for liveness checks in CI.
+    with (
+        patch("app.web.routers.workers.subprocess.Popen", return_value=fake_proc),
+        patch("app.web.routers.workers._pid_alive", return_value=True),
+    ):
         api_client.post(
             "/api/workers/start",
             params={"account_id": 1},
             headers={"Authorization": f"Bearer {user_token}"},
         )
 
-    r = api_client.get(
-        "/api/workers",
-        headers={"Authorization": f"Bearer {user_token}"},
-    )
+        r = api_client.get(
+            "/api/workers",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
     assert r.status_code == 200
     workers_list = r.json()
     assert len(workers_list) >= 1
@@ -128,7 +132,7 @@ def test_list_workers_reattaches_from_registry_when_missing_from_memory(api_clie
     """When worker_registry has a row with alive PID but worker is not in _workers
     (e.g. started by another API instance), list_workers returns it and reattaches."""
     workers._workers.clear()
-    alive_pid = os.getpid()
+    alive_pid = 424242
 
     async def add_registry_row():
         db = await get_sqlite()
@@ -141,10 +145,12 @@ def test_list_workers_reattaches_from_registry_when_missing_from_memory(api_clie
 
     _run_async(add_registry_row())
 
-    r = api_client.get(
-        "/api/workers",
-        headers={"Authorization": f"Bearer {user_token}"},
-    )
+    # Avoid real-PID coupling in CI: emulate liveness check deterministically.
+    with patch("app.web.routers.workers._pid_alive", return_value=True):
+        r = api_client.get(
+            "/api/workers",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
     assert r.status_code == 200
     workers_list = r.json()
     assert len(workers_list) == 1
@@ -162,7 +168,7 @@ def test_spawn_worker_concurrent_start_collision_single_reservation(api_client):
     async def run_collision():
         db = await get_sqlite()
         fake_proc = MagicMock()
-        fake_proc.pid = os.getpid()
+        fake_proc.pid = 424243
         fake_proc.poll.return_value = None
 
         with patch("app.web.routers.workers.subprocess.Popen", return_value=fake_proc):
