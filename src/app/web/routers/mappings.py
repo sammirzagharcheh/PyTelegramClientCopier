@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.db.message_index_cleanup import delete_dest_message_index_for_mapping
 from app.services.mapping_service import WEEKDAY_COLS, load_mapping_by_id
+from app.utils.time import normalize_utc_iso_for_json
 from app.telegram.pipeline_preview import (
     MessagePreview,
     apply_transforms,
@@ -163,7 +164,7 @@ async def list_mappings(
             "dest_chat_title": r[6],
             "enabled": bool(r[7]),
             "telegram_account_id": r[8],
-            "created_at": r[9],
+            "created_at": normalize_utc_iso_for_json(r[9]),
             "send_delay_ms": int(r[10] or 0),
             "sync_edits": bool(r[11]),
             "edit_strategy": str(r[12] or "replace_text"),
@@ -288,7 +289,7 @@ async def create_mapping(
         "dest_chat_title": row[6],
         "enabled": bool(row[7]),
         "telegram_account_id": row[8],
-        "created_at": row[9],
+        "created_at": normalize_utc_iso_for_json(row[9]),
         "send_delay_ms": int(row[10] or 0),
         "sync_edits": bool(row[11]),
         "edit_strategy": str(row[12] or "replace_text"),
@@ -340,7 +341,7 @@ async def get_mapping(
         "dest_chat_title": row[6],
         "enabled": bool(row[7]),
         "telegram_account_id": row[8],
-        "created_at": row[9],
+        "created_at": normalize_utc_iso_for_json(row[9]),
         "send_delay_ms": int(row[10] or 0),
         "sync_edits": bool(row[11]),
         "edit_strategy": str(row[12] or "replace_text"),
@@ -460,7 +461,7 @@ async def update_mapping(
         "dest_chat_title": row[6],
         "enabled": bool(row[7]),
         "telegram_account_id": row[8],
-        "created_at": row[9],
+        "created_at": normalize_utc_iso_for_json(row[9]),
         "send_delay_ms": int(row[10] or 0),
         "sync_edits": bool(row[11]),
         "edit_strategy": str(row[12] or "replace_text"),

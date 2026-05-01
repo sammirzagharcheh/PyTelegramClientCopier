@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 
 from app.config import settings
+from app.utils.time import normalize_utc_iso_for_json
 from app.web.schemas.accounts import TelegramAccountUpdate
 from app.web.deps import AdminUser, CurrentUser, Db, WriterUser
 from app.web.routers.workers import stop_workers_for_account
@@ -63,7 +64,7 @@ async def list_accounts(
         rows = await cur.fetchall()
 
     items = [
-        {"id": r[0], "user_id": r[1], "name": r[2], "type": r[3], "session_path": r[4], "phone": r[5], "status": r[6], "created_at": r[7]}
+        {"id": r[0], "user_id": r[1], "name": r[2], "type": r[3], "session_path": r[4], "phone": r[5], "status": r[6], "created_at": normalize_utc_iso_for_json(r[7])}
         for r in rows
     ]
     total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
@@ -100,7 +101,7 @@ async def get_account(
         "session_path": row[4],
         "phone": row[5],
         "status": row[6],
-        "created_at": row[7],
+        "created_at": normalize_utc_iso_for_json(row[7]),
     }
 
 
@@ -178,7 +179,7 @@ async def create_account(
         "session_path": row[4],
         "phone": row[5],
         "status": row[6],
-        "created_at": row[7],
+        "created_at": normalize_utc_iso_for_json(row[7]),
     }
 
 
@@ -224,7 +225,7 @@ async def update_account(
         "session_path": row[4],
         "phone": row[5],
         "status": row[6],
-        "created_at": row[7],
+        "created_at": normalize_utc_iso_for_json(row[7]),
     }
 
 

@@ -1,6 +1,14 @@
+function normalizeApiDateTime(value: string): string {
+  const s = value.trim();
+  if (s.includes(' ') && !s.includes('T') && !s.endsWith('Z') && !s.includes('+')) {
+    return s.replace(' ', 'T') + 'Z';
+  }
+  return s;
+}
+
 export function formatLocalDateTime(value: string | null | undefined, timezone?: string): string {
   if (value == null || value === '') return '—';
-  const d = new Date(value);
+  const d = new Date(normalizeApiDateTime(value));
   if (Number.isNaN(d.getTime())) return value;
   try {
     return timezone

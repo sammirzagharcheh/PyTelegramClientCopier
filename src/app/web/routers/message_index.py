@@ -4,21 +4,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
+from app.utils.time import normalize_utc_iso_for_json, sql_ts_expr
 from app.web.deps import CurrentUser, Db
 
 router = APIRouter(prefix="/message-index", tags=["message-index"])
 
 
 def _normalize_sqlite_utc_for_json(value: str | None) -> str | None:
-    """SQLite datetime('now') is UTC but has no offset; JS parses it as local. Match workers.py."""
-    if value is None or value == "":
-        return value
-    s = str(value).strip()
-    if "T" in s or "Z" in s or "+" in s:
-        return s
-    if " " in s and len(s) >= 19:
-        return s.replace(" ", "T", 1) + "Z"
-    return s
+    """Backward-compatible alias used by tests and older imports."""
+    return normalize_utc_iso_for_json(value)
 
 
 @router.get("")
@@ -52,8 +46,9 @@ async def list_message_index(
     if dest_chat_id is not None:
         query += " AND dest_chat_id = ?"
         params.append(dest_chat_id)
+    updated_expr = sql_ts_expr("updated_at")
     query += (
-        " ORDER BY updated_at DESC NULLS LAST, source_chat_id, source_msg_id LIMIT ? OFFSET ?"
+        f" ORDER BY {updated_expr} DESC NULLS LAST, source_chat_id, source_msg_id LIMIT ? OFFSET ?"
     )
     params.extend([page_size, offset])
     async with db.execute(query, params) as cur:
@@ -83,7 +78,7 @@ async def list_message_index(
                 "source_msg_id": r[2],
                 "dest_chat_id": r[3],
                 "dest_msg_id": r[4],
-                "updated_at": _normalize_sqlite_utc_for_json(r[5]),
+                "updated_at": normalize_utc_iso_for_json(r[5]),
             }
             for r in rows
         ],

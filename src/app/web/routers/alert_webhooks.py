@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 from pydantic import AnyHttpUrl, BaseModel
 
+from app.utils.time import normalize_utc_iso_for_json
 from app.web.deps import CurrentUser, Db, WriterUser
 
 router = APIRouter(prefix="/users", tags=["alert-webhooks"])
@@ -30,7 +31,7 @@ async def list_alert_webhooks(db: Db, user: CurrentUser) -> list[dict]:
     ) as cur:
         rows = await cur.fetchall()
     return [
-        {"id": r[0], "url": r[1], "enabled": bool(r[2]), "created_at": r[3]}
+        {"id": r[0], "url": r[1], "enabled": bool(r[2]), "created_at": normalize_utc_iso_for_json(r[3])}
         for r in rows
     ]
 
@@ -59,7 +60,7 @@ async def create_alert_webhook(
     ) as c2:
         row = await c2.fetchone()
     assert row
-    return {"id": row[0], "url": row[1], "enabled": bool(row[2]), "created_at": row[3]}
+    return {"id": row[0], "url": row[1], "enabled": bool(row[2]), "created_at": normalize_utc_iso_for_json(row[3])}
 
 
 @router.delete("/me/alert-webhooks/{webhook_id}")

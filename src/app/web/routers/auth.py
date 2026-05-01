@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.auth import create_access_token, create_refresh_token, decode_token
 from app.auth.password import hash_password, verify_password
+from app.utils.time import sql_ts_expr
 from app.web.deps import CurrentUser, Db
 from app.web.schemas.auth import (
     ChangePasswordRequest,
@@ -87,8 +88,10 @@ async def refresh(data: RefreshRequest, db: Db) -> dict:
         )
     token_hash = _hash_token(data.refresh_token)
     now_iso = datetime.now(timezone.utc).isoformat()
+    expires_at_expr = sql_ts_expr("expires_at")
+    now_expr = sql_ts_expr("?")
     async with db.execute(
-        "SELECT id FROM refresh_tokens WHERE user_id = ? AND token_hash = ? AND expires_at > ?",
+        f"SELECT id FROM refresh_tokens WHERE user_id = ? AND token_hash = ? AND {expires_at_expr} > {now_expr}",
         (user_id, token_hash, now_iso),
     ) as cur:
         row = await cur.fetchone()

@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from app.db.sqlite import get_sqlite
+from app.utils.time import sql_ts_expr
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +22,13 @@ async def purge_old_login_sessions(retention_days: int) -> int:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
         db = await get_sqlite()
         try:
+            created_expr = sql_ts_expr("created_at")
+            cutoff_expr = sql_ts_expr("?")
             cursor = await db.execute(
-                """
+                f"""
                 DELETE FROM login_sessions
                 WHERE status IN ('completed', 'cancelled')
-                AND created_at < ?
+                AND {created_expr} < {cutoff_expr}
                 """,
                 (cutoff,),
             )

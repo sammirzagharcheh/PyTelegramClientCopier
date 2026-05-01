@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.auth.password import hash_password
+from app.utils.time import normalize_utc_iso_for_json
 from app.web.deps import AdminUser, Db
 from app.web.schemas.users import UserCreate, UserResponse, UserUpdate
 
@@ -58,7 +59,7 @@ async def list_users(
         rows = await cur.fetchall()
 
     items = [
-        {"id": r[0], "email": r[1], "name": r[2], "role": r[3], "status": r[4], "created_at": r[5]}
+        {"id": r[0], "email": r[1], "name": r[2], "role": r[3], "status": r[4], "created_at": normalize_utc_iso_for_json(r[5])}
         for r in rows
     ]
     total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
@@ -113,7 +114,7 @@ async def create_user(data: UserCreate, db: Db, _admin: AdminUser) -> dict:
         "name": row[2],
         "role": row[3],
         "status": row[4],
-        "created_at": row[5],
+        "created_at": normalize_utc_iso_for_json(row[5]),
     }
 
 
@@ -133,7 +134,7 @@ async def get_user(user_id: int, db: Db, _admin: AdminUser) -> dict:
         "name": row[2],
         "role": row[3],
         "status": row[4],
-        "created_at": row[5],
+        "created_at": normalize_utc_iso_for_json(row[5]),
     }
 
 
@@ -187,7 +188,7 @@ async def update_user(
         "name": row[2],
         "role": row[3],
         "status": row[4],
-        "created_at": row[5],
+        "created_at": normalize_utc_iso_for_json(row[5]),
     }
 
 

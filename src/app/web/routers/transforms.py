@@ -7,6 +7,7 @@ import re
 from fastapi import APIRouter, HTTPException, status
 
 from app.utils.regex import regex_flags_from_string
+from app.utils.time import normalize_utc_iso_for_json
 from app.web.deps import CurrentUser, Db, WriterUser
 from app.web.mapping_access import get_mapping_scope
 from app.web.routers.workers import restart_workers_for_mapping
@@ -166,7 +167,7 @@ def _row_to_response(row: tuple) -> dict:
         "apply_to_media_types": row[8],
         "enabled": bool(row[9]),
         "priority": row[10],
-        "created_at": row[11],
+        "created_at": normalize_utc_iso_for_json(row[11]),
     }
 
 

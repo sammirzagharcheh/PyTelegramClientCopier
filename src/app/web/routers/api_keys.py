@@ -8,6 +8,7 @@ import secrets
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
+from app.utils.time import normalize_utc_iso_for_json
 from app.web.deps import CurrentUser, Db, WriterUser
 
 router = APIRouter(prefix="/users", tags=["api-keys"])
@@ -46,8 +47,8 @@ async def list_api_keys(db: Db, user: CurrentUser) -> list[dict]:
             "id": r[0],
             "name": r[1],
             "scopes": r[2] or "",
-            "created_at": r[3],
-            "last_used_at": r[4],
+            "created_at": normalize_utc_iso_for_json(r[3]),
+            "last_used_at": normalize_utc_iso_for_json(r[4]),
         }
         for r in rows
     ]
@@ -80,7 +81,7 @@ async def create_api_key(data: ApiKeyCreate, db: Db, user: WriterUser) -> dict:
         "name": row[1],
         "scopes": row[2] or "",
         "plain_key": plain,
-        "created_at": row[3],
+        "created_at": normalize_utc_iso_for_json(row[3]),
     }
 
 

@@ -14,6 +14,7 @@ from telethon.errors import (
 )
 
 from app.config import settings
+from app.utils.time import normalize_utc_iso_for_json
 from app.web.deps import CurrentUser, Db
 
 
@@ -229,7 +230,7 @@ async def complete_login(data: CompleteLoginRequest, user: CurrentUser, db: Db) 
             "session_path": acc_row[4],
             "phone": acc_row[5],
             "status": acc_row[6],
-            "created_at": acc_row[7],
+            "created_at": normalize_utc_iso_for_json(acc_row[7]),
         }
     finally:
         # Best-effort disconnect; ignore if already closed

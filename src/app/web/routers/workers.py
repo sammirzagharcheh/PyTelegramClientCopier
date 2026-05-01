@@ -17,6 +17,7 @@ import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.db.postgres import retry_transient_postgres, using_postgres
+from app.utils.time import normalize_utc_iso_for_json
 from app.web.deps import AdminUser, CurrentUser, Db, WriterUser
 
 logger = logging.getLogger(__name__)
@@ -149,9 +150,7 @@ async def _list_workers_from_registry(
             continue
 
         # Normalize SQLite datetime to ISO UTC for frontend
-        started_at = created_at
-        if created_at and "T" not in str(created_at) and "Z" not in str(created_at) and "+" not in str(created_at):
-            started_at = str(created_at).replace(" ", "T") + "Z"
+        started_at = normalize_utc_iso_for_json(created_at)
 
         # Reattach to _workers if missing (e.g. worker started by another API instance)
         if worker_id not in _workers:
@@ -166,9 +165,7 @@ async def _list_workers_from_registry(
             }
             workers_reattached += 1
 
-        hb = last_heartbeat_at
-        if hb and "T" not in str(hb) and "Z" not in str(hb) and "+" not in str(hb):
-            hb = str(hb).replace(" ", "T") + "Z"
+        hb = normalize_utc_iso_for_json(last_heartbeat_at)
         items.append({
             "id": worker_id,
             "user_id": uid,
@@ -704,9 +701,7 @@ async def restore_workers_from_db(db: aiosqlite.Connection) -> None:
             await _spawn_worker_for_account(db, account_id, user_id, session_path)
             continue
         # Normalize SQLite datetime to ISO UTC for frontend
-        started_at = created_at
-        if created_at and "T" not in created_at and "Z" not in created_at and "+" not in created_at:
-            started_at = created_at.replace(" ", "T") + "Z"
+        started_at = normalize_utc_iso_for_json(created_at)
         _workers[worker_id] = {
             "id": worker_id,
             "user_id": user_id,

@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
 from app.config import settings
+from app.utils.time import normalize_utc_iso_for_json
 from app.web.deps import CurrentUser, Db
 from app.web.schemas.media_assets import MediaAssetResponse
 
@@ -63,7 +64,7 @@ def _asset_row_to_dict(row: tuple) -> dict:
         "media_kind": row[4],
         "mime_type": row[5],
         "size_bytes": row[6],
-        "created_at": row[7],
+        "created_at": normalize_utc_iso_for_json(row[7]),
     }
 
 

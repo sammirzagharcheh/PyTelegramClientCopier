@@ -35,6 +35,13 @@ describe('formatLocalDateTime', () => {
     expect(result).toBe(parsed.toLocaleString())
   })
 
+  it('normalizes legacy SQLite UTC datetime with space separator', () => {
+    const sqliteUtc = '2026-05-01 06:15:17'
+    const result = formatLocalDateTime(sqliteUtc)
+    const parsed = new Date('2026-05-01T06:15:17Z')
+    expect(result).toBe(parsed.toLocaleString())
+  })
+
   it('returns raw value for invalid date string', () => {
     const invalid = 'not-a-date'
     expect(formatLocalDateTime(invalid)).toBe(invalid)

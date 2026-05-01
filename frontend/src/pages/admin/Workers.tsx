@@ -1,6 +1,7 @@
 import { Activity, Zap } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { formatLocalDateTime } from '../../lib/formatDateTime';
 import { formatUptime } from '../../lib/formatUptime';
 import { useAuth } from '../../store/AuthContext';
 import { PageHeader } from '../../components/PageHeader';
@@ -88,7 +89,7 @@ export function Workers() {
                       <span className="block">PID {w.pid} · {formatUptime(w.started_at)}</span>
                       {w.last_heartbeat_at && (
                         <span className="block text-xs text-gray-600 dark:text-gray-300">
-                          HB {new Date(w.last_heartbeat_at).toLocaleString()}
+                          HB {formatLocalDateTime(w.last_heartbeat_at)}
                         </span>
                       )}
                     </span>
