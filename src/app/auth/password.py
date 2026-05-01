@@ -11,11 +11,15 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(pw_bytes, bcrypt.gensalt()).decode("ascii")
 
 
-def verify_password(plain: str, hashed: str | None) -> bool:
+def verify_password(plain: str, hashed: str | bytes | None) -> bool:
     if hashed is None:
         return False
     try:
+        if isinstance(hashed, bytes):
+            hashed_str = hashed.decode("utf-8").strip()
+        else:
+            hashed_str = str(hashed).strip()
         pw_bytes = plain.encode("utf-8")[:72]
-        return bcrypt.checkpw(pw_bytes, hashed.encode("ascii"))
+        return bcrypt.checkpw(pw_bytes, hashed_str.encode("ascii"))
     except (ValueError, TypeError):
         return False

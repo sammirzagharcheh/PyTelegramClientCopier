@@ -31,8 +31,9 @@ def _hash_token(token: str) -> str:
 @router.post("/login", response_model=LoginResponse)
 async def login(data: LoginRequest, db: Db) -> dict:
     """Login with email and password, returns access and refresh tokens."""
+    # Case-insensitive email match: migrated SQLite rows may not be lowercased.
     async with db.execute(
-        "SELECT id, email, name, role, status, password_hash FROM users WHERE email = ?",
+        "SELECT id, email, name, role, status, password_hash FROM users WHERE lower(email) = ?",
         (data.email.lower(),),
     ) as cur:
         row = await cur.fetchone()
