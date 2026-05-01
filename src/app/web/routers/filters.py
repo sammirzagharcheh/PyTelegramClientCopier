@@ -66,11 +66,12 @@ async def create_filter(
         )
     mapping_user_id, mapping_account_id = await get_mapping_scope(db, user, mapping_id)
     ogid = data.or_group_id
-    cursor = await db.execute(
+    async with db.execute(
         """INSERT INTO mapping_filters (
                mapping_id, include_text, exclude_text, media_types, regex_pattern, or_group_id,
                allowed_sender_ids, denied_usernames, min_url_count, max_url_count, required_hashtags)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           RETURNING id""",
         (
             mapping_id,
             data.include_text,
@@ -84,8 +85,14 @@ async def create_filter(
             data.max_url_count,
             data.required_hashtags,
         ),
-    )
-    fid = cursor.lastrowid
+    ) as cur:
+        inserted = await cur.fetchone()
+    if not inserted:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create filter",
+        )
+    fid = int(inserted[0])
     if ogid is None:
         await db.execute(
             "UPDATE mapping_filters SET or_group_id = ? WHERE id = ?",

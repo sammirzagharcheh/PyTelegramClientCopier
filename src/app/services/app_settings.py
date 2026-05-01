@@ -1,4 +1,4 @@
-"""App settings stored in SQLite (overrides env for MongoDB, etc.)."""
+"""App settings persisted in the SQL app DB (overrides env for MongoDB, etc.)."""
 
 from __future__ import annotations
 
@@ -8,10 +8,14 @@ from datetime import datetime, timezone
 import aiosqlite
 
 from app.config import settings
+from app.db.postgres import using_postgres
 
 
 def get_setting_sync(key: str) -> str | None:
     """Sync read for use in MongoDB client (avoids async deps). Empty string treated as unset → fallback to env."""
+    if using_postgres():
+        # Postgres path is async-only; keep sync startup fallback env-driven.
+        return None
     try:
         conn = sqlite3.connect(settings.sqlite_path)
         cur = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,))

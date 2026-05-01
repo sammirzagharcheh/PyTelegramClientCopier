@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
 from pydantic import AnyHttpUrl, BaseModel
 
 from app.web.deps import CurrentUser, Db, WriterUser
@@ -41,12 +41,18 @@ async def create_alert_webhook(
     db: Db,
     user: WriterUser,
 ) -> dict:
-    cur = await db.execute(
-        "INSERT INTO user_alert_webhooks (user_id, url, secret, enabled) VALUES (?, ?, ?, 1)",
+    async with db.execute(
+        "INSERT INTO user_alert_webhooks (user_id, url, secret, enabled) VALUES (?, ?, ?, 1) RETURNING id",
         (user["id"], str(data.url), data.secret),
-    )
+    ) as cur:
+        inserted = await cur.fetchone()
     await db.commit()
-    wid = cur.lastrowid
+    if not inserted:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create alert webhook",
+        )
+    wid = int(inserted[0])
     async with db.execute(
         "SELECT id, url, enabled, created_at FROM user_alert_webhooks WHERE id = ?",
         (wid,),

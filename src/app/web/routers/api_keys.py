@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.web.deps import CurrentUser, Db, WriterUser
@@ -57,12 +57,18 @@ async def list_api_keys(db: Db, user: CurrentUser) -> list[dict]:
 async def create_api_key(data: ApiKeyCreate, db: Db, user: WriterUser) -> dict:
     plain = secrets.token_urlsafe(32)
     key_hash = hashlib.sha256(plain.encode("utf-8")).hexdigest()
-    cur = await db.execute(
-        "INSERT INTO user_api_keys (user_id, name, key_hash, scopes) VALUES (?, ?, ?, ?)",
+    async with db.execute(
+        "INSERT INTO user_api_keys (user_id, name, key_hash, scopes) VALUES (?, ?, ?, ?) RETURNING id",
         (user["id"], data.name.strip(), key_hash, data.scopes.strip()),
-    )
+    ) as cur:
+        inserted = await cur.fetchone()
     await db.commit()
-    kid = cur.lastrowid
+    if not inserted:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create API key",
+        )
+    kid = int(inserted[0])
     async with db.execute(
         "SELECT id, name, scopes, created_at FROM user_api_keys WHERE id = ?",
         (kid,),

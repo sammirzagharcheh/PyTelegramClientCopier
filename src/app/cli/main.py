@@ -13,15 +13,17 @@ cli = typer.Typer(help="Telegram Client Copier CLI")
 
 @cli.command()
 def init_db() -> None:
-    """Initialize SQLite schema."""
+    """Initialize the configured SQL schema."""
     asyncio.run(init_sqlite())
-    typer.echo("SQLite schema initialized.")
+    typer.echo(f"{settings.db_backend.upper()} schema initialized.")
 
 
 @cli.command()
 def show_config() -> None:
     """Print loaded config (non-sensitive)."""
-    typer.echo(f"SQLite: {settings.sqlite_path}")
+    typer.echo(f"DB backend: {settings.db_backend}")
+    typer.echo(f"Database URL set: {settings.database_url is not None}")
+    typer.echo(f"SQLite path (rollback only): {settings.sqlite_path}")
     typer.echo(f"MongoDB: {settings.mongo_uri}/{settings.mongo_db}")
     typer.echo(f"API_ID set: {settings.api_id is not None}")
     typer.echo(f"API_HASH set: {settings.api_hash is not None}")

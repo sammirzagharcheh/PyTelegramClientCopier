@@ -5,6 +5,8 @@ description = "Multi-tenant Telegram channel copier with admin controls."
 requires-python = ">=3.11"
 dependencies = [
   "aiosqlite>=0.20.0",
+  "alembic>=1.14.0",
+  "asyncpg>=0.29.0",
   "fastapi>=0.110.0",
   "httpx>=0.27.0",
   "motor>=3.4.0",
@@ -14,6 +16,7 @@ dependencies = [
   "pydantic-settings>=2.2.1",
   "python-jose[cryptography]>=3.3.0",
   "python-multipart>=0.0.9",
+  "sqlalchemy>=2.0.36",
   "telethon>=1.34.0",
   "typer>=0.12.0",
   "tzdata>=2024.1",
@@ -41,6 +44,10 @@ where = ["src"]
 testpaths = ["tests"]
 addopts = "-ra"
 asyncio_mode = "auto"
+markers = [
+  "postgres_concurrency: isolated PostgreSQL concurrency and retry behavior tests",
+  "postgres_parity: PostgreSQL parity tests that mirror existing SQLite coverage",
+]
 filterwarnings = [
   "ignore::DeprecationWarning:jose.jwt",
 ]

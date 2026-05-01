@@ -83,9 +83,10 @@ async def refresh(data: RefreshRequest, db: Db) -> dict:
             detail="Invalid refresh token",
         )
     token_hash = _hash_token(data.refresh_token)
+    now_iso = datetime.now(timezone.utc).isoformat()
     async with db.execute(
-        "SELECT id FROM refresh_tokens WHERE user_id = ? AND token_hash = ? AND expires_at > datetime('now')",
-        (user_id, token_hash),
+        "SELECT id FROM refresh_tokens WHERE user_id = ? AND token_hash = ? AND expires_at > ?",
+        (user_id, token_hash, now_iso),
     ) as cur:
         row = await cur.fetchone()
     if not row:
@@ -191,9 +192,10 @@ async def change_password(
             detail="Current password is incorrect",
         )
     new_hash = hash_password(data.new_password)
+    now_iso = datetime.now(timezone.utc).isoformat()
     await db.execute(
-        "UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?",
-        (new_hash, user["id"]),
+        "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+        (new_hash, now_iso, user["id"]),
     )
     await db.commit()
     return {"status": "ok"}

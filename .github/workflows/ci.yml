@@ -1,0 +1,150 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Run main test lane
+        run: pytest -m "not postgres_concurrency and not postgres_parity"
+
+  postgres-concurrency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DB_BACKEND: postgres
+      DATABASE_URL: postgresql+asyncpg://8n8user:8N8p%40ssw0rd@localhost:5432/8n8DataBase
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: 8n8user
+          POSTGRES_PASSWORD: 8N8p@ssw0rd
+          POSTGRES_DB: 8n8DataBase
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U 8n8user -d 8n8DataBase"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in $(seq 1 20); do
+            pg_isready -h localhost -p 5432 -U 8n8user -d 8n8DataBase && exit 0
+            sleep 2
+          done
+          echo "PostgreSQL not ready in time" >&2
+          exit 1
+        env:
+          PGPASSWORD: 8N8p@ssw0rd
+
+      - name: Run postgres concurrency lane with retries
+        run: |
+          max_attempts=3
+          attempt=1
+          until [ "$attempt" -gt "$max_attempts" ]; do
+            echo "postgres_concurrency attempt $attempt/$max_attempts"
+            if pytest -m "postgres_concurrency"; then
+              exit 0
+            fi
+            attempt=$((attempt + 1))
+            sleep 3
+          done
+          echo "postgres_concurrency lane failed after retries" >&2
+          exit 1
+
+  postgres-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DB_BACKEND: postgres
+      DATABASE_URL: postgresql+asyncpg://8n8user:8N8p%40ssw0rd@localhost:5432/8n8DataBase
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: 8n8user
+          POSTGRES_PASSWORD: 8N8p@ssw0rd
+          POSTGRES_DB: 8n8DataBase
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U 8n8user -d 8n8DataBase"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in $(seq 1 20); do
+            pg_isready -h localhost -p 5432 -U 8n8user -d 8n8DataBase && exit 0
+            sleep 2
+          done
+          echo "PostgreSQL not ready in time" >&2
+          exit 1
+        env:
+          PGPASSWORD: 8N8p@ssw0rd
+
+      - name: Run postgres parity lane with retries
+        run: |
+          max_attempts=3
+          attempt=1
+          until [ "$attempt" -gt "$max_attempts" ]; do
+            echo "postgres_parity attempt $attempt/$max_attempts"
+            if pytest -m "postgres_parity"; then
+              exit 0
+            fi
+            attempt=$((attempt + 1))
+            sleep 3
+          done
+          echo "postgres_parity lane failed after retries" >&2
+          exit 1

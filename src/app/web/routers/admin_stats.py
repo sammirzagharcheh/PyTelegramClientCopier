@@ -57,7 +57,10 @@ async def get_admin_dashboard_stats(user: AdminUser, db: Db) -> dict:
     # MongoDB: message stats
     messages_last_7d = 0
     messages_prev_7d = 0
-    messages_by_day: list[dict[str, str | int]] = []
+    messages_by_day: list[dict[str, str | int]] = [
+        {"date": (now - timedelta(days=6 - i)).strftime("%Y-%m-%d"), "count": 0}
+        for i in range(7)
+    ]
     status_breakdown: list[dict[str, str | int]] = []
     top_mappings: list[dict[str, str | int]] = []
     worker_log_levels: list[dict[str, str | int]] = []
@@ -65,7 +68,14 @@ async def get_admin_dashboard_stats(user: AdminUser, db: Db) -> dict:
     webhook_attempts_prev_7d = 0
     webhook_success_last_7d = 0
     webhook_failed_last_7d = 0
-    webhook_by_day: list[dict[str, str | int]] = []
+    webhook_by_day: list[dict[str, str | int]] = [
+        {
+            "date": (now - timedelta(days=6 - i)).strftime("%Y-%m-%d"),
+            "success": 0,
+            "failed": 0,
+        }
+        for i in range(7)
+    ]
     top_failing_mappings: list[dict[str, str | int]] = []
     webhook_failure_reasons: list[dict[str, str | int]] = []
 
@@ -132,7 +142,7 @@ async def get_admin_dashboard_stats(user: AdminUser, db: Db) -> dict:
 
         for i in range(7):
             d = (now - timedelta(days=6 - i)).strftime("%Y-%m-%d")
-            messages_by_day.append({"date": d, "count": agg_by_day.get(d, 0)})
+            messages_by_day[i] = {"date": d, "count": agg_by_day.get(d, 0)}
 
         # Batch mapping lookups: (user_id, src_id, dest_id) -> (mapping_id, mapping_name)
         mapping_map: dict[tuple[int | None, int, int], tuple[int, str]] = {}
@@ -218,11 +228,11 @@ async def get_admin_dashboard_stats(user: AdminUser, db: Db) -> dict:
         for i in range(7):
             d = (now - timedelta(days=6 - i)).strftime("%Y-%m-%d")
             bucket = webhook_by_day_map.get(d, {"success": 0, "failed": 0})
-            webhook_by_day.append({
+            webhook_by_day[i] = {
                 "date": d,
                 "success": bucket["success"],
                 "failed": bucket["failed"],
-            })
+            }
 
         pipeline_top_failed = [
             {"$match": {**match_7d, "success": False}},

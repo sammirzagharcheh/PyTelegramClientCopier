@@ -223,11 +223,12 @@ async def create_transform(
             replacement_media_asset_id=replacement_media_asset_id,
         )
 
-    cursor = await db.execute(
+    async with db.execute(
         "INSERT INTO mapping_transform_rules "
         "(mapping_id, rule_type, find_text, replace_text, regex_pattern, regex_flags, "
         "replacement_media_asset_id, apply_to_media_types, enabled, priority) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "RETURNING id",
         (
             mapping_id,
             rule_type,
@@ -240,9 +241,15 @@ async def create_transform(
             1 if data.enabled else 0,
             data.priority,
         ),
-    )
+    ) as cur:
+        inserted = await cur.fetchone()
     await db.commit()
-    transform_id = cursor.lastrowid
+    if not inserted:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create transform",
+        )
+    transform_id = int(inserted[0])
 
     async with db.execute(
         "SELECT id, mapping_id, rule_type, find_text, replace_text, regex_pattern, regex_flags, "

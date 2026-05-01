@@ -124,13 +124,20 @@ async def create_account(
     session_path = None
     phone = None
     if type == "user" and session_file:
-        cursor = await db.execute(
+        async with db.execute(
             """INSERT INTO telegram_accounts (user_id, type, status, name, created_at)
-               VALUES (?, 'user', 'active', ?, ?)""",
+               VALUES (?, 'user', 'active', ?, ?)
+               RETURNING id""",
             (user["id"], name or "User account", now),
-        )
+        ) as cur:
+            inserted = await cur.fetchone()
         await db.commit()
-        acc_id = cursor.lastrowid
+        if not inserted:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create user account",
+            )
+        acc_id = int(inserted[0])
         sessions_base = Path(settings.sessions_dir) / str(user["id"])
         sessions_base.mkdir(parents=True, exist_ok=True)
         ext = Path(session_file.filename or "").suffix or ".session"
@@ -144,13 +151,20 @@ async def create_account(
         )
         await db.commit()
     else:
-        cursor = await db.execute(
+        async with db.execute(
             """INSERT INTO telegram_accounts (user_id, type, bot_token, status, name, created_at)
-               VALUES (?, 'bot', ?, 'active', ?, ?)""",
+               VALUES (?, 'bot', ?, 'active', ?, ?)
+               RETURNING id""",
             (user["id"], bot_token or "", name or "Bot account", now),
-        )
+        ) as cur:
+            inserted = await cur.fetchone()
         await db.commit()
-        acc_id = cursor.lastrowid
+        if not inserted:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create bot account",
+            )
+        acc_id = int(inserted[0])
     async with db.execute(
         "SELECT id, user_id, name, type, session_path, phone, status, created_at FROM telegram_accounts WHERE id = ?",
         (acc_id,),

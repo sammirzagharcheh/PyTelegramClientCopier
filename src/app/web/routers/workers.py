@@ -16,6 +16,7 @@ from typing import Any
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.db.postgres import retry_transient_postgres, using_postgres
 from app.web.deps import CurrentUser, Db, WriterUser
 
 logger = logging.getLogger(__name__)
@@ -81,6 +82,11 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
+def _is_starting_reservation_pid(pid: int | None) -> bool:
+    """True when worker row is a reserved-but-not-launched slot."""
+    return isinstance(pid, int) and pid <= 0
+
+
 async def _wait_for_pid_exit(pid: int, timeout_sec: float = 5.0) -> bool:
     """Poll until process exits or timeout. Returns True if exited within timeout."""
     polls = int(timeout_sec / 0.1) or 1
@@ -134,6 +140,9 @@ async def _list_workers_from_registry(
         worker_id, uid, account_id, session_path, pid, created_at, last_heartbeat_at = (
             row[0], row[1], row[2], row[3], row[4], row[5], row[6] if len(row) > 6 else None
         )
+        if _is_starting_reservation_pid(pid):
+            # Hide in-progress reservations from "running workers" listings.
+            continue
         if not _pid_alive(pid):
             await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
             workers_pruned += 1
@@ -186,6 +195,9 @@ async def _prune_orphaned_registry_rows(db: aiosqlite.Connection) -> None:
         rows = await cur.fetchall()
     deleted = 0
     for worker_id, pid in rows:
+        if _is_starting_reservation_pid(pid):
+            # Keep in-flight reservations; another request is still launching the worker.
+            continue
         try:
             os.kill(pid, 0)
         except OSError:
@@ -246,22 +258,29 @@ async def _spawn_worker_for_account(
     """
     lock = await _get_account_worker_lock(account_id)
     async with lock:
+        if using_postgres():
+            # Lock the account row to serialize concurrent cross-process starts.
+            async with db.execute(
+                "SELECT id FROM telegram_accounts WHERE id = ? FOR UPDATE",
+                (account_id,),
+            ) as cur:
+                await cur.fetchone()
+
         if _account_has_running_worker(account_id):
             return False
 
         worker_id = _next_worker_id()
-        transaction_started = False
-        try:
-            await db.execute("BEGIN IMMEDIATE")
-            transaction_started = True
-            async with db.execute(
-                "SELECT worker_id, pid FROM worker_registry WHERE account_id = ?",
-                (account_id,),
-            ) as cur:
+
+        async def _reserve_worker_slot() -> bool:
+            select_sql = "SELECT worker_id, pid FROM worker_registry WHERE account_id = ?"
+            if using_postgres():
+                select_sql += " FOR UPDATE"
+            async with db.execute(select_sql, (account_id,)) as cur:
                 rows = await cur.fetchall()
             for existing_worker_id, existing_pid in rows:
+                if _is_starting_reservation_pid(existing_pid):
+                    return False
                 if _pid_alive(existing_pid):
-                    await db.execute("ROLLBACK")
                     return False
                 await db.execute(
                     "DELETE FROM worker_registry WHERE worker_id = ?",
@@ -273,115 +292,124 @@ async def _spawn_worker_for_account(
                 (worker_id, user_id, account_id, session_path, -1),
             )
             await db.commit()
-            transaction_started = False
+            return True
+
+        try:
+            reserved = await retry_transient_postgres(
+                _reserve_worker_slot,
+                operation_name="workers.reserve_worker_slot",
+            )
+            if not reserved:
+                return False
         except aiosqlite.IntegrityError:
-            if transaction_started:
-                with contextlib.suppress(Exception):
-                    await db.execute("ROLLBACK")
             return False
         except Exception:
-            if transaction_started:
-                with contextlib.suppress(Exception):
-                    await db.execute("ROLLBACK")
             raise
 
-    project_root = Path(__file__).resolve().parents[4]
-    session_abs = (project_root / session_path).resolve() if not Path(session_path).is_absolute() else Path(session_path)
-    cmd = [
-        sys.executable, "-m", "app.main",
-        "db", "run-worker",
-        str(user_id),
-        str(session_abs),
-        "--account-id", str(account_id),
-    ]
-    worker_log_dir = project_root / "data"
-    worker_log_dir.mkdir(parents=True, exist_ok=True)
-    stderr_path = worker_log_dir / f"worker_{account_id}_{worker_id}.log"
-    try:
-        stderr_handle = open(stderr_path, "w", encoding="utf-8")
-    except OSError:
-        stderr_handle = None
-    try:
-        proc = subprocess.Popen(
-            cmd,
-            cwd=str(project_root),
-            stdout=subprocess.DEVNULL,
-            stderr=stderr_handle if stderr_handle else subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
-        )
-    except Exception:
-        # Release reserved row so future retries can proceed.
-        await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
-        await db.commit()
-        raise
-    pid = proc.pid
-    started_at = datetime.now(timezone.utc).isoformat()
-    try:
-        await db.execute(
-            "UPDATE worker_registry SET pid = ? WHERE worker_id = ?",
-            (pid, worker_id),
-        )
-        await db.commit()
-    except Exception:
-        with contextlib.suppress(Exception):
-            proc.terminate()
-            proc.wait(timeout=5)
-        with contextlib.suppress(Exception):
+        project_root = Path(__file__).resolve().parents[4]
+        session_abs = (project_root / session_path).resolve() if not Path(session_path).is_absolute() else Path(session_path)
+        cmd = [
+            sys.executable, "-m", "app.main",
+            "db", "run-worker",
+            str(user_id),
+            str(session_abs),
+            "--account-id", str(account_id),
+        ]
+        worker_log_dir = project_root / "data"
+        worker_log_dir.mkdir(parents=True, exist_ok=True)
+        stderr_path = worker_log_dir / f"worker_{account_id}_{worker_id}.log"
+        try:
+            stderr_handle = open(stderr_path, "w", encoding="utf-8")
+        except OSError:
+            stderr_handle = None
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(project_root),
+                stdout=subprocess.DEVNULL,
+                stderr=stderr_handle if stderr_handle else subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
+            )
+        except Exception:
+            # Release reserved row so future retries can proceed.
             await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
             await db.commit()
-        raise
-    _workers[worker_id] = {
-        "id": worker_id,
-        "user_id": user_id,
-        "account_id": account_id,
-        "session_path": session_path,
-        "process": proc,
-        "pid": pid,
-        "started_at": started_at,
-    }
-    logger.info("Spawned worker %s for account_id=%s pid=%s", worker_id, account_id, pid)
-    return True
+            raise
+        pid = proc.pid
+        started_at = datetime.now(timezone.utc).isoformat()
+        try:
+            cur = await db.execute(
+                "UPDATE worker_registry SET pid = ? WHERE worker_id = ?",
+                (pid, worker_id),
+            )
+            if cur.rowcount == 0:
+                raise RuntimeError("worker_registry reservation disappeared before PID update")
+            await db.commit()
+        except Exception:
+            with contextlib.suppress(Exception):
+                proc.terminate()
+                proc.wait(timeout=5)
+            with contextlib.suppress(Exception):
+                await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
+                await db.commit()
+            raise
+        _workers[worker_id] = {
+            "id": worker_id,
+            "user_id": user_id,
+            "account_id": account_id,
+            "session_path": session_path,
+            "process": proc,
+            "pid": pid,
+            "started_at": started_at,
+        }
+        logger.info("Spawned worker %s for account_id=%s pid=%s", worker_id, account_id, pid)
+        return True
 
 
 async def stop_workers_for_account(account_id: int, db: aiosqlite.Connection) -> None:
     """Stop and remove all workers for a given account_id. Uses worker_registry as source of
     truth so workers started by other API processes are also stopped. Waits for each process
     to exit before returning."""
-    async with db.execute(
-        "SELECT worker_id, user_id, session_path, pid FROM worker_registry WHERE account_id = ?",
-        (account_id,),
-    ) as cur:
-        rows = await cur.fetchall()
-    for worker_id, uid, session_path, pid in rows:
-        if not _pid_alive(pid):
+    lock = await _get_account_worker_lock(account_id)
+    async with lock:
+        async with db.execute(
+            "SELECT worker_id, user_id, session_path, pid FROM worker_registry WHERE account_id = ?",
+            (account_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+        for worker_id, uid, session_path, pid in rows:
+            if _is_starting_reservation_pid(pid):
+                # Preserve reservation rows; launcher will finalize or clean up.
+                continue
+            if not _pid_alive(pid):
+                await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
+                continue
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
+                continue
+            await _wait_for_pid_exit(pid, timeout_sec=5.0)
+            # Force-kill if still alive after wait (SIGKILL not on Windows)
+            try:
+                os.kill(pid, 0)
+                kill_sig = getattr(signal, "SIGKILL", signal.SIGTERM)
+                os.kill(pid, kill_sig)
+            except OSError:
+                pass
+            if worker_id in _workers:
+                del _workers[worker_id]
             await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
-            continue
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError:
-            await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
-            continue
-        await _wait_for_pid_exit(pid, timeout_sec=5.0)
-        # Force-kill if still alive after wait (SIGKILL not on Windows)
-        try:
-            os.kill(pid, 0)
-            kill_sig = getattr(signal, "SIGKILL", signal.SIGTERM)
-            os.kill(pid, kill_sig)
-        except OSError:
-            pass
-        if worker_id in _workers:
-            del _workers[worker_id]
-        await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
-    # Also stop any in-memory workers not yet in registry (race)
-    to_stop = [wid for wid, w in _workers.items() if w.get("account_id") == account_id]
-    for wid in to_stop:
-        w = _workers[wid]
-        await _terminate_worker(w)
-        del _workers[wid]
-        await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (wid,))
-    if rows or to_stop:
-        await db.commit()
+        # Also stop any in-memory workers not yet in registry (race)
+        to_stop = [wid for wid, w in _workers.items() if w.get("account_id") == account_id]
+        for wid in to_stop:
+            w = _workers[wid]
+            await _terminate_worker(w)
+            del _workers[wid]
+            await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (wid,))
+        if rows or to_stop:
+            await db.commit()
 
 
 async def restart_workers_for_mapping(
@@ -501,6 +529,14 @@ async def start_worker(
     ) as cur:
         reg_rows = await cur.fetchall()
     for worker_id, reg_pid in reg_rows:
+        if _is_starting_reservation_pid(reg_pid):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Worker start already in progress for this account. "
+                    "Retry after a moment."
+                ),
+            )
         try:
             os.kill(reg_pid, 0)
         except OSError:

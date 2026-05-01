@@ -11,10 +11,11 @@ Multi-tenant Telegram copier with admin controls, filtering, and media forwardin
    - `BOT_TOKEN` (optional, for live Telegram test; from @BotFather)
    - `MONGO_URI` (optional)
    - `MONGO_DB` (optional)
-   - `SQLITE_PATH` (optional)
+   - `DB_BACKEND=postgres`
+   - `DATABASE_URL=postgresql+asyncpg://...`
 2. Install dependencies:
    - `pip install -e .`
-3. Initialize SQLite:
+3. Initialize DB schema:
    - `tg-copier db init-db`
 4. Create first admin:
    - `tg-copier db create-admin your@email.com yourpassword`
@@ -23,6 +24,52 @@ Multi-tenant Telegram copier with admin controls, filtering, and media forwardin
 6. Run the web panel:
    - `cd frontend && npm install && npm run dev`
 7. Open <http://localhost:5173> and log in.
+
+## Database Cutover And Rollback
+
+- Default runtime backend is PostgreSQL (`DB_BACKEND=postgres`).
+- Required for Postgres mode: `DATABASE_URL` must be set.
+- Rollback path (temporary/legacy): set `DB_BACKEND=sqlite` and `SQLITE_PATH=data/app.db`, then re-run `tg-copier db init-db`.
+
+## Environment Database Split
+
+Use separate PostgreSQL databases per environment to avoid cross-environment data contamination:
+
+- development: `telegram_copier_dev`
+- test/CI: `telegram_copier_test`
+- production: `telegram_copier_prod`
+
+Recommended env files:
+
+- `.env` -> dev database
+- `.env.test` -> test database
+- `.env.production` (or secret manager) -> production database
+
+### DataGrip (Local PostgreSQL) Connection
+
+When connecting DataGrip to local Docker PostgreSQL, use the same values as your local `.env`.
+
+Field mode:
+
+- Host: `localhost`
+- Port: `5432`
+- Database: `telegram_copier_dev` (or `..._test` / `..._prod`)
+- User: value from `DATABASE_URL` user segment (for this project usually `8n8user`)
+- Password: value from `DATABASE_URL` password segment
+
+URL mode example:
+
+```text
+jdbc:postgresql://localhost:5432/telegram_copier_dev
+```
+
+Then set user/password in DataGrip auth fields (or append as URL params if you prefer).
+
+Common fixes for auth error `28P01`:
+
+- ensure username case matches exactly (e.g. `8n8user` is not `8n8User`)
+- click **Change Credentials** and re-enter password (clears cached old value)
+- disable SSL for local Docker unless you explicitly configured SSL
 
 ## Docker (Local, production-like)
 
@@ -94,7 +141,7 @@ Filters control which messages are copied from a source channel to a destination
 ### Filter rule types
 
 | Rule | Description | Example |
-|------|-------------|---------|
+| --- | --- | --- |
 | **Include text** | Message must contain this text | `announcement` → only messages with "announcement" |
 | **Exclude text** | Message must NOT contain this text | `spam` → skip messages containing "spam" |
 | **Media types** | Only copy messages of these types | `text`, `voice`, `video`, `photo`, `other` |
@@ -169,35 +216,41 @@ sudo systemctl restart telegram-copier
 - `API_ID`, `API_HASH`, `JWT_SECRET` – For non-interactive setup
 - `ADMIN_EMAIL`, `ADMIN_PASSWORD` – Admin credentials for non-interactive setup
 
-### Examples
+### Deployment Examples
 
 With HTTPS:
+
 ```bash
 DOMAIN=copier.example.com USE_SSL=true CERTBOT_EMAIL=you@example.com \
   curl -fsSL "https://raw.githubusercontent.com/sammirzagharcheh/PyTelegramClientCopier/main/scripts/deploy-ubuntu.sh" | sudo bash
 ```
 
 Non-interactive (CI/automation):
+
 ```bash
 API_ID=123 API_HASH=abc JWT_SECRET=xxx ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=secret \
   NON_INTERACTIVE=true curl -fsSL "https://raw.githubusercontent.com/sammirzagharcheh/PyTelegramClientCopier/main/scripts/deploy-ubuntu.sh" | sudo bash
 ```
 
 Update only (after initial deploy):
+
 ```bash
 UPDATE_ONLY=true curl -fsSL "https://raw.githubusercontent.com/sammirzagharcheh/PyTelegramClientCopier/main/scripts/deploy-ubuntu.sh" | sudo bash
 ```
 
 Quick update (run on VPS after SSH):
+
 ```bash
 ssh user@your-vps-ip
 sudo bash /opt/telegram-copier/scripts/update-vps.sh
 ```
+
 The script pulls latest, rebuilds, and restarts. Alternatively, use `UPDATE_ONLY=true` with the deploy script (see above) to fetch the latest script from GitHub.
 
 ### Production checklist
 
 Before going live:
+
 - [ ] Set `JWT_SECRET` to a strong random value (script auto-generates if not provided)
 - [ ] Use `USE_SSL=true` with a domain for HTTPS
 - [ ] Ensure DNS A record points domain to your VPS before running with SSL
@@ -208,6 +261,7 @@ Before going live:
 ## Tests
 
 **Backend (Python):**
+
 - `pytest`
 - `pytest tests/unit`
 - `pytest tests/api`
@@ -215,6 +269,7 @@ Before going live:
 - `pytest tests/functional`
 
 **Frontend (Vitest):**
+
 - `cd frontend && npm run test`
 
 ### Live Telegram integration test
@@ -224,3 +279,35 @@ Before going live:
    - `BOT_TOKEN` (from @BotFather; create a bot and use its token)
    - `TELEGRAM_TEST_CHAT_ID` (optional; chat ID to send a test message)
 2. Run: `pytest tests/integration/test_telethon_live.py`
+
+## Database Migrations Helper Scripts
+
+Use helper scripts to run Alembic migrations per environment database (`dev`, `test`, `prod`).
+
+PowerShell (Windows):
+
+```powershell
+$env:PGPASSWORD = "your-postgres-password"
+./scripts/migrate.ps1 -Environment dev -Action upgrade -Revision head
+./scripts/migrate.ps1 -Environment test -Action current
+./scripts/migrate.ps1 -Environment prod -Action downgrade -Revision -1
+```
+
+Shell (Linux/macOS):
+
+```bash
+export PGPASSWORD='your-postgres-password'
+./scripts/migrate.sh dev upgrade head
+./scripts/migrate.sh test current
+./scripts/migrate.sh prod downgrade -1
+```
+
+Optional connection overrides:
+
+- `PGUSER` (default `8n8user`)
+- `PGHOST` (default `localhost`)
+- `PGPORT` (default `5432`)
+
+For full, step-by-step migration procedures by platform, see:
+
+- `docs/DATABASE_MIGRATION_RUNBOOK.md`

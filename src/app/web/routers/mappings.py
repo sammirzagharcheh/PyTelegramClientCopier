@@ -241,11 +241,12 @@ async def create_mapping(
 ) -> dict:
     """Create channel mapping."""
     now = datetime.now(timezone.utc).isoformat()
-    cursor = await db.execute(
+    async with db.execute(
         """INSERT INTO channel_mappings
            (user_id, source_chat_id, dest_chat_id, name, source_chat_title,
             dest_chat_title, enabled, telegram_account_id, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+           RETURNING id""",
         (
             user["id"],
             data.source_chat_id,
@@ -256,9 +257,15 @@ async def create_mapping(
             data.telegram_account_id,
             now,
         ),
-    )
+    ) as cur:
+        inserted = await cur.fetchone()
     await db.commit()
-    mid = cursor.lastrowid
+    if not inserted:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create mapping",
+        )
+    mid = int(inserted[0])
     async with db.execute(
         """SELECT id, user_id, source_chat_id, dest_chat_id, name,
                   source_chat_title, dest_chat_title, enabled,
@@ -365,16 +372,16 @@ async def update_mapping(
     if user["role"] != "admin" and row[1] != user["id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     _, mapping_user_id, old_source_chat_id, old_dest_chat_id = row
+    changed = False
     routing_changed = (
         (data.source_chat_id is not None and int(data.source_chat_id) != int(old_source_chat_id))
         or (data.dest_chat_id is not None and int(data.dest_chat_id) != int(old_dest_chat_id))
     )
     if routing_changed:
-        n = await delete_dest_message_index_for_mapping(
+        await delete_dest_message_index_for_mapping(
             db, int(mapping_user_id), int(old_source_chat_id), int(old_dest_chat_id)
         )
-        if n:
-            await db.commit()
+        changed = True
     updates = []
     params = []
     if data.name is not None:
@@ -428,6 +435,8 @@ async def update_mapping(
     if updates:
         params.append(mapping_id)
         await db.execute(f"UPDATE channel_mappings SET {', '.join(updates)} WHERE id = ?", params)
+        changed = True
+    if changed:
         await db.commit()
     async with db.execute(
         """SELECT id, user_id, source_chat_id, dest_chat_id, name,
@@ -543,14 +552,15 @@ async def clone_mapping(
     now = datetime.now(timezone.utc).isoformat()
     base_name = (row[4] or "").strip() or f"mapping_{mapping_id}"
     new_name = f"{base_name} (copy)"
-    cur = await db.execute(
+    async with db.execute(
         """INSERT INTO channel_mappings (
             user_id, source_chat_id, dest_chat_id, name, source_chat_title, dest_chat_title,
             enabled, telegram_account_id, created_at,
             send_delay_ms, sync_edits, edit_strategy, sync_deletes, copy_webhook_url, copy_webhook_secret,
             copy_webhook_payload_template, copy_webhook_secret_header_name, copy_webhook_secret_header_value,
             copy_webhook_secret_mode
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          RETURNING id""",
         (
             row[1],
             row[2],
@@ -572,9 +582,15 @@ async def clone_mapping(
             row[18],
             row[19] or "hmac_sha256",
         ),
-    )
+    ) as cur:
+        inserted = await cur.fetchone()
     await db.commit()
-    new_id = cur.lastrowid
+    if not inserted:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to clone mapping",
+        )
+    new_id = int(inserted[0])
     async with db.execute(
         """SELECT id, mapping_id, include_text, exclude_text, media_types, regex_pattern, or_group_id,
                allowed_sender_ids, denied_usernames, min_url_count, max_url_count, required_hashtags
@@ -755,7 +771,9 @@ async def delete_mapping(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     mapping_user_id, mapping_telegram_account_id = row[1], row[2]
     await delete_dest_message_index_for_mapping(db, int(row[1]), int(row[3]), int(row[4]))
+    await db.execute("DELETE FROM mapping_schedules WHERE mapping_id = ?", (mapping_id,))
     await db.execute("DELETE FROM mapping_filters WHERE mapping_id = ?", (mapping_id,))
+    await db.execute("DELETE FROM mapping_transform_rules WHERE mapping_id = ?", (mapping_id,))
     await db.execute("DELETE FROM channel_mappings WHERE id = ?", (mapping_id,))
     await db.commit()
     try:

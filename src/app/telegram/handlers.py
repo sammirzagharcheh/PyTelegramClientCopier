@@ -15,6 +15,7 @@ from telethon.errors import ChatIdInvalidError, FloodWaitError
 from telethon.tl.custom.message import Message
 from telethon.tl.types import MessageMediaWebPage
 
+from app.db.postgres import retry_transient_postgres
 from app.services.mapping_service import ChannelMapping, MappingFilter, MappingTransform
 from app.telegram.chat_ids import alternate_chat_id
 from app.telegram.pipeline_preview import (
@@ -164,13 +165,22 @@ async def _save_dest_mapping(
     dest_msg_id: int,
 ) -> None:
     now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    await db.execute(
-        "INSERT OR REPLACE INTO dest_message_index "
-        "(user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id, now_utc),
+
+    async def _write_index() -> None:
+        await db.execute(
+            "INSERT INTO dest_message_index "
+            "(user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(user_id, source_chat_id, source_msg_id, dest_chat_id) "
+            "DO UPDATE SET dest_msg_id = excluded.dest_msg_id, updated_at = excluded.updated_at",
+            (user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id, now_utc),
+        )
+        await db.commit()
+
+    await retry_transient_postgres(
+        _write_index,
+        operation_name="handlers.save_dest_mapping",
     )
-    await db.commit()
 
 
 async def _fire_copy_webhook(
