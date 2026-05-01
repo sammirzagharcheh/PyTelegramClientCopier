@@ -29,6 +29,7 @@ Multi-tenant Telegram copier with admin controls, filtering, and media forwardin
 
 - Default runtime backend is PostgreSQL (`DB_BACKEND=postgres`).
 - Required for Postgres mode: `DATABASE_URL` must be set.
+- Full procedure (schema migration, optional SQLite row import, smoke tests): see **`docs/DATABASE_MIGRATION_RUNBOOK.md`** (§ 2.5–2.6).
 - Rollback path (temporary/legacy): set `DB_BACKEND=sqlite` and `SQLITE_PATH=data/app.db`, then re-run `tg-copier db init-db`.
 
 ## Environment Database Split
