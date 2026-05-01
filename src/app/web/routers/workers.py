@@ -76,6 +76,9 @@ async def _prune_dead_workers(db: DbConnection) -> None:
 
 def _pid_alive(pid: int) -> bool:
     """Check if a process with the given PID is alive."""
+    if not isinstance(pid, int) or pid <= 0:
+        # pid<=0 is used internally as a "start in progress" reservation sentinel.
+        return False
     try:
         os.kill(pid, 0)
         return True
@@ -690,6 +693,10 @@ async def restore_workers_from_db(db: DbConnection) -> None:
     for row in rows:
         worker_id, user_id, account_id, session_path, pid = row[0], row[1], row[2], row[3], row[4]
         created_at = row[5]
+        if _is_starting_reservation_pid(pid):
+            # Keep reservation rows untouched during restore so we never race an in-flight
+            # launcher and accidentally start a duplicate worker for the same account.
+            continue
         try:
             os.kill(pid, 0)
         except OSError:

@@ -92,3 +92,27 @@ async def test_restore_spawns_workers_for_dead_registry_entries(db_with_active_a
     assert w["started_at"] is not None
 
     await workers.terminate_all_workers(db)
+
+
+@pytest.mark.asyncio
+async def test_restore_does_not_spawn_from_inflight_reservation(db_with_active_account):
+    """Reservation rows (pid=-1) represent an in-progress start and must not spawn duplicates."""
+    db = db_with_active_account
+    workers._workers.clear()
+    workers._worker_counter = 0
+
+    async with db.execute("SELECT session_path FROM telegram_accounts WHERE id = 1") as cur:
+        row = await cur.fetchone()
+    session_path = row[0]
+
+    await db.execute(
+        "INSERT INTO worker_registry (worker_id, user_id, account_id, session_path, pid) VALUES (?, ?, ?, ?, ?)",
+        ("w_reserve_restore", 1, 1, session_path, -1),
+    )
+    await db.commit()
+
+    with patch("subprocess.Popen") as mock_popen:
+        await workers.restore_workers_from_db(db)
+
+    assert not mock_popen.called
+    assert len(workers._workers) == 0
