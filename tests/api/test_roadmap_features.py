@@ -7,14 +7,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.auth.password import hash_password
-from app.db.sqlite import get_sqlite, init_sqlite
+from app.db.gateway import get_db_connection, init_db
 
 
 @pytest.fixture
 def roadmap_client(tmp_path):
     from app.config import settings
 
-    settings.sqlite_path = str(tmp_path / "roadmap.db")
     settings.media_assets_dir = str(tmp_path / "media")
     settings.testing = True
     from app.web.app import create_app
@@ -24,7 +23,11 @@ def roadmap_client(tmp_path):
         client.get("/health")
 
         async def seed():
-            db = await get_sqlite()
+            await init_db()
+            db = await get_db_connection()
+            await db.execute("DELETE FROM mapping_filters")
+            await db.execute("DELETE FROM channel_mappings")
+            await db.execute("DELETE FROM users")
             await db.execute(
                 "INSERT INTO users (email, role, status, password_hash, name) VALUES (?, ?, ?, ?, ?)",
                 ("writer@test.com", "user", "active", hash_password("pass"), "W"),

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 
 import typer
 
 from app.config import settings
-from app.db.sqlite import get_sqlite, init_sqlite
+from app.db.gateway import get_db_connection, init_db as init_database
 
 
 cli = typer.Typer(help="Telegram Client Copier CLI")
@@ -14,7 +15,7 @@ cli = typer.Typer(help="Telegram Client Copier CLI")
 @cli.command()
 def init_db() -> None:
     """Initialize the configured SQL schema."""
-    asyncio.run(init_sqlite())
+    asyncio.run(init_database())
     typer.echo(f"{settings.db_backend.upper()} schema initialized.")
 
 
@@ -22,8 +23,7 @@ def init_db() -> None:
 def show_config() -> None:
     """Print loaded config (non-sensitive)."""
     typer.echo(f"DB backend: {settings.db_backend}")
-    typer.echo(f"Database URL set: {settings.database_url is not None}")
-    typer.echo(f"SQLite path (rollback only): {settings.sqlite_path}")
+    typer.echo(f"Database URL set: {bool(settings.database_url)}")
     typer.echo(f"MongoDB: {settings.mongo_uri}/{settings.mongo_db}")
     typer.echo(f"API_ID set: {settings.api_id is not None}")
     typer.echo(f"API_HASH set: {settings.api_hash is not None}")
@@ -89,12 +89,11 @@ def show_mappings(
     account_id: int | None = typer.Option(None, "--account-id", "-a", help="Telegram account ID (filters mappings)"),
 ) -> None:
     """Show mappings that a worker would load for debugging."""
-    from app.db.sqlite import get_sqlite, init_sqlite
     from app.services.mapping_service import list_enabled_mappings
 
     async def _run():
-        await init_sqlite()
-        db = await get_sqlite()
+        await init_database()
+        db = await get_db_connection()
         mappings = list(
             await list_enabled_mappings(db, user_id, telegram_account_id=account_id)
         )
@@ -113,12 +112,10 @@ def show_mappings(
 def create_admin(email: str, password: str, name: str = "") -> None:
     """Create an admin user (for bootstrap)."""
     from app.auth.password import hash_password
-    from app.db.sqlite import get_sqlite
-
-    asyncio.run(init_sqlite())
 
     async def _create():
-        db = await get_sqlite()
+        await init_database()
+        db = await get_db_connection()
         try:
             pw_hash = hash_password(password)
             await db.execute(
@@ -145,15 +142,11 @@ def set_password(
     password: str = typer.Argument(..., help="New password"),
 ) -> None:
     """Overwrite password for an existing user (recovery after DB migration or lockout)."""
-    from datetime import datetime, timezone
-
     from app.auth.password import hash_password
-    from app.db.sqlite import get_sqlite
-
-    asyncio.run(init_sqlite())
 
     async def _set() -> None:
-        db = await get_sqlite()
+        await init_database()
+        db = await get_db_connection()
         try:
             async with db.execute(
                 "SELECT id FROM users WHERE lower(email) = ?",
@@ -182,10 +175,9 @@ def inspect_auth_users() -> None:
     """Print safe auth fields per user (debug login: status, hash shape, bcrypt prefix)."""
     from app.auth.password import _normalize_bcrypt_hash
 
-    asyncio.run(init_sqlite())
-
     async def _run() -> None:
-        db = await get_sqlite()
+        await init_database()
+        db = await get_db_connection()
         try:
             async with db.execute(
                 "SELECT id, email, status, password_hash FROM users ORDER BY id"
@@ -233,12 +225,10 @@ def purge_message_index(
 ) -> None:
     """Remove dest_message_index rows that no longer match any channel mapping."""
     from app.db.message_index_cleanup import purge_orphan_dest_message_index
-    from app.db.sqlite import get_sqlite
-
-    asyncio.run(init_sqlite())
 
     async def _run() -> int:
-        db = await get_sqlite()
+        await init_database()
+        db = await get_db_connection()
         try:
             return await purge_orphan_dest_message_index(db, dry_run=dry_run)
         finally:

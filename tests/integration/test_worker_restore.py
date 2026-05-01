@@ -4,19 +4,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.db.sqlite import get_sqlite, init_sqlite
+from app.db.gateway import get_db_connection, init_db
 from app.web.routers import workers
 
 
 @pytest.fixture
 async def db_with_active_account(tmp_path):
-    """Set up SQLite with a user and active telegram account."""
-    db_path = tmp_path / "test.db"
-    import app.config as config
-
-    config.settings.sqlite_path = str(db_path)
-    await init_sqlite()
-    conn = await get_sqlite()
+    """Set up DB with a user and active telegram account."""
+    await init_db()
+    conn = await get_db_connection()
+    await conn.execute("DELETE FROM worker_registry")
+    await conn.execute("DELETE FROM telegram_accounts")
+    await conn.execute("DELETE FROM users")
     await conn.execute(
         "INSERT INTO users (id, email, role, status) VALUES (?, ?, ?, ?)",
         (1, "user@example.com", "user", "active"),

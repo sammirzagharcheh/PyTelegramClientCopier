@@ -10,8 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.db.cleanup import purge_old_login_sessions
+from app.db.gateway import get_db_connection, init_db
 from app.db.mongo_indexes import ensure_mongo_indexes
-from app.db.sqlite import get_sqlite, init_sqlite
 from app.web.routers import (
     accounts,
     accounts_login,
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_sqlite()
+    await init_db()
     await purge_old_login_sessions(settings.login_sessions_retention_days)
     if not settings.testing:
         await ensure_mongo_indexes()
@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI):
     async def _delayed_restore():
         """Restore workers a few seconds after startup so DB, Mongo, etc. are fully ready."""
         await asyncio.sleep(3 if not settings.testing else 0)
-        db = await get_sqlite()
+        db = await get_db_connection()
         try:
             await workers.restore_workers_from_db(db)
             logger.info("Worker restore completed")
@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI):
 
             while True:
                 await asyncio.sleep(90)
-                db = await get_sqlite()
+                db = await get_db_connection()
                 try:
                     await check_stale_workers_and_alert(db)
                 except Exception as e:
@@ -83,7 +83,7 @@ async def lifespan(app: FastAPI):
         alert_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await alert_task
-    db = await get_sqlite()
+    db = await get_db_connection()
     try:
         await workers.terminate_all_workers(db)
     finally:

@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import logging
 
-import aiosqlite
-
+from app.db.gateway import DbConnection
 from app.telegram.chat_ids import alternate_chat_id
 
 logger = logging.getLogger(__name__)
@@ -20,7 +19,7 @@ def _source_variants(source_chat_id: int) -> list[int]:
 
 
 async def delete_dest_message_index_for_mapping(
-    db: aiosqlite.Connection,
+    db: DbConnection,
     user_id: int,
     source_chat_id: int,
     dest_chat_id: int,
@@ -38,7 +37,7 @@ async def delete_dest_message_index_for_mapping(
 
 
 async def purge_orphan_dest_message_index(
-    db: aiosqlite.Connection, *, dry_run: bool = False
+    db: DbConnection, *, dry_run: bool = False
 ) -> int:
     """Delete index rows that do not match any channel_mappings (user, source variant, dest).
 

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
-from app.db.sqlite import get_sqlite, init_sqlite
+from app.db.gateway import get_db_connection, init_db
 
-POSTGRES_TEST_DSN = "postgresql+asyncpg://8n8user:8N8p%40ssw0rd@localhost:5432/8n8DataBase"
+POSTGRES_TEST_DSN = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres")
 
 
 @pytest.fixture
@@ -14,8 +16,8 @@ async def postgres_db(monkeypatch):
     monkeypatch.setattr("app.config.settings.db_backend", "postgres")
     monkeypatch.setattr("app.config.settings.database_url", POSTGRES_TEST_DSN)
 
-    await init_sqlite()
-    db = await get_sqlite()
+    await init_db()
+    db = await get_db_connection()
     try:
         await db.execute("DELETE FROM mapping_transform_rules")
         await db.execute("DELETE FROM mapping_filters")

@@ -2,7 +2,8 @@
 import os
 
 os.environ["TESTING"] = "1"  # Skip Mongo indexes, 3s worker restore delay in API tests
-os.environ["DB_BACKEND"] = "sqlite"  # Keep legacy test suites on SQLite by default
+os.environ["DB_BACKEND"] = "postgres"
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres")
 
 import asyncio
 

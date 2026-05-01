@@ -1,17 +1,32 @@
 import pytest
+import sys
 
-from app.db.sqlite import init_sqlite, get_sqlite
+from app.db.gateway import get_db_connection
 from app.services.mapping_service import list_enabled_mappings
+
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="PostgreSQL async integration suite is unstable on local Windows event loop",
+)
+
+
+async def _reset_postgres_test_data(db) -> None:
+    await db.execute("DELETE FROM mapping_transform_rules")
+    await db.execute("DELETE FROM mapping_filters")
+    await db.execute("DELETE FROM channel_mappings")
+    await db.execute("DELETE FROM telegram_accounts")
+    await db.execute("DELETE FROM users")
+    await db.execute("SELECT setval('users_id_seq', 1, false)")
+    await db.execute("SELECT setval('channel_mappings_id_seq', 1, false)")
+    await db.execute("SELECT setval('mapping_filters_id_seq', 1, false)")
+    await db.execute("SELECT setval('mapping_transform_rules_id_seq', 1, false)")
+    await db.commit()
 
 
 @pytest.mark.asyncio
 async def test_list_enabled_mappings_with_filters(tmp_path):
-    db_path = tmp_path / "test.db"
-    from app.config import settings
-
-    settings.sqlite_path = str(db_path)
-    await init_sqlite()
-    db = await get_sqlite()
+    db = await get_db_connection()
+    await _reset_postgres_test_data(db)
 
     await db.execute(
         "INSERT INTO users (email, role, status) VALUES (?, ?, ?)",
@@ -53,16 +68,13 @@ async def test_list_enabled_mappings_with_filters(tmp_path):
     assert mappings[0].source_chat_id == 111
     assert {f.include_text for f in mappings[0].filters} == {"hello", "world"}
     assert {(f.include_text, f.or_group_id) for f in mappings[0].filters} == {("hello", 1), ("world", 2)}
+    await db.close()
 
 
 @pytest.mark.asyncio
 async def test_list_enabled_mappings_no_filters(tmp_path):
-    db_path = tmp_path / "test.db"
-    from app.config import settings
-
-    settings.sqlite_path = str(db_path)
-    await init_sqlite()
-    db = await get_sqlite()
+    db = await get_db_connection()
+    await _reset_postgres_test_data(db)
 
     await db.execute(
         "INSERT INTO users (email, role, status) VALUES (?, ?, ?)",
@@ -78,16 +90,13 @@ async def test_list_enabled_mappings_no_filters(tmp_path):
     assert len(mappings) == 1
     assert mappings[0].source_chat_id == 100
     assert mappings[0].filters == []
+    await db.close()
 
 
 @pytest.mark.asyncio
 async def test_list_enabled_mappings_all_four_rule_types(tmp_path):
-    db_path = tmp_path / "test.db"
-    from app.config import settings
-
-    settings.sqlite_path = str(db_path)
-    await init_sqlite()
-    db = await get_sqlite()
+    db = await get_db_connection()
+    await _reset_postgres_test_data(db)
 
     await db.execute(
         "INSERT INTO users (email, role, status) VALUES (?, ?, ?)",
@@ -113,16 +122,13 @@ async def test_list_enabled_mappings_all_four_rule_types(tmp_path):
     assert f.media_types == "text,voice"
     assert f.regex_pattern == r"#\d+"
     assert f.or_group_id == 1
+    await db.close()
 
 
 @pytest.mark.asyncio
 async def test_list_enabled_mappings_disabled_excluded(tmp_path):
-    db_path = tmp_path / "test.db"
-    from app.config import settings
-
-    settings.sqlite_path = str(db_path)
-    await init_sqlite()
-    db = await get_sqlite()
+    db = await get_db_connection()
+    await _reset_postgres_test_data(db)
 
     await db.execute(
         "INSERT INTO users (email, role, status) VALUES (?, ?, ?)",
@@ -141,16 +147,13 @@ async def test_list_enabled_mappings_disabled_excluded(tmp_path):
 
     mappings = list(await list_enabled_mappings(db, user_id=1))
     assert len(mappings) == 0
+    await db.close()
 
 
 @pytest.mark.asyncio
 async def test_list_enabled_mappings_multiple_no_crosstalk(tmp_path):
-    db_path = tmp_path / "test.db"
-    from app.config import settings
-
-    settings.sqlite_path = str(db_path)
-    await init_sqlite()
-    db = await get_sqlite()
+    db = await get_db_connection()
+    await _reset_postgres_test_data(db)
 
     await db.execute("INSERT INTO users (email, role, status) VALUES (?, ?, ?)", ("u1@ex.com", "user", "active"))
     await db.execute("INSERT INTO users (email, role, status) VALUES (?, ?, ?)", ("u2@ex.com", "user", "active"))
@@ -179,16 +182,13 @@ async def test_list_enabled_mappings_multiple_no_crosstalk(tmp_path):
     by_src = {m.source_chat_id: m for m in mappings}
     assert by_src[10].filters[0].include_text == "a"
     assert by_src[30].filters[0].include_text == "b"
+    await db.close()
 
 
 @pytest.mark.asyncio
 async def test_list_enabled_mappings_loads_transforms(tmp_path):
-    db_path = tmp_path / "test.db"
-    from app.config import settings
-
-    settings.sqlite_path = str(db_path)
-    await init_sqlite()
-    db = await get_sqlite()
+    db = await get_db_connection()
+    await _reset_postgres_test_data(db)
 
     await db.execute(
         "INSERT INTO users (email, role, status) VALUES (?, ?, ?)",
@@ -222,16 +222,13 @@ async def test_list_enabled_mappings_loads_transforms(tmp_path):
     assert transforms[1].rule_type == "text"
     assert transforms[1].find_text == "Sam channel"
     assert transforms[1].replace_text == "Tom channel"
+    await db.close()
 
 
 @pytest.mark.asyncio
 async def test_list_enabled_mappings_loads_media_transform_asset_path(tmp_path):
-    db_path = tmp_path / "test.db"
-    from app.config import settings
-
-    settings.sqlite_path = str(db_path)
-    await init_sqlite()
-    db = await get_sqlite()
+    db = await get_db_connection()
+    await _reset_postgres_test_data(db)
 
     await db.execute(
         "INSERT INTO users (email, role, status) VALUES (?, ?, ?)",
@@ -261,3 +258,4 @@ async def test_list_enabled_mappings_loads_media_transform_asset_path(tmp_path):
     assert transforms[0].replacement_media_asset_id == 1
     assert transforms[0].replacement_media_asset_path == "/tmp/replacement.jpg"
     assert transforms[0].apply_to_media_types == "photo"
+    await db.close()

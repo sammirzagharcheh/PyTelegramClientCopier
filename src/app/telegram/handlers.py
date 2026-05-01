@@ -9,13 +9,13 @@ import uuid
 from typing import Any
 from urllib.parse import urlsplit
 
-import aiosqlite
 from telethon import events, utils
 from telethon.errors import ChatIdInvalidError, FloodWaitError
 from telethon.tl.custom.message import Message
 from telethon.tl.types import MessageMediaWebPage
 
 from app.db.postgres import retry_transient_postgres
+from app.db.gateway import DbConnection
 from app.services.mapping_service import ChannelMapping, MappingFilter, MappingTransform
 from app.telegram.chat_ids import alternate_chat_id
 from app.telegram.pipeline_preview import (
@@ -125,7 +125,7 @@ def _pick_media_replacement(message: Message, transforms: list[MappingTransform]
 
 
 async def _lookup_reply_dest_id(
-    db: aiosqlite.Connection,
+    db: DbConnection,
     user_id: int,
     source_chat_id: int,
     source_reply_msg_id: int,
@@ -141,7 +141,7 @@ async def _lookup_reply_dest_id(
 
 
 async def _lookup_dest_msg_id(
-    db: aiosqlite.Connection,
+    db: DbConnection,
     user_id: int,
     source_chat_id: int,
     source_msg_id: int,
@@ -157,7 +157,7 @@ async def _lookup_dest_msg_id(
 
 
 async def _save_dest_mapping(
-    db: aiosqlite.Connection,
+    db: DbConnection,
     user_id: int,
     source_chat_id: int,
     source_msg_id: int,
@@ -316,7 +316,7 @@ def _schedule_album_flush(
 def build_message_handlers(
     user_id: int,
     mappings: list[ChannelMapping],
-    db: aiosqlite.Connection,
+    db: DbConnection,
     mongo_db,
 ) -> tuple[Any, Any, Any]:
     mapping_by_source: dict[int, list[ChannelMapping]] = {}
@@ -872,7 +872,7 @@ def build_message_handlers(
 def build_message_handler(
     user_id: int,
     mappings: list[ChannelMapping],
-    db: aiosqlite.Connection,
+    db: DbConnection,
     mongo_db,
 ):
     """Backward-compatible: return only the NewMessage handler."""

@@ -1,18 +1,13 @@
 import pytest
 
-from app.db.sqlite import init_sqlite, get_sqlite
+from app.db.gateway import get_db_connection, init_db
 from app.telegram.handlers import _lookup_reply_dest_id, _save_dest_mapping
 
 
 @pytest.mark.asyncio
 async def test_reply_mapping_lookup_and_save(tmp_path):
-    db_path = tmp_path / "test.db"
-    from app.config import settings
-
-    settings.sqlite_path = str(db_path)
-    await init_sqlite()
-
-    db = await get_sqlite()
+    await init_db()
+    db = await get_db_connection()
     await _save_dest_mapping(
         db=db,
         user_id=1,

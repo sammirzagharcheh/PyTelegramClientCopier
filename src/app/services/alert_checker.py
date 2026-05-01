@@ -7,7 +7,7 @@ import os
 import time
 from datetime import datetime, timezone
 
-import aiosqlite
+from app.db.gateway import DbConnection
 
 from app.services.http_notify import post_json_webhook
 
@@ -39,7 +39,7 @@ def _parse_iso_utc(s: str | None) -> datetime | None:
         return None
 
 
-async def _list_alert_webhooks(db: aiosqlite.Connection, user_id: int) -> list[tuple[str, str | None]]:
+async def _list_alert_webhooks(db: DbConnection, user_id: int) -> list[tuple[str, str | None]]:
     async with db.execute(
         "SELECT url, secret FROM user_alert_webhooks WHERE user_id = ? AND enabled = 1",
         (user_id,),
@@ -47,7 +47,7 @@ async def _list_alert_webhooks(db: aiosqlite.Connection, user_id: int) -> list[t
         return [(r[0], r[1]) for r in await cur.fetchall()]
 
 
-async def check_stale_workers_and_alert(db: aiosqlite.Connection) -> int:
+async def check_stale_workers_and_alert(db: DbConnection) -> int:
     """Return number of alert payloads sent (one per user webhook target per stale worker)."""
     now = datetime.now(timezone.utc)
     sent = 0

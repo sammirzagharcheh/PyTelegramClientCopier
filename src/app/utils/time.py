@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from app.db.postgres import using_postgres
-
-
 def normalize_utc_iso_for_json(value: str | None) -> str | None:
     """Normalize legacy SQLite UTC strings for consistent JSON output.
 
@@ -20,7 +17,5 @@ def normalize_utc_iso_for_json(value: str | None) -> str | None:
 
 
 def sql_ts_expr(column: str) -> str:
-    """Return SQL expression for timestamp comparison across DB backends."""
-    if using_postgres():
-        return f"({column})::timestamptz"
-    return f"datetime({column})"
+    """Return SQL expression for timestamp comparison in PostgreSQL."""
+    return f"({column})::timestamptz"

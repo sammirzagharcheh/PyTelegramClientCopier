@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.db.sqlite import get_sqlite, init_sqlite
+from app.db.gateway import get_db_connection, init_db
 from app.web.routers import workers
 
 pytestmark = pytest.mark.postgres_concurrency
@@ -46,8 +46,8 @@ def test_spawn_worker_concurrent_start_collision_single_reservation_postgres_mod
     """Postgres mode: concurrent starts should reserve only one slot."""
 
     async def run_collision():
-        await init_sqlite()
-        db_cleanup = await get_sqlite()
+        await init_db()
+        db_cleanup = await get_db_connection()
         await db_cleanup.execute("DELETE FROM worker_registry WHERE account_id = ?", (1,))
         await db_cleanup.commit()
         await db_cleanup.close()
@@ -56,8 +56,8 @@ def test_spawn_worker_concurrent_start_collision_single_reservation_postgres_mod
         fake_proc.pid = os.getpid()
         fake_proc.poll.return_value = None
 
-        db1 = await get_sqlite()
-        db2 = await get_sqlite()
+        db1 = await get_db_connection()
+        db2 = await get_db_connection()
         ready_count = 0
         ready_lock = asyncio.Lock()
         start_event = asyncio.Event()
@@ -81,7 +81,7 @@ def test_spawn_worker_concurrent_start_collision_single_reservation_postgres_mod
             await db1.close()
             await db2.close()
 
-        db_check = await get_sqlite()
+        db_check = await get_db_connection()
         async with db_check.execute(
             "SELECT COUNT(*) FROM worker_registry WHERE account_id = ?",
             (1,),
@@ -106,8 +106,8 @@ def test_retry_wrapper_retries_on_transient_sqlstate():
             self.sqlstate = sqlstate
 
     async def run_retry_case():
-        await init_sqlite()
-        db = await get_sqlite()
+        await init_db()
+        db = await get_db_connection()
         await db.execute("DELETE FROM worker_registry WHERE account_id = ?", (1,))
         await db.commit()
         attempts = {"count": 0}
@@ -153,8 +153,8 @@ def test_retry_wrapper_does_not_retry_non_transient_errors():
             self.sqlstate = sqlstate
 
     async def run_case():
-        await init_sqlite()
-        db = await get_sqlite()
+        await init_db()
+        db = await get_db_connection()
         try:
             await db.execute("DELETE FROM worker_registry WHERE account_id = ?", (1,))
             await db.commit()
@@ -187,8 +187,8 @@ def test_prune_orphaned_registry_keeps_inflight_reservations():
     """Reservation rows (pid=-1) must not be pruned as dead workers."""
 
     async def run_case():
-        await init_sqlite()
-        db = await get_sqlite()
+        await init_db()
+        db = await get_db_connection()
         await db.execute("DELETE FROM worker_registry WHERE account_id = ?", (1,))
         await db.execute(
             "INSERT INTO worker_registry (worker_id, user_id, account_id, session_path, pid) VALUES (?, ?, ?, ?, ?)",
@@ -214,8 +214,8 @@ def test_stop_workers_preserves_inflight_reservation_rows():
     """Stopping account workers should not delete a still-inflight reservation row."""
 
     async def run_case():
-        await init_sqlite()
-        db = await get_sqlite()
+        await init_db()
+        db = await get_db_connection()
         await db.execute("DELETE FROM worker_registry WHERE account_id = ?", (1,))
         await db.execute(
             "INSERT INTO worker_registry (worker_id, user_id, account_id, session_path, pid) VALUES (?, ?, ?, ?, ?)",

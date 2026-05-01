@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from app.db.sqlite import get_sqlite
+from app.db.gateway import get_db_connection
 from app.web.routers.message_index import _normalize_sqlite_utc_for_json
 
 
@@ -32,7 +32,7 @@ def test_message_index_returns_sqlite_datetime_as_z_suffixed_iso(api_client, use
     """Legacy SQLite UTC strings must be normalized so JS Date parses as UTC."""
 
     async def seed():
-        db = await get_sqlite()
+        db = await get_db_connection()
         await db.execute(
             "INSERT INTO dest_message_index "
             "(user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id, updated_at) "
@@ -63,7 +63,7 @@ def test_message_index_passes_through_python_utc_iso(api_client, user_token):
     iso = "2035-03-09T16:00:00+00:00"
 
     async def seed():
-        db = await get_sqlite()
+        db = await get_db_connection()
         await db.execute(
             "INSERT INTO dest_message_index "
             "(user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id, updated_at) "

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable
 
-import aiosqlite
+from app.db.gateway import DbConnection
 
 
 @dataclass(slots=True)
@@ -114,7 +114,7 @@ class ChannelMapping:
 
 
 async def load_mapping_by_id(
-    db: aiosqlite.Connection,
+    db: DbConnection,
     user_id: int,
     mapping_id: int,
 ) -> ChannelMapping | None:
@@ -179,7 +179,7 @@ async def load_mapping_by_id(
 
 
 async def list_enabled_mappings(
-    db: aiosqlite.Connection,
+    db: DbConnection,
     user_id: int,
     telegram_account_id: int | None = None,
 ) -> Iterable[ChannelMapping]:
@@ -281,7 +281,7 @@ def _row_to_schedule(row: tuple) -> Schedule | None:
     )
 
 
-async def _load_user_schedule(db: aiosqlite.Connection, user_id: int) -> Schedule | None:
+async def _load_user_schedule(db: DbConnection, user_id: int) -> Schedule | None:
     cols = ", ".join(WEEKDAY_COLS)
     async with db.execute(
         f"SELECT {cols} FROM user_schedules WHERE user_id = ?",
@@ -294,7 +294,7 @@ async def _load_user_schedule(db: aiosqlite.Connection, user_id: int) -> Schedul
 
 
 async def _list_filters_bulk(
-    db: aiosqlite.Connection,
+    db: DbConnection,
     user_id: int,
     mapping_ids: list[int],
 ) -> dict[int, list[MappingFilter]]:
@@ -333,7 +333,7 @@ async def _list_filters_bulk(
 
 
 async def _list_transforms_bulk(
-    db: aiosqlite.Connection,
+    db: DbConnection,
     user_id: int,
     mapping_ids: list[int],
 ) -> dict[int, list[MappingTransform]]:
@@ -375,7 +375,7 @@ async def _list_transforms_bulk(
 
 
 async def _load_mapping_schedules_bulk(
-    db: aiosqlite.Connection,
+    db: DbConnection,
     mapping_ids: list[int],
     user_schedule: Schedule | None,
 ) -> dict[int, Schedule | None]:

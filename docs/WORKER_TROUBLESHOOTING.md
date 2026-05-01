@@ -4,7 +4,7 @@
 
 ### Root cause fixed: stale `worker_registry` rows
 
-When a worker process stops, its row in `worker_registry` (SQLite) can remain. On restart:
+When a worker process stops, its row in `worker_registry` (PostgreSQL) can remain. On restart:
 
 1. `start_worker` checks `worker_registry` for the account
 2. If it finds a row, it uses `os.kill(pid, 0)` to see if the process is still alive
@@ -63,7 +63,7 @@ db.worker_logs.find({ account_id: YOUR_ACCOUNT_ID })
 | Reason | What to look for in logs |
 |--------|---------------------------|
 | **Session conflict / AuthKeyDuplicated** | Telethon disconnects when the same session is used elsewhere. Look for disconnect/auth messages. |
-| **Database is locked** | SQLite errors when copying/using the session. Check for `database is locked` or sqlite3 errors. |
+| **Database errors** | PostgreSQL transaction/connection errors during worker actions. Check API logs and DB connectivity. |
 | **Session copy failed** | Fallback to shared session can cause conflicts. Look for `Could not copy session to worker path`. |
 | **Telegram disconnect** | Network issues, FloodWait, or server-side disconnect. Check for disconnect/connection errors. |
 | **Unhandled exception** | Python tracebacks in ERROR-level logs. |

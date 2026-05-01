@@ -6,25 +6,24 @@ import hashlib
 from datetime import datetime, timezone
 from typing import Annotated
 
-import aiosqlite
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.auth.jwt import decode_token
-from app.db.sqlite import get_sqlite
+from app.db.gateway import DbConnection, get_db_connection
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
-async def get_db() -> aiosqlite.Connection:
-    db = await get_sqlite()
+async def get_db() -> DbConnection:
+    db = await get_db_connection()
     try:
         yield db
     finally:
         await db.close()
 
 
-Db = Annotated[aiosqlite.Connection, Depends(get_db)]
+Db = Annotated[DbConnection, Depends(get_db)]
 
 
 async def get_current_user(

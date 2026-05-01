@@ -8,18 +8,15 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from app.db.sqlite import get_sqlite
+from app.db.gateway import get_db_connection
 
 
 @pytest.fixture
 def api_client_with_mapping_titles(api_client, tmp_path):
     """API client with channel_mappings that have source/dest titles for fallback test."""
-    from app.config import settings
-
-    settings.sqlite_path = str(tmp_path / "test.db")
 
     async def update():
-        db = await get_sqlite()
+        db = await get_db_connection()
         await db.execute(
             "UPDATE channel_mappings SET source_chat_title = ?, dest_chat_title = ? "
             "WHERE user_id = 1 AND source_chat_id = 10 AND dest_chat_id = 20",
@@ -85,7 +82,7 @@ def test_message_logs_200_empty_schema(api_client, user_token):
 def test_message_logs_batch_title_fallback(
     api_client_with_mapping_titles, user_token
 ):
-    """When Mongo docs lack titles, batch SQLite lookup fills source_chat_title and dest_chat_title."""
+    """When Mongo docs lack titles, batch DB lookup fills source_chat_title and dest_chat_title."""
     client: TestClient = api_client_with_mapping_titles
     ts = datetime.now(timezone.utc)
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import patch
 
-from app.db.sqlite import get_sqlite
+from app.db.gateway import get_db_connection, init_db
 
 
 def _run_async(coro):
@@ -14,7 +14,8 @@ def _run_async(coro):
 
 def test_delete_mapping_removes_dest_message_index(api_client, user_token):
     async def seed_index():
-        db = await get_sqlite()
+        await init_db()
+        db = await get_db_connection()
         await db.execute(
             "INSERT INTO dest_message_index "
             "(user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id) "
@@ -34,7 +35,7 @@ def test_delete_mapping_removes_dest_message_index(api_client, user_token):
     assert r.status_code == 200
 
     async def count_rows():
-        db = await get_sqlite()
+        db = await get_db_connection()
         async with db.execute("SELECT COUNT(*) FROM dest_message_index WHERE user_id = 1") as cur:
             n = (await cur.fetchone())[0]
         await db.close()
@@ -50,7 +51,8 @@ def test_delete_mapping_removes_index_with_alternate_source_chat_id(api_client, 
     dest = 888888
 
     async def seed():
-        db = await get_sqlite()
+        await init_db()
+        db = await get_db_connection()
         await db.execute(
             "INSERT INTO channel_mappings (user_id, source_chat_id, dest_chat_id, enabled) "
             "VALUES (?, ?, ?, ?)",
@@ -78,7 +80,7 @@ def test_delete_mapping_removes_index_with_alternate_source_chat_id(api_client, 
     assert r.status_code == 200
 
     async def count_rows():
-        db = await get_sqlite()
+        db = await get_db_connection()
         async with db.execute(
             "SELECT COUNT(*) FROM dest_message_index WHERE user_id = 1 AND dest_chat_id = ?",
             (dest,),
@@ -92,7 +94,8 @@ def test_delete_mapping_removes_index_with_alternate_source_chat_id(api_client, 
 
 def test_patch_mapping_source_clears_dest_message_index(api_client, user_token):
     async def seed_index():
-        db = await get_sqlite()
+        await init_db()
+        db = await get_db_connection()
         await db.execute(
             "INSERT INTO dest_message_index "
             "(user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id) "
@@ -113,7 +116,7 @@ def test_patch_mapping_source_clears_dest_message_index(api_client, user_token):
     assert r.status_code == 200
 
     async def count_rows():
-        db = await get_sqlite()
+        db = await get_db_connection()
         async with db.execute(
             "SELECT COUNT(*) FROM dest_message_index WHERE user_id = 1 AND dest_chat_id = 20"
         ) as cur:
@@ -126,7 +129,8 @@ def test_patch_mapping_source_clears_dest_message_index(api_client, user_token):
 
 def test_patch_mapping_dest_clears_dest_message_index(api_client, user_token):
     async def seed_index():
-        db = await get_sqlite()
+        await init_db()
+        db = await get_db_connection()
         await db.execute(
             "INSERT INTO dest_message_index "
             "(user_id, source_chat_id, source_msg_id, dest_chat_id, dest_msg_id) "
@@ -147,7 +151,7 @@ def test_patch_mapping_dest_clears_dest_message_index(api_client, user_token):
     assert r.status_code == 200
 
     async def count_rows():
-        db = await get_sqlite()
+        db = await get_db_connection()
         async with db.execute(
             "SELECT COUNT(*) FROM dest_message_index WHERE user_id = 1 AND source_chat_id = 10 AND dest_chat_id = 20"
         ) as cur:
@@ -166,13 +170,9 @@ def test_purge_orphan_dest_message_index_removes_stale_rows(monkeypatch):
 
     with tempfile.TemporaryDirectory() as td:
         db_path = Path(td) / "t.db"
-        monkeypatch.setattr("app.config.settings.sqlite_path", str(db_path))
-
         async def setup():
-            from app.db.sqlite import init_sqlite
-
-            await init_sqlite()
-            db = await get_sqlite()
+            await init_db()
+            db = await get_db_connection()
             await db.execute(
                 "INSERT INTO users (email, role, status, password_hash, name) VALUES (?, ?, ?, ?, ?)",
                 ("x@test.com", "user", "active", "x", "X"),
@@ -200,7 +200,7 @@ def test_purge_orphan_dest_message_index_removes_stale_rows(monkeypatch):
         _run_async(setup())
 
         async def run_purge():
-            db = await get_sqlite()
+            db = await get_db_connection()
             try:
                 return await purge_orphan_dest_message_index(db, dry_run=False)
             finally:
@@ -210,7 +210,7 @@ def test_purge_orphan_dest_message_index_removes_stale_rows(monkeypatch):
         assert removed == 1
 
         async def count_all():
-            db = await get_sqlite()
+            db = await get_db_connection()
             async with db.execute("SELECT COUNT(*) FROM dest_message_index") as cur:
                 n = (await cur.fetchone())[0]
             await db.close()

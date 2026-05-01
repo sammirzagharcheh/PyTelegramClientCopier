@@ -13,10 +13,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.db.postgres import retry_transient_postgres, using_postgres
+from app.db.gateway import DbConnection
+from app.db.postgres import retry_transient_postgres
 from app.utils.time import normalize_utc_iso_for_json
 from app.web.deps import AdminUser, CurrentUser, Db, WriterUser
 
@@ -64,7 +64,7 @@ async def _terminate_worker(w: dict[str, Any]) -> None:
             pass
 
 
-async def _prune_dead_workers(db: aiosqlite.Connection) -> None:
+async def _prune_dead_workers(db: DbConnection) -> None:
     """Remove dead workers from the registry and worker_registry table."""
     dead = [wid for wid, w in _workers.items() if not _is_process_alive(w)]
     for wid in dead:
@@ -111,7 +111,7 @@ async def _get_account_worker_lock(account_id: int) -> asyncio.Lock:
 
 
 async def _list_workers_from_registry(
-    db: aiosqlite.Connection, user: dict
+    db: DbConnection, user: dict
 ) -> tuple[list[dict], int, int, int]:
     """
     List workers from worker_registry (source of truth). Prunes dead PIDs, reattaches
@@ -183,7 +183,7 @@ async def _list_workers_from_registry(
     return items, workers_in_registry, workers_reattached, workers_pruned
 
 
-async def _prune_orphaned_registry_rows(db: aiosqlite.Connection) -> None:
+async def _prune_orphaned_registry_rows(db: DbConnection) -> None:
     """Remove worker_registry rows whose PIDs are no longer running (e.g. worker crashed, API
     restarted). This prevents 'Worker already running' when the process is actually dead."""
     async with db.execute(
@@ -227,7 +227,7 @@ def _running_worker_info_for_account(account_id: int) -> tuple[str | None, int |
     return None, None
 
 
-async def _account_has_worker_in_registry(db: aiosqlite.Connection, account_id: int) -> bool:
+async def _account_has_worker_in_registry(db: DbConnection, account_id: int) -> bool:
     """Check if worker_registry has any row for this account with alive PID (covers workers
     started by other API processes)."""
     async with db.execute(
@@ -241,7 +241,7 @@ async def _account_has_worker_in_registry(db: aiosqlite.Connection, account_id: 
 
 
 async def _spawn_worker_for_account(
-    db: aiosqlite.Connection,
+    db: DbConnection,
     account_id: int,
     user_id: int,
     session_path: str,
@@ -255,13 +255,12 @@ async def _spawn_worker_for_account(
     """
     lock = await _get_account_worker_lock(account_id)
     async with lock:
-        if using_postgres():
-            # Lock the account row to serialize concurrent cross-process starts.
-            async with db.execute(
-                "SELECT id FROM telegram_accounts WHERE id = ? FOR UPDATE",
-                (account_id,),
-            ) as cur:
-                await cur.fetchone()
+        # Lock the account row to serialize concurrent cross-process starts.
+        async with db.execute(
+            "SELECT id FROM telegram_accounts WHERE id = ? FOR UPDATE",
+            (account_id,),
+        ) as cur:
+            await cur.fetchone()
 
         if _account_has_running_worker(account_id):
             return False
@@ -269,9 +268,7 @@ async def _spawn_worker_for_account(
         worker_id = _next_worker_id()
 
         async def _reserve_worker_slot() -> bool:
-            select_sql = "SELECT worker_id, pid FROM worker_registry WHERE account_id = ?"
-            if using_postgres():
-                select_sql += " FOR UPDATE"
+            select_sql = "SELECT worker_id, pid FROM worker_registry WHERE account_id = ? FOR UPDATE"
             async with db.execute(select_sql, (account_id,)) as cur:
                 rows = await cur.fetchall()
             for existing_worker_id, existing_pid in rows:
@@ -299,9 +296,9 @@ async def _spawn_worker_for_account(
             )
             if not reserved:
                 return False
-        except aiosqlite.IntegrityError:
-            return False
-        except Exception:
+        except Exception as exc:
+            if "unique" in str(exc).lower():
+                return False
             raise
 
         project_root = Path(__file__).resolve().parents[4]
@@ -365,7 +362,7 @@ async def _spawn_worker_for_account(
         return True
 
 
-async def stop_workers_for_account(account_id: int, db: aiosqlite.Connection) -> None:
+async def stop_workers_for_account(account_id: int, db: DbConnection) -> None:
     """Stop and remove all workers for a given account_id. Uses worker_registry as source of
     truth so workers started by other API processes are also stopped. Waits for each process
     to exit before returning."""
@@ -475,7 +472,7 @@ async def reset_worker_account(
 
 
 async def restart_workers_for_mapping(
-    db: aiosqlite.Connection,
+    db: DbConnection,
     mapping_user_id: int,
     mapping_telegram_account_id: int | None,
 ) -> None:
@@ -681,7 +678,7 @@ async def stop_worker(
     return {"status": "ok"}
 
 
-async def restore_workers_from_db(db: aiosqlite.Connection) -> None:
+async def restore_workers_from_db(db: DbConnection) -> None:
     """Restore workers from worker_registry. Reattach orphans (alive PIDs); for dead PIDs
     (e.g. after graceful shutdown), spawn new workers. Only accounts that had workers get them back."""
     global _worker_counter
@@ -717,7 +714,7 @@ async def restore_workers_from_db(db: aiosqlite.Connection) -> None:
     await db.commit()
 
 
-async def terminate_all_workers(db: aiosqlite.Connection) -> None:
+async def terminate_all_workers(db: DbConnection) -> None:
     """Terminate all workers on API shutdown. Keep worker_registry rows so restore can
     spawn workers for these accounts on next startup."""
     to_stop = list(_workers.items())

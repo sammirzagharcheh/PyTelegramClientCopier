@@ -1,23 +1,25 @@
 """API test fixtures: TestClient, seeded DB, JWT tokens."""
 
 import asyncio
+import os
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.auth import create_access_token
 from app.auth.password import hash_password
-from app.db.sqlite import get_sqlite, init_sqlite
+from app.db.gateway import get_db_connection, init_db
+
+POSTGRES_TEST_DSN = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres")
 
 
 @pytest.fixture
 def api_client(tmp_path):
-    """Create TestClient with tmp SQLite DB, seeded with user and mapping."""
+    """Create TestClient with Postgres DB, seeded with user and mapping."""
     from app.config import settings
 
-    settings.db_backend = "sqlite"
-    settings.database_url = None
-    settings.sqlite_path = str(tmp_path / "test.db")
+    settings.db_backend = "postgres"
+    settings.database_url = POSTGRES_TEST_DSN
     settings.media_assets_dir = str(tmp_path / "media_assets")
     settings.testing = True
     from app.web.app import create_app
@@ -28,18 +30,34 @@ def api_client(tmp_path):
         client.get("/health")
 
         async def seed():
-            db = await get_sqlite()
+            await init_db()
+            db = await get_db_connection()
+            await db.execute("DELETE FROM mapping_transform_rules")
+            await db.execute("DELETE FROM mapping_filters")
+            await db.execute("DELETE FROM mapping_schedules")
+            await db.execute("DELETE FROM user_schedules")
+            await db.execute("DELETE FROM channel_mappings")
+            await db.execute("DELETE FROM telegram_accounts")
+            await db.execute("DELETE FROM media_assets")
+            await db.execute("DELETE FROM refresh_tokens")
+            await db.execute("DELETE FROM login_sessions")
+            await db.execute("DELETE FROM worker_registry")
+            await db.execute("DELETE FROM user_alert_webhooks")
+            await db.execute("DELETE FROM user_api_keys")
+            await db.execute("DELETE FROM dest_message_index")
+            await db.execute("DELETE FROM admin_invites")
+            await db.execute("DELETE FROM users")
             await db.execute(
-                "INSERT INTO users (email, role, status, password_hash, name) VALUES (?, ?, ?, ?, ?)",
-                ("user@test.com", "user", "active", hash_password("pass"), "User"),
+                "INSERT INTO users (id, email, role, status, password_hash, name) VALUES (?, ?, ?, ?, ?, ?)",
+                (1, "user@test.com", "user", "active", hash_password("pass"), "User"),
             )
             await db.execute(
-                "INSERT INTO users (email, role, status, password_hash, name) VALUES (?, ?, ?, ?, ?)",
-                ("admin@test.com", "admin", "active", hash_password("pass"), "Admin"),
+                "INSERT INTO users (id, email, role, status, password_hash, name) VALUES (?, ?, ?, ?, ?, ?)",
+                (2, "admin@test.com", "admin", "active", hash_password("pass"), "Admin"),
             )
             await db.execute(
-                "INSERT INTO users (email, role, status, password_hash, name) VALUES (?, ?, ?, ?, ?)",
-                ("other@test.com", "user", "active", hash_password("pass"), "Other"),
+                "INSERT INTO users (id, email, role, status, password_hash, name) VALUES (?, ?, ?, ?, ?, ?)",
+                (3, "other@test.com", "user", "active", hash_password("pass"), "Other"),
             )
             await db.execute(
                 "INSERT INTO channel_mappings (user_id, source_chat_id, dest_chat_id, enabled) VALUES (?, ?, ?, ?)",
@@ -49,11 +67,15 @@ def api_client(tmp_path):
                 "INSERT INTO channel_mappings (user_id, source_chat_id, dest_chat_id, enabled) VALUES (?, ?, ?, ?)",
                 (3, 30, 40, 1),
             )
-            session_path = str(tmp_path / "user1.session")
+            session_path = str((tmp_path / "user1.session").resolve())
             await db.execute(
-                "INSERT INTO telegram_accounts (user_id, type, session_path, status) VALUES (?, ?, ?, ?)",
-                (1, "user", session_path, "active"),
+                "INSERT INTO telegram_accounts (id, user_id, type, session_path, status) VALUES (?, ?, ?, ?, ?)",
+                (1, 1, "user", session_path, "active"),
             )
+            # Keep IDs deterministic across API tests.
+            await db.execute("SELECT setval('users_id_seq', 3, true)")
+            await db.execute("SELECT setval('channel_mappings_id_seq', 2, true)")
+            await db.execute("SELECT setval('telegram_accounts_id_seq', 1, true)")
             await db.commit()
             await db.close()
 

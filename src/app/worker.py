@@ -9,7 +9,7 @@ from pathlib import Path
 
 from app.config import settings
 from app.db.mongo import get_mongo_db
-from app.db.sqlite import get_sqlite, init_sqlite
+from app.db.gateway import get_db_connection, init_db
 from app.services.mapping_service import list_enabled_mappings
 from app.worker_log_handler import MongoWorkerLogHandler, test_mongo_connection
 from app.telegram.client_manager import attach_message_handlers, start_user_client
@@ -69,9 +69,9 @@ async def run_worker(
         logger.warning("MongoDB worker_logs handler skipped: %s", e)
 
     try:
-        await init_sqlite()
+        await init_db()
         mongo_db = get_mongo_db()
-        db = await get_sqlite()
+        db = await get_db_connection()
         mappings = list(
             await list_enabled_mappings(db, user_id, telegram_account_id=telegram_account_id)
         )

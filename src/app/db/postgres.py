@@ -8,10 +8,7 @@ from collections.abc import Iterable, Sequence
 from datetime import datetime, timezone
 from typing import Any
 
-import aiosqlite
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError as SAIntegrityError
-from sqlalchemy.exc import OperationalError as SAOperationalError
 from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
@@ -244,8 +241,7 @@ _TABLES_WITH_ID = {
 
 
 def using_postgres() -> bool:
-    backend = (settings.db_backend or "").strip().lower()
-    return backend == "postgres"
+    return True
 
 
 def _get_engine() -> AsyncEngine:
@@ -284,11 +280,6 @@ def _translate_qmark(sql: str, params: Sequence[Any] | None) -> tuple[str, dict[
 
 
 def _as_db_exception(err: Exception) -> Exception:
-    msg = str(err).lower()
-    if isinstance(err, SAIntegrityError):
-        return aiosqlite.IntegrityError(str(err))
-    if isinstance(err, SAOperationalError) or "deadlock" in msg or "timeout" in msg:
-        return aiosqlite.OperationalError(str(err))
     return err
 
 
@@ -490,12 +481,6 @@ async def get_postgres_connection() -> Any:
 async def init_postgres() -> None:
     engine = _get_engine()
     async with engine.begin() as conn:
-        for stmt in POSTGRES_SCHEMA_SQL.split(";"):
-            query = stmt.strip()
-            if not query:
-                continue
-            await conn.execute(text(query))
-        await conn.execute(
-            text("INSERT INTO _migrations (id, name, applied_at) VALUES (0, :name, :applied_at) ON CONFLICT DO NOTHING"),
-            {"name": "v1_base", "applied_at": datetime.now(timezone.utc).isoformat()},
-        )
+        from app.db.models import Base
+
+        await conn.run_sync(Base.metadata.create_all)

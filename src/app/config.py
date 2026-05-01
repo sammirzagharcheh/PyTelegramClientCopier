@@ -17,9 +17,8 @@ class Settings(BaseSettings):
     telegram_test_chat_id: str | None = None
     mongo_uri: str = "mongodb://localhost:27017"
     mongo_db: str = "telegram_copier"
-    db_backend: str = "postgres"  # postgres | sqlite (sqlite kept for rollback/tests)
-    database_url: str | None = None
-    sqlite_path: str = "data/app.db"
+    db_backend: str = "postgres"
+    database_url: str
     sessions_dir: str = "data/sessions"
     media_assets_dir: str = "data/media_assets"
     media_upload_max_bytes: int = 52_428_800  # 50 MiB
@@ -34,11 +33,11 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _validate_database_backend(self) -> "Settings":
         backend = (self.db_backend or "").strip().lower()
-        if backend not in {"sqlite", "postgres"}:
-            raise ValueError("DB_BACKEND must be either 'sqlite' or 'postgres'")
+        if backend != "postgres":
+            raise ValueError("DB_BACKEND must be 'postgres'")
         self.db_backend = backend
-        if backend == "postgres" and not self.database_url:
-            raise ValueError("DATABASE_URL is required when DB_BACKEND=postgres")
+        if not self.database_url:
+            raise ValueError("DATABASE_URL is required")
         return self
 
 

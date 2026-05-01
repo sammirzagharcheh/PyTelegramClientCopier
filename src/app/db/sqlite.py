@@ -1,81 +1,13 @@
-from __future__ import annotations
+"""Deprecated SQLite gateway module.
 
-from pathlib import Path
-
-import aiosqlite
-
-from app.config import settings
-from app.db.postgres import get_postgres_connection, init_postgres, using_postgres
-
-
-SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  email TEXT UNIQUE NOT NULL,
-  role TEXT NOT NULL DEFAULT 'user',
-  status TEXT NOT NULL DEFAULT 'active',
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS telegram_accounts (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL,
-  type TEXT NOT NULL,
-  session_path TEXT,
-  phone TEXT,
-  bot_token TEXT,
-  status TEXT NOT NULL DEFAULT 'active',
-  FOREIGN KEY(user_id) REFERENCES users(id)
-);
-
-CREATE TABLE IF NOT EXISTS channel_mappings (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL,
-  source_chat_id INTEGER NOT NULL,
-  dest_chat_id INTEGER NOT NULL,
-  enabled INTEGER NOT NULL DEFAULT 1,
-  FOREIGN KEY(user_id) REFERENCES users(id)
-);
-
-CREATE TABLE IF NOT EXISTS mapping_filters (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  mapping_id INTEGER NOT NULL,
-  include_text TEXT,
-  exclude_text TEXT,
-  media_types TEXT,
-  regex_pattern TEXT,
-  FOREIGN KEY(mapping_id) REFERENCES channel_mappings(id)
-);
-
-CREATE TABLE IF NOT EXISTS dest_message_index (
-  user_id INTEGER NOT NULL,
-  source_chat_id INTEGER NOT NULL,
-  source_msg_id INTEGER NOT NULL,
-  dest_chat_id INTEGER NOT NULL,
-  dest_msg_id INTEGER NOT NULL,
-  updated_at TEXT,
-  PRIMARY KEY (user_id, source_chat_id, source_msg_id, dest_chat_id)
-);
+This project is PostgreSQL-only. Keep these aliases temporarily so older imports
+continue to work while call sites migrate to app.db.gateway.
 """
 
+from __future__ import annotations
 
-async def init_sqlite() -> None:
-    if using_postgres():
-        await init_postgres()
-        return
-    db_path = Path(settings.sqlite_path)
-    if db_path.parent:
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-    async with aiosqlite.connect(settings.sqlite_path) as db:
-        await db.executescript(SCHEMA_SQL)
-        await db.commit()
-        from app.db.migrations import run_migrations
+from app.db.gateway import get_db_connection as get_sqlite
+from app.db.gateway import init_db as init_sqlite
 
-        await run_migrations(db)
-
-
-async def get_sqlite():
-    if using_postgres():
-        return await get_postgres_connection()
-    return await aiosqlite.connect(settings.sqlite_path)
+__all__ = ["get_sqlite", "init_sqlite"]
 

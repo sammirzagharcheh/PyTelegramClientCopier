@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from app.db.sqlite import get_sqlite
+from app.db.gateway import get_db_connection
 from app.utils.time import sql_ts_expr
 
 logger = logging.getLogger(__name__)
@@ -19,8 +19,8 @@ async def purge_old_login_sessions(retention_days: int) -> int:
     """
     deleted = 0
     try:
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
-        db = await get_sqlite()
+        cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+        db = await get_db_connection()
         try:
             created_expr = sql_ts_expr("created_at")
             cutoff_expr = sql_ts_expr("?")
