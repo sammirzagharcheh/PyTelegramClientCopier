@@ -258,6 +258,10 @@ def _get_engine() -> AsyncEngine:
             pool_pre_ping=True,
             poolclass=NullPool,
             future=True,
+            connect_args={
+                "statement_cache_size": 0,
+                "prepared_statement_cache_size": 0,
+            },
         )
     return _ENGINE
 
