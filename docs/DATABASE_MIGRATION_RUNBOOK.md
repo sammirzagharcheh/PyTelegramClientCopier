@@ -110,6 +110,19 @@ Use this when moving an existing deployment from SQLite to PostgreSQL (schema + 
 
 **Diagnose on the VPS:** First ensure the repo is actually updated to `main` (see below). Then: `sudo bash /opt/telegram-copier/scripts/diagnose-prod-login.sh` prints service status, `tg-copier db show-config`, and `tg-copier db inspect-auth-users` (per-user `status`, hash length, `bcrypt_ok`). If `bcrypt_ok` is false or `status` is not `active`, fix data or reset the password with `set-password`.
 
+**Post-deploy smoke (health + login + /auth/me):**
+
+```bash
+cd /opt/telegram-copier
+bash scripts/smoke-auth.sh "your@email.com" "yourPassword"
+```
+
+Optional custom API base:
+
+```bash
+API_BASE="http://127.0.0.1:8000/api" bash scripts/smoke-auth.sh "your@email.com" "yourPassword"
+```
+
 **Git “dubious ownership” / missing new files after “pull”:** The tree under `/opt/telegram-copier` is owned by the app user (`tgcopier`). Running `sudo git …` runs Git **as root**, so Git aborts and **no fetch/reset happens**—you stay on an old commit and new scripts (e.g. `scripts/diagnose-prod-login.sh`) will be missing. Prefer **`sudo bash /opt/telegram-copier/scripts/update-vps.sh`** (it runs `git` as `tgcopier`), or manually:
 
 ```bash
