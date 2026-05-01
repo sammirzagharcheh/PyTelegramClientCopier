@@ -14,7 +14,7 @@ export function Login() {
     e.preventDefault();
     setError('');
     try {
-      await login(email, password);
+      await login(email.trim(), password);
       navigate('/');
     } catch (err: unknown) {
       setError(

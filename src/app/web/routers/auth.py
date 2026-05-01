@@ -32,9 +32,10 @@ def _hash_token(token: str) -> str:
 async def login(data: LoginRequest, db: Db) -> dict:
     """Login with email and password, returns access and refresh tokens."""
     # Case-insensitive email match: migrated SQLite rows may not be lowercased.
+    email_key = data.email.strip().lower()
     async with db.execute(
         "SELECT id, email, name, role, status, password_hash FROM users WHERE lower(email) = ?",
-        (data.email.lower(),),
+        (email_key,),
     ) as cur:
         row = await cur.fetchone()
     if not row or row[5] is None:

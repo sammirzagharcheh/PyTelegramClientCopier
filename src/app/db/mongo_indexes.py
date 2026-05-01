@@ -34,11 +34,16 @@ async def ensure_mongo_indexes() -> None:
         for coll_name, index_specs in INDEXES.items():
             coll = mongo_db[coll_name]
             for spec in index_specs:
-                await coll.create_index(
-                    spec["keys"],
-                    name=spec["name"],
-                    expireAfterSeconds=spec.get("expire_after_seconds"),
-                )
+                keys = spec["keys"]
+                name = spec["name"]
+                if "expire_after_seconds" in spec:
+                    await coll.create_index(
+                        keys,
+                        name=name,
+                        expireAfterSeconds=spec["expire_after_seconds"],
+                    )
+                else:
+                    await coll.create_index(keys, name=name)
                 logger.info("MongoDB index %s.%s ensured", coll_name, spec["name"])
     except Exception as e:
         logger.warning("MongoDB index creation skipped (Mongo may be unconfigured): %s", e)
