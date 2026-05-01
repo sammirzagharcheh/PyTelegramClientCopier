@@ -57,9 +57,10 @@ async def login(data: LoginRequest, db: Db) -> dict:
     access_token = create_access_token(sub=email, user_id=user_id, role=role)
     refresh_token = create_refresh_token(sub=email, user_id=user_id)
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    now_iso = datetime.now(timezone.utc).isoformat()
     await db.execute(
-        "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)",
-        (user_id, _hash_token(refresh_token), expires_at.isoformat()),
+        "INSERT INTO refresh_tokens (user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?)",
+        (user_id, _hash_token(refresh_token), expires_at.isoformat(), now_iso),
     )
     await db.commit()
     return {
