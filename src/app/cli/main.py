@@ -5,7 +5,7 @@ import asyncio
 import typer
 
 from app.config import settings
-from app.db.sqlite import init_sqlite
+from app.db.sqlite import get_sqlite, init_sqlite
 
 
 cli = typer.Typer(help="Telegram Client Copier CLI")
@@ -175,6 +175,52 @@ def set_password(
             await db.close()
 
     asyncio.run(_set())
+
+
+@cli.command("inspect-auth-users")
+def inspect_auth_users() -> None:
+    """Print safe auth fields per user (debug login: status, hash shape, bcrypt prefix)."""
+    from app.auth.password import _normalize_bcrypt_hash
+
+    asyncio.run(init_sqlite())
+
+    async def _run() -> None:
+        db = await get_sqlite()
+        try:
+            async with db.execute(
+                "SELECT id, email, status, password_hash FROM users ORDER BY id"
+            ) as cur:
+                rows = await cur.fetchall()
+            if not rows:
+                typer.echo("No rows in users table.")
+                return
+            for row in rows:
+                uid, email, user_status, ph = row
+                norm = _normalize_bcrypt_hash(ph)
+                ph_type = type(ph).__name__
+                if ph is None:
+                    ph_len = 0
+                elif isinstance(ph, memoryview):
+                    ph_len = len(ph.tobytes())
+                else:
+                    ph_len = len(ph)
+                preview = ""
+                if ph is not None:
+                    s = (
+                        ph.decode("utf-8", errors="replace")
+                        if isinstance(ph, (bytes, memoryview))
+                        else str(ph)
+                    )
+                    preview = (s[:18] + "…") if len(s) > 18 else s
+                typer.echo(
+                    f"id={uid} email={email!r} status={user_status!r} "
+                    f"hash_type={ph_type} hash_len={ph_len} bcrypt_ok={bool(norm)} "
+                    f"prefix={preview!r}"
+                )
+        finally:
+            await db.close()
+
+    asyncio.run(_run())
 
 
 @cli.command("purge-message-index")
