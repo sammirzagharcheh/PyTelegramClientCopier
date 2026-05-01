@@ -13,6 +13,17 @@ When a worker process stops, its row in `worker_registry` (SQLite) can remain. O
 
 **Fix applied**: Dead entries in `worker_registry` are now deleted when you try to start a worker, so a new worker can be spawned.
 
+### Admin recovery endpoint for 409 conflicts
+
+If `/api/workers/start` returns `409 Conflict` and you need to forcibly clear stale rows for one account:
+
+`POST /api/workers/reset-account?account_id=<ID>`
+
+- Admin token required.
+- Stops alive worker PIDs for that account.
+- Clears reservation/stale rows in `worker_registry`.
+- Returns counts: `stopped_workers`, `cleared_rows`.
+
 ---
 
 ## Diagnosing why workers stop: MongoDB `worker_logs`

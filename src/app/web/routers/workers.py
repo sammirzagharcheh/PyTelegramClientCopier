@@ -17,7 +17,7 @@ import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.db.postgres import retry_transient_postgres, using_postgres
-from app.web.deps import CurrentUser, Db, WriterUser
+from app.web.deps import AdminUser, CurrentUser, Db, WriterUser
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/workers", tags=["workers"])
@@ -410,6 +410,70 @@ async def stop_workers_for_account(account_id: int, db: aiosqlite.Connection) ->
             await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (wid,))
         if rows or to_stop:
             await db.commit()
+
+
+@router.post("/reset-account")
+async def reset_worker_account(
+    user: AdminUser,
+    db: Db,
+    account_id: int,
+) -> dict:
+    """Admin recovery endpoint: stop worker process(es) and clear registry rows for account."""
+    lock = await _get_account_worker_lock(account_id)
+    stopped_workers = 0
+    cleared_rows = 0
+    async with lock:
+        async with db.execute(
+            "SELECT worker_id, pid FROM worker_registry WHERE account_id = ?",
+            (account_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+
+        for worker_id, pid in rows:
+            if _is_starting_reservation_pid(pid):
+                await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
+                if worker_id in _workers:
+                    del _workers[worker_id]
+                cleared_rows += 1
+                continue
+
+            if _pid_alive(pid):
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    await _wait_for_pid_exit(pid, timeout_sec=5.0)
+                    try:
+                        os.kill(pid, 0)
+                        kill_sig = getattr(signal, "SIGKILL", signal.SIGTERM)
+                        os.kill(pid, kill_sig)
+                    except OSError:
+                        pass
+                    stopped_workers += 1
+                except OSError:
+                    pass
+            else:
+                cleared_rows += 1
+
+            if worker_id in _workers:
+                del _workers[worker_id]
+            await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
+
+        # Safety net: clear any in-memory workers for this account that lack registry rows.
+        to_stop = [wid for wid, w in _workers.items() if w.get("account_id") == account_id]
+        for wid in to_stop:
+            await _terminate_worker(_workers[wid])
+            del _workers[wid]
+            await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (wid,))
+            stopped_workers += 1
+
+        if rows or to_stop:
+            await db.commit()
+
+    return {
+        "status": "ok",
+        "account_id": account_id,
+        "stopped_workers": stopped_workers,
+        "cleared_rows": cleared_rows,
+    }
 
 
 async def restart_workers_for_mapping(
