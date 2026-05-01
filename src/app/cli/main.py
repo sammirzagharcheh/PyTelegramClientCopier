@@ -139,6 +139,44 @@ def create_admin(email: str, password: str, name: str = "") -> None:
     asyncio.run(_create())
 
 
+@cli.command("set-password")
+def set_password(
+    email: str = typer.Argument(..., help="User email (matched case-insensitively)"),
+    password: str = typer.Argument(..., help="New password"),
+) -> None:
+    """Overwrite password for an existing user (recovery after DB migration or lockout)."""
+    from datetime import datetime, timezone
+
+    from app.auth.password import hash_password
+    from app.db.sqlite import get_sqlite
+
+    asyncio.run(init_sqlite())
+
+    async def _set() -> None:
+        db = await get_sqlite()
+        try:
+            async with db.execute(
+                "SELECT id FROM users WHERE lower(email) = ?",
+                (email.lower(),),
+            ) as cur:
+                row = await cur.fetchone()
+            if not row:
+                typer.echo(f"No user with email matching {email!r}.", err=True)
+                raise typer.Exit(1)
+            pw_hash = hash_password(password)
+            now = datetime.now(timezone.utc).isoformat()
+            await db.execute(
+                "UPDATE users SET password_hash = ?, updated_at = ? WHERE lower(email) = ?",
+                (pw_hash, now, email.lower()),
+            )
+            await db.commit()
+            typer.echo(f"Password updated for user id={row[0]}.")
+        finally:
+            await db.close()
+
+    asyncio.run(_set())
+
+
 @cli.command("purge-message-index")
 def purge_message_index(
     dry_run: bool = typer.Option(
