@@ -108,7 +108,15 @@ Use this when moving an existing deployment from SQLite to PostgreSQL (schema + 
 
 **Login still fails (“invalid email or password”) after cutover:** deploy the latest auth fixes, then on the server (as `tgcopier`, with `.env` loading Postgres) run: `tg-copier db set-password your@email.com 'NewStrongPassword'` to replace the stored bcrypt hash (e.g. corrupted import or unknown legacy hash).
 
-**Diagnose on the VPS:** `sudo bash /opt/telegram-copier/scripts/diagnose-prod-login.sh` (or after pulling latest, `scripts/diagnose-prod-login.sh`) prints service status, `tg-copier db show-config`, and `tg-copier db inspect-auth-users` (per-user `status`, hash length, `bcrypt_ok`). If `bcrypt_ok` is false or `status` is not `active`, fix data or reset the password with `set-password`.
+**Diagnose on the VPS:** First ensure the repo is actually updated to `main` (see below). Then: `sudo bash /opt/telegram-copier/scripts/diagnose-prod-login.sh` prints service status, `tg-copier db show-config`, and `tg-copier db inspect-auth-users` (per-user `status`, hash length, `bcrypt_ok`). If `bcrypt_ok` is false or `status` is not `active`, fix data or reset the password with `set-password`.
+
+**Git “dubious ownership” / missing new files after “pull”:** The tree under `/opt/telegram-copier` is owned by the app user (`tgcopier`). Running `sudo git …` runs Git **as root**, so Git aborts and **no fetch/reset happens**—you stay on an old commit and new scripts (e.g. `scripts/diagnose-prod-login.sh`) will be missing. Prefer **`sudo bash /opt/telegram-copier/scripts/update-vps.sh`** (it runs `git` as `tgcopier`), or manually:
+
+```bash
+sudo -u tgcopier bash -lc 'cd /opt/telegram-copier && git fetch origin && git reset --hard origin/main'
+```
+
+Only if you must run `git` as root, add once: `git config --global --add safe.directory /opt/telegram-copier` (weaker than using `tgcopier` for Git).
 
 ---
 

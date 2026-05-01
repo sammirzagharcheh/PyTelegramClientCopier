@@ -2,6 +2,11 @@
 # Run on the VPS (after SSH) as a user who can sudo. Does not print DB passwords.
 # Usage: sudo bash scripts/diagnose-prod-login.sh
 #    or: bash /opt/telegram-copier/scripts/diagnose-prod-login.sh
+#
+# Prerequisite: repo at INSTALL_DIR must be on latest main. Do NOT run `sudo git`
+# in /opt/telegram-copier as root (Git "dubious ownership" — update does not apply).
+# Use: sudo bash /opt/telegram-copier/scripts/update-vps.sh
+#   or: sudo -u tgcopier bash -lc 'cd /opt/telegram-copier && git fetch origin && git reset --hard origin/main'
 
 set -euo pipefail
 

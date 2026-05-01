@@ -10,6 +10,9 @@
 #   # Or from any directory:
 #   sudo bash /opt/telegram-copier/scripts/update-vps.sh
 #
+# Git runs as APP_USER so root is not used for "git" in a tgcopier-owned tree
+# (avoids "detected dubious ownership" and failed fetch/reset).
+#
 # Env vars: INSTALL_DIR (default /opt/telegram-copier), APP_USER (default tgcopier)
 # =============================================================================
 
