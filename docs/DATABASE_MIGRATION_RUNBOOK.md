@@ -106,6 +106,8 @@ Use this when moving an existing deployment from SQLite to PostgreSQL (schema + 
 7. [ ] **Smoke test:** `curl http://127.0.0.1:8000/health`, then log in and hit one read and one write API path you care about.
 8. [ ] **Monitor:** `journalctl -u telegram-copier -f` briefly after cutover.
 
+**Login still fails (“invalid email or password”) after cutover:** deploy the latest auth fixes, then on the server (as `tgcopier`, with `.env` loading Postgres) run: `tg-copier db set-password your@email.com 'NewStrongPassword'` to replace the stored bcrypt hash (e.g. corrupted import or unknown legacy hash).
+
 ---
 
 ## 3) Pre-Migration Checklist
