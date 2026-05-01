@@ -50,6 +50,64 @@ Supported environments:
 
 ---
 
+## 2.5) SQLite → PostgreSQL data import (one-time)
+
+**Alembic** applies **schema** only (tables, indexes, `alembic_version`). To copy **application rows** from an existing SQLite file (`data/app.db` or another path) into PostgreSQL, use:
+
+- `scripts/migrate_sqlite_to_postgres.py`
+
+### What it does
+
+1. **Truncates** a fixed list of tables in PostgreSQL (`users`, `channel_mappings`, `dest_message_index`, etc.—see the script).
+2. **Bulk-copies** rows from the SQLite file into those tables in dependency order.
+3. **Resets** PostgreSQL serial sequences for tables that use `id` sequences.
+
+### Critical warnings
+
+- **Backup PostgreSQL first** (`pg_dump` / your provider snapshot). This script **destroys existing data** in those tables before import.
+- **Production cutover:** run **after** `alembic upgrade head` so the Postgres schema matches what the script expects.
+- **DSN for this script** must be a plain **`postgresql://`** URL (used by `asyncpg.connect`), **not** `postgresql+asyncpg://` (that form is for SQLAlchemy in the app).
+- **PgBouncer:** imports have succeeded on `host:6432` in practice; if `TRUNCATE` / `COPY` fails, use a **session-mode** pool or connect to PostgreSQL **directly** on port **5432** for the import only.
+
+### Example (VPS, paths as deployed)
+
+Run as the app user from the install directory:
+
+```bash
+cd /opt/telegram-copier
+sudo -u tgcopier bash -lc '
+  cd /opt/telegram-copier && .venv/bin/python scripts/migrate_sqlite_to_postgres.py \
+    --sqlite-path /opt/telegram-copier/data/app.db \
+    --postgres-dsn "postgresql://<user>:<password>@<host>:<port>/<database>"
+'
+sudo systemctl restart telegram-copier
+curl -fsS http://127.0.0.1:8000/health
+```
+
+Replace `<user>`, `<password>`, `<host>`, `<port>`, and `<database>` with your values. URL-encode special characters in the password if needed.
+
+### After import
+
+- Ensure **`DB_BACKEND=postgres`** and **`DATABASE_URL`** (with `postgresql+asyncpg://...`) point at the same database the app should use.
+- Keep or archive the SQLite file according to your retention policy; the runtime should use Postgres only.
+
+---
+
+## 2.6) End-to-end production cutover (ordered checklist)
+
+Use this when moving an existing deployment from SQLite to PostgreSQL (schema + optional row import). Check items off as you go.
+
+1. [ ] **Backup** PostgreSQL (`pg_dump` or provider snapshot) before any destructive step.
+2. [ ] **Deploy code** that includes Alembic migrations and PgBouncer-safe settings (`alembic/env.py` uses `statement_cache_size=0` / `prepared_statement_cache_size=0` for asyncpg through poolers; `src/app/db/postgres.py` matches for the running API).
+3. [ ] **Configure `.env` on the server:** `DB_BACKEND=postgres` and `DATABASE_URL=postgresql+asyncpg://...` pointing at the correct database (same DB you will migrate into).
+4. [ ] **Apply schema:** `alembic upgrade head` (as the app user, from the install dir, with env loaded so `DATABASE_URL` is set).
+5. [ ] **Optional — import SQLite rows:** run `scripts/migrate_sqlite_to_postgres.py` only if you need historical data (see § 2.5). Skip if this is a fresh database with no SQLite source.
+6. [ ] **Restart** `telegram-copier` (`systemctl restart telegram-copier`; use `restart`, not `reload`, unless you add `ExecReload` to the unit).
+7. [ ] **Smoke test:** `curl http://127.0.0.1:8000/health`, then log in and hit one read and one write API path you care about.
+8. [ ] **Monitor:** `journalctl -u telegram-copier -f` briefly after cutover.
+
+---
+
 ## 3) Pre-Migration Checklist
 
 Complete this checklist before every migration:
