@@ -1,16 +1,10 @@
 import datetime
-import sys
 
 import pytest
 
 from app.services.mapping_service import ChannelMapping, MappingFilter, MappingTransform
 from app.telegram.handlers import build_message_handler, _save_dest_mapping
 from app.db.gateway import get_db_connection, init_db
-
-pytestmark = pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="Functional async DB suite is unstable on local Windows event loop",
-)
 
 
 class DummySent:

@@ -358,6 +358,17 @@ class PostgresCompatCursor:
         rows = self._result.fetchall()
         return [tuple(r) for r in rows]
 
+    def __aiter__(self):
+        self._iter_rows = iter(self._result.fetchall())
+        return self
+
+    async def __anext__(self):
+        try:
+            row = next(self._iter_rows)
+        except StopIteration as stop:
+            raise StopAsyncIteration from stop
+        return tuple(row)
+
 
 class PostgresCompatConnection:
     def __init__(self, conn: AsyncConnection):

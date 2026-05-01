@@ -352,9 +352,34 @@ async def _list_transforms_bulk(
         (*mapping_ids, user_id),
     ) as cursor:
         rows = await cursor.fetchall()
+
+    # Some legacy rows can reference a media asset that is valid, but the LEFT JOIN
+    # still returns NULL metadata (e.g. stale cross-user artifacts in old test data).
+    missing_asset_ids = sorted({
+        int(row[7])
+        for row in rows
+        if row[7] is not None and row[9] is None
+    })
+    fallback_assets: dict[int, tuple[str | None, str | None]] = {}
+    if missing_asset_ids:
+        asset_placeholders = ",".join("?" * len(missing_asset_ids))
+        async with db.execute(
+            f"SELECT id, file_path, media_kind FROM media_assets WHERE id IN ({asset_placeholders})",
+            tuple(missing_asset_ids),
+        ) as cursor:
+            for aid, file_path, media_kind in await cursor.fetchall():
+                fallback_assets[int(aid)] = (file_path, media_kind)
+
     result: dict[int, list[MappingTransform]] = {}
     for row in rows:
         mid = row[0]
+        replacement_asset_id = row[7]
+        replacement_path = row[9]
+        replacement_kind = row[10]
+        if replacement_asset_id is not None and replacement_path is None:
+            fallback = fallback_assets.get(int(replacement_asset_id))
+            if fallback:
+                replacement_path, replacement_kind = fallback
         result.setdefault(mid, []).append(
             MappingTransform(
                 id=row[1],
@@ -363,10 +388,10 @@ async def _list_transforms_bulk(
                 replace_text=row[4],
                 regex_pattern=row[5],
                 regex_flags=row[6],
-                replacement_media_asset_id=row[7],
+                replacement_media_asset_id=replacement_asset_id,
                 apply_to_media_types=row[8],
-                replacement_media_asset_path=row[9],
-                replacement_media_kind=row[10],
+                replacement_media_asset_path=replacement_path,
+                replacement_media_kind=replacement_kind,
                 enabled=bool(row[11]),
                 priority=row[12] if row[12] is not None else 100,
             )

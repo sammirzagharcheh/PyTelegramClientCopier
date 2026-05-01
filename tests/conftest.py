@@ -7,12 +7,32 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@lo
 
 import asyncio
 
+import asyncpg
 import pytest
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+@pytest.fixture(scope="session", autouse=True)
+def clear_stale_postgres_test_backends() -> None:
+    """Best-effort cleanup of stale local test sessions before pytest starts.
+
+    Interrupted Windows runs can leave idle transactions that hold table locks and
+    make subsequent local test runs appear hung.
+    """
+
+    async def _cleanup() -> None:
+        dsn = os.environ["DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://")
+        conn = await asyncpg.connect(dsn)
+        try:
+            await conn.execute(
+                """
+                SELECT pg_terminate_backend(pid)
+                FROM pg_stat_activity
+                WHERE datname = current_database()
+                  AND pid <> pg_backend_pid()
+                """
+            )
+        finally:
+            await conn.close()
+
+    asyncio.run(_cleanup())
 

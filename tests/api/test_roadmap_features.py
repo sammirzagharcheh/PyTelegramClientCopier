@@ -25,21 +25,24 @@ def roadmap_client(tmp_path):
         async def seed():
             await init_db()
             db = await get_db_connection()
-            await db.execute("DELETE FROM mapping_filters")
-            await db.execute("DELETE FROM channel_mappings")
-            await db.execute("DELETE FROM users")
             await db.execute(
-                "INSERT INTO users (email, role, status, password_hash, name) VALUES (?, ?, ?, ?, ?)",
-                ("writer@test.com", "user", "active", hash_password("pass"), "W"),
+                "TRUNCATE TABLE mapping_filters, channel_mappings, telegram_accounts, users "
+                "RESTART IDENTITY CASCADE"
             )
             await db.execute(
-                "INSERT INTO users (email, role, status, password_hash, name) VALUES (?, ?, ?, ?, ?)",
-                ("viewer@test.com", "viewer", "active", hash_password("pass"), "V"),
+                "INSERT INTO users (id, email, role, status, password_hash, name) VALUES (?, ?, ?, ?, ?, ?)",
+                (1, "writer@test.com", "user", "active", hash_password("pass"), "W"),
             )
             await db.execute(
-                "INSERT INTO channel_mappings (user_id, source_chat_id, dest_chat_id, enabled) VALUES (?, ?, ?, ?)",
-                (1, 10, 20, 1),
+                "INSERT INTO users (id, email, role, status, password_hash, name) VALUES (?, ?, ?, ?, ?, ?)",
+                (2, "viewer@test.com", "viewer", "active", hash_password("pass"), "V"),
             )
+            await db.execute(
+                "INSERT INTO channel_mappings (id, user_id, source_chat_id, dest_chat_id, enabled) VALUES (?, ?, ?, ?, ?)",
+                (1, 1, 10, 20, 1),
+            )
+            await db.execute("SELECT setval('users_id_seq', 2, true)")
+            await db.execute("SELECT setval('channel_mappings_id_seq', 1, true)")
             await db.commit()
             await db.close()
 

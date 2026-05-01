@@ -102,8 +102,11 @@ async def list_message_logs(
             })
         if need_fallback:
             title_map: dict[tuple[int, int, int], tuple[str | None, str | None]] = {}
-            keys_list = list(need_fallback)
-            placeholders = ",".join(["(?,?,?)"] * len(keys_list))
+            # Ensure SQL bind types match BIGINT columns.
+            keys_list = [(int(uid), int(src), int(dest)) for uid, src, dest in need_fallback]
+            placeholders = ",".join(
+                ["(CAST(? AS BIGINT),CAST(? AS BIGINT),CAST(? AS BIGINT))"] * len(keys_list)
+            )
             params = [x for t in keys_list for x in t]
             async with db.execute(
                 f"SELECT user_id, source_chat_id, dest_chat_id, source_chat_title, dest_chat_title "

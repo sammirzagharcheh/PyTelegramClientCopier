@@ -15,8 +15,8 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     email: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
-    role: Mapped[str] = mapped_column(Text, nullable=False, default="user")
-    status: Mapped[str] = mapped_column(Text, nullable=False, default="active")
+    role: Mapped[str] = mapped_column(Text, nullable=False, default="user", server_default=text("'user'"))
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="active", server_default=text("'active'"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     name: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -35,7 +35,7 @@ class TelegramAccount(Base):
     session_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     phone: Mapped[str | None] = mapped_column(Text, nullable=True)
     bot_token: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(Text, nullable=False, default="active")
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="active", server_default=text("'active'"))
     name: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -52,7 +52,7 @@ class ChannelMapping(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
     source_chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     dest_chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
     name: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_chat_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     dest_chat_title: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -60,17 +60,17 @@ class ChannelMapping(Base):
     telegram_account_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("telegram_accounts.id"), nullable=True
     )
-    send_delay_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    sync_edits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    edit_strategy: Mapped[str] = mapped_column(Text, nullable=False, default="replace_text")
-    sync_deletes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    send_delay_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    sync_edits: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    edit_strategy: Mapped[str] = mapped_column(Text, nullable=False, default="replace_text", server_default=text("'replace_text'"))
+    sync_deletes: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     copy_webhook_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     copy_webhook_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
     copy_webhook_payload_template: Mapped[str | None] = mapped_column(Text, nullable=True)
     copy_webhook_secret_header_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     copy_webhook_secret_header_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     copy_webhook_secret_mode: Mapped[str] = mapped_column(
-        Text, nullable=False, default="hmac_sha256"
+        Text, nullable=False, default="hmac_sha256", server_default=text("'hmac_sha256'")
     )
 
     __table_args__ = (
@@ -154,7 +154,7 @@ class LoginSession(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
     phone: Mapped[str] = mapped_column(Text, nullable=False)
     tmp_session_name: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending", server_default=text("'pending'"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
     phone_code_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -227,8 +227,8 @@ class MappingTransformRule(Base):
     replace_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     regex_pattern: Mapped[str | None] = mapped_column(Text, nullable=True)
     regex_flags: Mapped[str | None] = mapped_column(Text, nullable=True)
-    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100, server_default=text("100"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
     replacement_media_asset_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     apply_to_media_types: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -243,7 +243,7 @@ class MediaAsset(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
-    media_kind: Mapped[str] = mapped_column(Text, nullable=False, default="other")
+    media_kind: Mapped[str] = mapped_column(Text, nullable=False, default="other", server_default=text("'other'"))
     mime_type: Mapped[str | None] = mapped_column(Text, nullable=True)
     size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
@@ -258,7 +258,7 @@ class UserAlertWebhook(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
     url: Mapped[str] = mapped_column(Text, nullable=False)
     secret: Mapped[str | None] = mapped_column(Text, nullable=True)
-    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
 
     __table_args__ = (Index("ix_user_alert_webhooks_user_id", "user_id"),)
@@ -271,7 +271,7 @@ class UserApiKey(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     key_hash: Mapped[str] = mapped_column(Text, nullable=False)
-    scopes: Mapped[str] = mapped_column(Text, nullable=False, default="mappings:read")
+    scopes: Mapped[str] = mapped_column(Text, nullable=False, default="mappings:read", server_default=text("'mappings:read'"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

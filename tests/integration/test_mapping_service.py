@@ -1,18 +1,22 @@
 import pytest
-import sys
 
 from app.db.gateway import get_db_connection
 from app.services.mapping_service import list_enabled_mappings
-
-pytestmark = pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="PostgreSQL async integration suite is unstable on local Windows event loop",
-)
 
 
 async def _reset_postgres_test_data(db) -> None:
     await db.execute("DELETE FROM mapping_transform_rules")
     await db.execute("DELETE FROM mapping_filters")
+    await db.execute("DELETE FROM mapping_schedules")
+    await db.execute("DELETE FROM user_schedules")
+    await db.execute("DELETE FROM worker_registry")
+    await db.execute("DELETE FROM user_alert_webhooks")
+    await db.execute("DELETE FROM user_api_keys")
+    await db.execute("DELETE FROM dest_message_index")
+    await db.execute("DELETE FROM refresh_tokens")
+    await db.execute("DELETE FROM login_sessions")
+    await db.execute("DELETE FROM admin_invites")
+    await db.execute("DELETE FROM media_assets")
     await db.execute("DELETE FROM channel_mappings")
     await db.execute("DELETE FROM telegram_accounts")
     await db.execute("DELETE FROM users")
@@ -239,8 +243,8 @@ async def test_list_enabled_mappings_loads_media_transform_asset_path(tmp_path):
         (1, 100, 200, 1),
     )
     await db.execute(
-        "INSERT INTO media_assets (user_id, name, file_path, media_kind) VALUES (?, ?, ?, ?)",
-        (1, "photo", "/tmp/replacement.jpg", "photo"),
+        "INSERT INTO media_assets (id, user_id, name, file_path, media_kind) VALUES (?, ?, ?, ?, ?)",
+        (1, 1, "photo", "/tmp/replacement.jpg", "photo"),
     )
     await db.execute(
         "INSERT INTO mapping_transform_rules "

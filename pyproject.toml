@@ -44,6 +44,7 @@ where = ["src"]
 testpaths = ["tests"]
 addopts = "-ra"
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
   "postgres_concurrency: isolated PostgreSQL concurrency and retry behavior tests",
   "postgres_parity: retained postgres-only compatibility lane marker",

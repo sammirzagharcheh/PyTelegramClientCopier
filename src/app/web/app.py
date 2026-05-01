@@ -45,19 +45,20 @@ async def lifespan(app: FastAPI):
     if not settings.testing:
         await ensure_mongo_indexes()
 
-    async def _delayed_restore():
-        """Restore workers a few seconds after startup so DB, Mongo, etc. are fully ready."""
-        await asyncio.sleep(3 if not settings.testing else 0)
-        db = await get_db_connection()
-        try:
-            await workers.restore_workers_from_db(db)
-            logger.info("Worker restore completed")
-        except Exception as e:
-            logger.exception("Worker restore failed: %s", e)
-        finally:
-            await db.close()
+    if not settings.testing:
+        async def _delayed_restore():
+            """Restore workers a few seconds after startup so DB, Mongo, etc. are fully ready."""
+            await asyncio.sleep(3)
+            db = await get_db_connection()
+            try:
+                await workers.restore_workers_from_db(db)
+                logger.info("Worker restore completed")
+            except Exception as e:
+                logger.exception("Worker restore failed: %s", e)
+            finally:
+                await db.close()
 
-    asyncio.create_task(_delayed_restore())
+        asyncio.create_task(_delayed_restore())
 
     alert_task: asyncio.Task | None = None
     if not settings.testing:

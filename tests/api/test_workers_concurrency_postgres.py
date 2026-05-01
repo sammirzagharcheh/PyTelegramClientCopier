@@ -36,10 +36,7 @@ def isolate_workers_state():
 @pytest.fixture(autouse=True)
 def postgres_backend(monkeypatch):
     monkeypatch.setattr("app.config.settings.db_backend", "postgres")
-    monkeypatch.setattr(
-        "app.config.settings.database_url",
-        "postgresql+asyncpg://8n8user:8N8p%40ssw0rd@localhost:5432/8n8DataBase",
-    )
+    monkeypatch.setattr("app.config.settings.database_url", os.environ["DATABASE_URL"])
 
 
 def test_spawn_worker_concurrent_start_collision_single_reservation_postgres_mode():

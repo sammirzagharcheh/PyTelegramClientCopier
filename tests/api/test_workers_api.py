@@ -2,18 +2,12 @@
 
 import asyncio
 import os
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app.db.gateway import get_db_connection
 from app.web.routers import workers
-
-pytestmark = pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="Worker API async/process tests are unstable on local Windows runtime",
-)
 
 
 def _run_async(coro):
