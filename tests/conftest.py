@@ -3,7 +3,13 @@ import os
 
 os.environ["TESTING"] = "1"  # Skip Mongo indexes, 3s worker restore delay in API tests
 os.environ["DB_BACKEND"] = "postgres"
-os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres")
+# IMPORTANT: keep tests isolated from dev runtime DB.
+# Tests always use TEST_DATABASE_URL (or a safe default test DB).
+TEST_DATABASE_URL = os.environ.get(
+    "TEST_DATABASE_URL",
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/telegram_copier_test",
+)
+os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
 import asyncio
 

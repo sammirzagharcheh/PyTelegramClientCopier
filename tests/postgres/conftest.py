@@ -8,7 +8,10 @@ import pytest
 
 from app.db.gateway import get_db_connection, init_db
 
-POSTGRES_TEST_DSN = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres")
+POSTGRES_TEST_DSN = os.getenv(
+    "TEST_DATABASE_URL",
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/telegram_copier_test",
+)
 
 
 @pytest.fixture
