@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-def normalize_utc_iso_for_json(value: str | None) -> str | None:
+from datetime import datetime, timezone
+
+
+def normalize_utc_iso_for_json(value: str | datetime | None) -> str | None:
     """Normalize legacy SQLite UTC strings for consistent JSON output.
 
     SQLite often stores UTC timestamps like `YYYY-MM-DD HH:MM:SS`.
@@ -8,9 +11,21 @@ def normalize_utc_iso_for_json(value: str | None) -> str | None:
     """
     if value is None:
         return None
+    if isinstance(value, datetime):
+        dt = value
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt.isoformat().replace("+00:00", "Z")
     s = str(value).strip()
     if not s:
         return s
+    # Normalize `...+00:00`/`...-00:00` strings to canonical `Z`.
+    if " " in s and ("+00:00" in s or "-00:00" in s):
+        s = s.replace(" ", "T", 1)
+    if s.endswith("+00:00") or s.endswith("-00:00"):
+        return s[:-6] + "Z"
     if " " in s and "T" not in s and "Z" not in s and "+" not in s:
         return s.replace(" ", "T", 1) + "Z"
     return s
