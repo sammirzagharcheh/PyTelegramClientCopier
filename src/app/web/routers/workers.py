@@ -286,10 +286,11 @@ async def _spawn_worker_for_account(
                     "DELETE FROM worker_registry WHERE worker_id = ?",
                     (existing_worker_id,),
                 )
+            now_iso = datetime.now(timezone.utc).isoformat()
             await db.execute(
-                "INSERT INTO worker_registry (worker_id, user_id, account_id, session_path, pid) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (worker_id, user_id, account_id, session_path, -1),
+                "INSERT INTO worker_registry (worker_id, user_id, account_id, session_path, pid, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (worker_id, user_id, account_id, session_path, -1, now_iso),
             )
             await db.commit()
             return True
