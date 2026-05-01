@@ -17,11 +17,30 @@ export function Login() {
       await login(email.trim(), password);
       navigate('/');
     } catch (err: unknown) {
-      setError(
-        err && typeof err === 'object' && 'response' in err && err.response && typeof err.response === 'object' && 'data' in err.response && err.response.data && typeof err.response.data === 'object' && 'detail' in err.response.data
-          ? String((err.response.data as { detail: unknown }).detail)
-          : 'Login failed'
-      );
+      const detail = (() => {
+        if (
+          err &&
+          typeof err === 'object' &&
+          'response' in err &&
+          err.response &&
+          typeof err.response === 'object' &&
+          'data' in err.response &&
+          err.response.data &&
+          typeof err.response.data === 'object' &&
+          'detail' in err.response.data
+        ) {
+          const d = (err.response.data as { detail: unknown }).detail;
+          if (typeof d === 'string') return d;
+          if (Array.isArray(d)) {
+            const first = d[0];
+            if (first && typeof first === 'object' && 'msg' in first) {
+              return String((first as { msg: unknown }).msg);
+            }
+          }
+        }
+        return 'Login failed';
+      })();
+      setError(detail);
     }
   };
 

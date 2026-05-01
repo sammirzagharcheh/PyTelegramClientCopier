@@ -20,11 +20,24 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+function requestUrl(config: { baseURL?: string; url?: string } | undefined): string {
+  if (!config) return '';
+  return `${config.baseURL ?? ''}${config.url ?? ''}`;
+}
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Wrong password on POST /auth/login also returns 401 — do not refresh or hard-redirect.
+    const path = requestUrl(originalRequest);
+    const isCredentialLogin = path.includes('/auth/login');
+    if (
+      error.response?.status === 401 &&
+      originalRequest &&
+      !originalRequest._retry &&
+      !isCredentialLogin
+    ) {
       originalRequest._retry = true;
       const refresh = localStorage.getItem('refresh_token');
       if (refresh) {
