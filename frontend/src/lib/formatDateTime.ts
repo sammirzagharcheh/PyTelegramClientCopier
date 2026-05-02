@@ -1,5 +1,11 @@
 function normalizeApiDateTime(value: string): string {
   const s = value.trim();
+  // Treat timezone-less ISO datetimes from APIs as UTC so they align with
+  // user/system timezone display expectations in the UI.
+  const hasExplicitZone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(s);
+  if (s.includes('T') && !hasExplicitZone) {
+    return `${s}Z`;
+  }
   if (s.includes(' ') && !s.includes('T') && !s.endsWith('Z') && !s.includes('+')) {
     return s.replace(' ', 'T') + 'Z';
   }

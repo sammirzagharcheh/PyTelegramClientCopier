@@ -171,7 +171,7 @@ async def complete_login(data: CompleteLoginRequest, user: CurrentUser, db: Db) 
         # Telethon releases any file handles on the temporary session file
         await client.disconnect()
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc)
         account_name = data.account_name or "User account"
 
         async with db.execute(

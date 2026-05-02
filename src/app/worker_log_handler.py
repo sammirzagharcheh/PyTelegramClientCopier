@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
 from datetime import datetime, timezone
@@ -22,7 +23,11 @@ def _resolve_mongo_db() -> str:
 
 
 class MongoWorkerLogHandler(logging.Handler):
-    """Logging handler that writes worker logs to MongoDB worker_logs collection."""
+    """Logging handler that writes worker logs to MongoDB worker_logs collection.
+
+    Inserts run in the default asyncio executor when a loop is running so Mongo I/O does not
+    block Telethon coroutines (blocking here can stall update handling and drop forwards).
+    """
 
     def __init__(self, user_id: int, account_id: int | None = None):
         super().__init__()
@@ -31,26 +36,46 @@ class MongoWorkerLogHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            from pymongo import MongoClient
+            formatted = self.format(record)
+        except Exception:
+            return
 
-            uri = _resolve_mongo_uri()
-            db_name = _resolve_mongo_db()
-            client = MongoClient(uri)
-            db = client[db_name]
-            doc: dict[str, Any] = {
-                "user_id": self._user_id,
-                "account_id": self._account_id,
-                "level": record.levelname,
-                "message": self.format(record),
-                "timestamp": datetime.now(timezone.utc),
-            }
-            db.worker_logs.insert_one(doc)
-            client.close()
-        except Exception as e:
-            print(
-                f"[MongoWorkerLogHandler] Failed to write log to MongoDB: {e}",
-                file=sys.stderr,
-            )
+        uid = self._user_id
+        aid = self._account_id
+        level = record.levelname
+        ts = datetime.now(timezone.utc)
+
+        def _sync_insert() -> None:
+            try:
+                from pymongo import MongoClient
+
+                uri = _resolve_mongo_uri()
+                db_name = _resolve_mongo_db()
+                client = MongoClient(uri, serverSelectionTimeoutMS=8000)
+                try:
+                    db = client[db_name]
+                    doc: dict[str, Any] = {
+                        "user_id": uid,
+                        "account_id": aid,
+                        "level": level,
+                        "message": formatted,
+                        "timestamp": ts,
+                    }
+                    db.worker_logs.insert_one(doc)
+                finally:
+                    client.close()
+            except Exception as e:
+                print(
+                    f"[MongoWorkerLogHandler] Failed to write log to MongoDB: {e}",
+                    file=sys.stderr,
+                )
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            _sync_insert()
+            return
+        loop.run_in_executor(None, _sync_insert)
 
 
 def test_mongo_connection() -> tuple[str | None, str]:

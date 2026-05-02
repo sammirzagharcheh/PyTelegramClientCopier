@@ -42,6 +42,13 @@ describe('formatLocalDateTime', () => {
     expect(result).toBe(parsed.toLocaleString())
   })
 
+  it('normalizes timezone-less ISO datetime as UTC', () => {
+    const noZoneIso = '2026-05-01T06:15:17.123456'
+    const result = formatLocalDateTime(noZoneIso)
+    const parsed = new Date('2026-05-01T06:15:17.123456Z')
+    expect(result).toBe(parsed.toLocaleString())
+  })
+
   it('returns raw value for invalid date string', () => {
     const invalid = 'not-a-date'
     expect(formatLocalDateTime(invalid)).toBe(invalid)

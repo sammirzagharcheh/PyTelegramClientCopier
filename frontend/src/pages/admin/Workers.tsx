@@ -56,6 +56,13 @@ export function Workers() {
   const isAccountRunning = (accountId: number) =>
     (workers ?? []).some((w) => w.account_id === accountId && w.running);
 
+  const handleStop = (workerId: string) => {
+    if (startMutation.isPending || stopMutation.isPending) return;
+    const ok = window.confirm('Stop this worker now?');
+    if (!ok) return;
+    stopMutation.mutate(workerId);
+  };
+
   if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
 
   const userAccounts = accounts.filter((a: { user_id: number }) =>
@@ -95,8 +102,8 @@ export function Workers() {
                     </span>
                   )}
                   <button
-                    onClick={() => stopMutation.mutate(w.id)}
-                    disabled={!w.running}
+                    onClick={() => handleStop(w.id)}
+                    disabled={!w.running || startMutation.isPending || stopMutation.isPending}
                     className="px-3 py-1 text-sm rounded bg-red-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Stop
@@ -123,7 +130,7 @@ export function Workers() {
                   <span>{a.name || `Account ${a.id}`} (user {a.user_id})</span>
                   <button
                     onClick={() => handleStart(a.id, a.user_id)}
-                    disabled={startMutation.isPending || isAccountRunning(a.id)}
+                    disabled={startMutation.isPending || stopMutation.isPending || isAccountRunning(a.id)}
                     className="px-3 py-1 text-sm rounded bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Start

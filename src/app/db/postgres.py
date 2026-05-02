@@ -371,11 +371,18 @@ class PostgresCompatCursor:
 
 
 class PostgresCompatConnection:
+    """Single AsyncConnection must not be used concurrently (asyncpg / SQLAlchemy).
+
+    Telethon handlers and background tasks can overlap on the worker process; we serialize
+    execute/commit on this wrapper so forwarding + DB lookups cannot interleave on one connection.
+    """
+
     def __init__(self, conn: AsyncConnection):
         self._conn = conn
         self._tx = None
+        self._conn_lock = asyncio.Lock()
 
-    async def _execute_impl(
+    async def _execute_impl_unlocked(
         self,
         sql: str,
         params: Sequence[Any] | dict[str, Any] | None = None,
@@ -428,10 +435,14 @@ class PostgresCompatConnection:
         return PostgresExecuteProxy(self, sql, params)
 
     async def executemany(self, sql: str, seq_of_params: Iterable[Sequence[Any]]):
-        cursor = None
-        for params in seq_of_params:
-            cursor = await self.execute(sql, params)
-        return cursor or PostgresCompatCursor(self._conn, result=await self._conn.execute(text("SELECT 1")))
+        async with self._conn_lock:
+            cursor = None
+            for params in seq_of_params:
+                cursor = await self._execute_impl_unlocked(sql, params)
+            if cursor is not None:
+                return cursor
+            result = await self._conn.execute(text("SELECT 1"))
+            return PostgresCompatCursor(self._conn, result=result, rowcount=0)
 
     async def executescript(self, script: str) -> None:
         for stmt in script.split(";"):
@@ -441,18 +452,20 @@ class PostgresCompatConnection:
             await self.execute(query)
 
     async def commit(self) -> None:
-        if self._tx is not None:
-            await self._tx.commit()
-            self._tx = await self._conn.begin()
+        async with self._conn_lock:
+            if self._tx is not None:
+                await self._tx.commit()
+                self._tx = await self._conn.begin()
 
     async def close(self) -> None:
-        if self._tx is not None:
-            try:
-                await self._tx.commit()
-            except Exception:
-                await self._tx.rollback()
-            self._tx = None
-        await self._conn.close()
+        async with self._conn_lock:
+            if self._tx is not None:
+                try:
+                    await self._tx.commit()
+                except Exception:
+                    await self._tx.rollback()
+                self._tx = None
+            await self._conn.close()
 
 
 class PostgresExecuteProxy:
@@ -470,15 +483,26 @@ class PostgresExecuteProxy:
         self._cursor: PostgresCompatCursor | None = None
 
     def __await__(self):
-        return self._db._execute_impl(self._sql, self._params).__await__()
+        async def _run():
+            async with self._db._conn_lock:
+                return await self._db._execute_impl_unlocked(self._sql, self._params)
+
+        return _run().__await__()
 
     async def __aenter__(self) -> PostgresCompatCursor:
-        self._cursor = await self._db._execute_impl(self._sql, self._params)
-        return self._cursor
+        await self._db._conn_lock.acquire()
+        try:
+            self._cursor = await self._db._execute_impl_unlocked(self._sql, self._params)
+            return self._cursor
+        except BaseException:
+            self._db._conn_lock.release()
+            raise
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
-        self._cursor = None
-        return None
+        try:
+            self._cursor = None
+        finally:
+            self._db._conn_lock.release()
 
 
 async def get_postgres_connection() -> Any:

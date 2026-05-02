@@ -1,5 +1,6 @@
 """Integration tests for worker restoration on API startup."""
 
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -116,3 +117,32 @@ async def test_restore_does_not_spawn_from_inflight_reservation(db_with_active_a
 
     assert not mock_popen.called
     assert len(workers._workers) == 0
+
+
+@pytest.mark.asyncio
+async def test_restore_spawns_from_stale_inflight_reservation(db_with_active_account):
+    """Stale reservation rows should be treated as dead launchers and recovered."""
+    db = db_with_active_account
+    workers._workers.clear()
+    workers._worker_counter = 0
+
+    async with db.execute("SELECT session_path FROM telegram_accounts WHERE id = 1") as cur:
+        row = await cur.fetchone()
+    session_path = row[0]
+
+    stale_created_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+    await db.execute(
+        "INSERT INTO worker_registry (worker_id, user_id, account_id, session_path, pid, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        ("w_stale_restore", 1, 1, session_path, -1, stale_created_at),
+    )
+    await db.commit()
+
+    fake_proc = MagicMock()
+    fake_proc.pid = 12348
+    fake_proc.poll.return_value = None
+    with patch("subprocess.Popen", return_value=fake_proc) as mock_popen:
+        await workers.restore_workers_from_db(db)
+
+    assert mock_popen.called
+    assert len(workers._workers) == 1

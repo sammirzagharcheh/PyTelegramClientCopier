@@ -32,11 +32,12 @@ type AdminDashboardStats = {
   webhook_by_day: { date: string; success: number; failed: number }[];
   top_failing_mappings: { name: string; mapping_name?: string; count: number }[];
   webhook_failure_reasons: { name: string; count: number }[];
+  unmapped_source_chats: { chat_id: string; count: number }[];
 };
 
 export function AdminDashboard() {
   const navigate = useNavigate();
-  const { data: stats, isLoading, refetch, isFetching } = useQuery({
+  const { data: stats, isLoading, refetch, isFetching, isError, error } = useQuery({
     queryKey: ['admin', 'stats', 'dashboard'],
     queryFn: async () =>
       (await api.get<AdminDashboardStats>('/admin/stats/dashboard')).data,
@@ -59,6 +60,9 @@ export function AdminDashboard() {
     : [];
   const webhookFailureReasonData = stats?.webhook_failure_reasons
     ? stats.webhook_failure_reasons.map(({ name, count }) => ({ name, value: count }))
+    : [];
+  const unmappedSourceChartData = stats?.unmapped_source_chats
+    ? stats.unmapped_source_chats.map(({ chat_id, count }) => ({ name: chat_id, count }))
     : [];
   const reasonToParam: Record<string, string> = {
     'HTTP 401': 'http_401',
@@ -94,6 +98,12 @@ export function AdminDashboard() {
           Refresh
         </button>
       </div>
+
+      {isError && (
+        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+          Failed to load dashboard data. Please log in again or refresh. {String((error as Error)?.message ?? '')}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {isLoading ? (
@@ -221,6 +231,13 @@ export function AdminDashboard() {
               if (!reason) return;
               navigate(`/webhook-logs?success=false&failure_reason=${encodeURIComponent(reason)}`);
             }}
+          />
+          <BarChartCard
+            title="Unmapped source chats seen (7 days)"
+            data={unmappedSourceChartData}
+            isLoading={isLoading}
+            dataKey="count"
+            color="#f59e0b"
           />
         </Suspense>
       </div>

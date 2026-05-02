@@ -116,7 +116,7 @@ async def upload_media_asset(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty")
 
     kind = _normalize_media_kind(media_kind, file.content_type, raw_filename)
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
 
     assets_root = _project_root() / settings.media_assets_dir / str(user["id"])
     assets_root.mkdir(parents=True, exist_ok=True)

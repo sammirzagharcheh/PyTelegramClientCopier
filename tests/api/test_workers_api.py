@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -127,6 +128,39 @@ def test_start_worker_same_account_twice_returns_conflict(api_client, user_token
     assert first.status_code == 200
     assert second.status_code == 409
     assert popen_mock.call_count == 1
+
+
+def test_start_worker_clears_stale_inflight_reservation(api_client, user_token):
+    """A stale reservation row (pid=-1) should not block new worker starts forever."""
+    stale_created_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+
+    async def add_stale_reservation() -> None:
+        db = await get_db_connection()
+        await db.execute(
+            "INSERT INTO worker_registry (worker_id, user_id, account_id, session_path, pid, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("w_stale_reserve", 1, 1, "dummy.session", -1, stale_created_at),
+        )
+        await db.commit()
+        await db.close()
+
+    _run_async(add_stale_reservation())
+
+    fake_proc = MagicMock()
+    fake_proc.pid = 12347
+    fake_proc.poll.return_value = None
+
+    with patch("app.web.routers.workers.subprocess.Popen", return_value=fake_proc):
+        r = api_client.post(
+            "/api/workers/start",
+            params={"account_id": 1},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["account_id"] == 1
+    assert payload["pid"] == 12347
 
 
 def test_list_workers_reattaches_from_registry_when_missing_from_memory(api_client, user_token):

@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import signal
 import subprocess
 import sys
@@ -15,7 +15,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.db.gateway import DbConnection
+from app.db.gateway import DbConnection, get_db_connection
 from app.db.postgres import retry_transient_postgres
 from app.utils.time import normalize_utc_iso_for_json
 from app.web.deps import AdminUser, CurrentUser, Db, WriterUser
@@ -29,6 +29,10 @@ _workers: dict[str, dict[str, Any]] = {}
 _worker_counter = 0
 _account_worker_locks: dict[int, asyncio.Lock] = {}
 _account_worker_locks_guard = asyncio.Lock()
+_RESERVATION_STALE_AFTER = timedelta(minutes=2)
+_RESTART_DEBOUNCE_SECONDS = 3.0
+_pending_account_restarts: dict[int, asyncio.Task] = {}
+_pending_account_restarts_guard = asyncio.Lock()
 
 
 def _is_process_alive(w: dict[str, Any]) -> bool:
@@ -72,6 +76,45 @@ async def _prune_dead_workers(db: DbConnection) -> None:
         await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (wid,))
     if dead:
         await db.commit()
+    await _prune_in_memory_duplicates(db)
+
+
+async def _prune_in_memory_duplicates(db: DbConnection) -> None:
+    """Safety net: if memory somehow tracks >1 live worker for an account, keep one."""
+    by_account: dict[int, list[tuple[str, dict[str, Any]]]] = {}
+    for worker_id, worker in _workers.items():
+        account_id = worker.get("account_id")
+        if not isinstance(account_id, int):
+            continue
+        if not _is_process_alive(worker):
+            continue
+        by_account.setdefault(account_id, []).append((worker_id, worker))
+
+    removed = 0
+    for account_id, entries in by_account.items():
+        if len(entries) <= 1:
+            continue
+        entries.sort(
+            key=lambda item: (
+                _coerce_utc_datetime(item[1].get("started_at")) or datetime.min.replace(tzinfo=timezone.utc),
+                item[1].get("pid") or -1,
+            ),
+            reverse=True,
+        )
+        keep_worker_id = entries[0][0]
+        for worker_id, worker in entries[1:]:
+            logger.warning(
+                "Detected duplicate live workers for account_id=%s; stopping worker_id=%s (keeping %s)",
+                account_id,
+                worker_id,
+                keep_worker_id,
+            )
+            await _terminate_worker(worker)
+            _workers.pop(worker_id, None)
+            await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
+            removed += 1
+    if removed:
+        await db.commit()
 
 
 def _pid_alive(pid: int) -> bool:
@@ -89,6 +132,34 @@ def _pid_alive(pid: int) -> bool:
 def _is_starting_reservation_pid(pid: int | None) -> bool:
     """True when worker row is a reserved-but-not-launched slot."""
     return isinstance(pid, int) and pid <= 0
+
+
+def _coerce_utc_datetime(value: Any) -> datetime | None:
+    """Best-effort normalize DB datetime values to timezone-aware UTC datetime."""
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return None
+        s = s.replace("Z", "+00:00")
+        if " " in s and "T" not in s:
+            s = s.replace(" ", "T", 1)
+        try:
+            dt = datetime.fromisoformat(s)
+        except ValueError:
+            return None
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return None
+
+
+def _is_stale_reservation(created_at: Any, now: datetime | None = None) -> bool:
+    """Return True when a reservation row is older than the stale timeout."""
+    created_dt = _coerce_utc_datetime(created_at)
+    if created_dt is None:
+        return False
+    current = now or datetime.now(timezone.utc)
+    return (current - created_dt) >= _RESERVATION_STALE_AFTER
 
 
 async def _wait_for_pid_exit(pid: int, timeout_sec: float = 5.0) -> bool:
@@ -190,13 +261,17 @@ async def _prune_orphaned_registry_rows(db: DbConnection) -> None:
     """Remove worker_registry rows whose PIDs are no longer running (e.g. worker crashed, API
     restarted). This prevents 'Worker already running' when the process is actually dead."""
     async with db.execute(
-        "SELECT worker_id, pid FROM worker_registry"
+        "SELECT worker_id, pid, created_at FROM worker_registry"
     ) as cur:
         rows = await cur.fetchall()
     deleted = 0
-    for worker_id, pid in rows:
+    now_dt = datetime.now(timezone.utc)
+    for worker_id, pid, created_at in rows:
         if _is_starting_reservation_pid(pid):
-            # Keep in-flight reservations; another request is still launching the worker.
+            if _is_stale_reservation(created_at, now_dt):
+                await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
+                deleted += 1
+            # Keep fresh in-flight reservations; another request is still launching the worker.
             continue
         try:
             os.kill(pid, 0)
@@ -271,11 +346,21 @@ async def _spawn_worker_for_account(
         worker_id = _next_worker_id()
 
         async def _reserve_worker_slot() -> bool:
-            select_sql = "SELECT worker_id, pid FROM worker_registry WHERE account_id = ? FOR UPDATE"
+            select_sql = (
+                "SELECT worker_id, pid, created_at "
+                "FROM worker_registry WHERE account_id = ? FOR UPDATE"
+            )
             async with db.execute(select_sql, (account_id,)) as cur:
                 rows = await cur.fetchall()
-            for existing_worker_id, existing_pid in rows:
+            now_dt = datetime.now(timezone.utc)
+            for existing_worker_id, existing_pid, existing_created_at in rows:
                 if _is_starting_reservation_pid(existing_pid):
+                    if _is_stale_reservation(existing_created_at, now_dt):
+                        await db.execute(
+                            "DELETE FROM worker_registry WHERE worker_id = ?",
+                            (existing_worker_id,),
+                        )
+                        continue
                     return False
                 if _pid_alive(existing_pid):
                     return False
@@ -283,11 +368,10 @@ async def _spawn_worker_for_account(
                     "DELETE FROM worker_registry WHERE worker_id = ?",
                     (existing_worker_id,),
                 )
-            now_iso = datetime.now(timezone.utc).isoformat()
             await db.execute(
                 "INSERT INTO worker_registry (worker_id, user_id, account_id, session_path, pid, created_at) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                (worker_id, user_id, account_id, session_path, -1, now_iso),
+                (worker_id, user_id, account_id, session_path, -1, now_dt),
             )
             await db.commit()
             return True
@@ -369,6 +453,7 @@ async def stop_workers_for_account(account_id: int, db: DbConnection) -> None:
     """Stop and remove all workers for a given account_id. Uses worker_registry as source of
     truth so workers started by other API processes are also stopped. Waits for each process
     to exit before returning."""
+    await _cancel_pending_account_restart(account_id)
     lock = await _get_account_worker_lock(account_id)
     async with lock:
         async with db.execute(
@@ -417,6 +502,7 @@ async def reset_worker_account(
     account_id: int,
 ) -> dict:
     """Admin recovery endpoint: stop worker process(es) and clear registry rows for account."""
+    await _cancel_pending_account_restart(account_id)
     lock = await _get_account_worker_lock(account_id)
     stopped_workers = 0
     cleared_rows = 0
@@ -479,11 +565,11 @@ async def restart_workers_for_mapping(
     mapping_user_id: int,
     mapping_telegram_account_id: int | None,
 ) -> None:
-    """Restart workers affected by a mapping change. If no worker is running for an account
-    that has mappings, start one so forwarding begins without manual Worker Start."""
+    """Queue debounced worker restarts for mapping changes.
+
+    Rapid successive mapping edits for the same account should collapse into one restart.
+    """
     try:
-        await _prune_dead_workers(db)
-        await _prune_orphaned_registry_rows(db)
         if mapping_telegram_account_id is not None:
             account_ids = [mapping_telegram_account_id]
         else:
@@ -495,27 +581,64 @@ async def restart_workers_for_mapping(
                 rows = await cur.fetchall()
             account_ids = [r[0] for r in rows]
         for account_id in account_ids:
+            await _queue_debounced_account_restart(account_id)
+    except Exception as e:
+        logger.warning("restart_workers_for_mapping failed: %s", e)
+
+
+async def _queue_debounced_account_restart(account_id: int) -> None:
+    """Schedule one restart per account after a short debounce window."""
+    async with _pending_account_restarts_guard:
+        existing = _pending_account_restarts.get(account_id)
+        if existing and not existing.done():
+            existing.cancel()
+        task = asyncio.create_task(_run_debounced_account_restart(account_id))
+        _pending_account_restarts[account_id] = task
+
+
+async def _cancel_pending_account_restart(account_id: int) -> None:
+    """Cancel a queued debounced restart for this account, if one exists."""
+    async with _pending_account_restarts_guard:
+        task = _pending_account_restarts.get(account_id)
+        if task and not task.done():
+            task.cancel()
+        _pending_account_restarts.pop(account_id, None)
+
+
+async def _run_debounced_account_restart(account_id: int) -> None:
+    """Execute account restart after debounce delay in its own DB connection."""
+    try:
+        await asyncio.sleep(_RESTART_DEBOUNCE_SECONDS)
+        db = await get_db_connection()
+        try:
+            await _prune_dead_workers(db)
+            await _prune_orphaned_registry_rows(db)
             async with db.execute(
                 "SELECT user_id, session_path FROM telegram_accounts WHERE id = ? AND status = 'active'",
                 (account_id,),
             ) as cur:
                 acc_row = await cur.fetchone()
             if not acc_row or not acc_row[1]:
-                continue
+                return
             user_id, session_path = acc_row[0], acc_row[1]
-            # Always stop first (registry-first stops workers from any API process); ensures
-            # no overlap of old and new workers before spawn.
             await stop_workers_for_account(account_id, db)
-            try:
-                await _spawn_worker_for_account(db, account_id, user_id, session_path)
-            except Exception as e:
-                logger.warning(
-                    "Failed to start/restart worker for account %s after mapping change: %s",
-                    account_id,
-                    e,
-                )
+            await _spawn_worker_for_account(db, account_id, user_id, session_path)
+        finally:
+            await db.close()
+    except asyncio.CancelledError:
+        # Expected when a newer mapping update supersedes this restart request.
+        return
     except Exception as e:
-        logger.warning("restart_workers_for_mapping failed: %s", e)
+        logger.warning(
+            "Failed to start/restart worker for account %s after mapping change: %s",
+            account_id,
+            e,
+        )
+    finally:
+        async with _pending_account_restarts_guard:
+            task = _pending_account_restarts.get(account_id)
+            if task is asyncio.current_task():
+                _pending_account_restarts.pop(account_id, None)
 
 
 @router.get("")
@@ -549,6 +672,7 @@ async def start_worker(
     user_id: int | None = None,
 ) -> dict:
     """Start a worker for a Telegram account. Users start own; admins can pass user_id."""
+    await _cancel_pending_account_restart(account_id)
     target_user = user["id"]
     if user["role"] == "admin" and user_id is not None:
         target_user = user_id
@@ -587,11 +711,16 @@ async def start_worker(
         )
     # Check persistent registry (orphans from prior API run). Prune dead entries.
     async with db.execute(
-        "SELECT worker_id, pid FROM worker_registry WHERE account_id = ?", (account_id,)
+        "SELECT worker_id, pid, created_at FROM worker_registry WHERE account_id = ?",
+        (account_id,),
     ) as cur:
         reg_rows = await cur.fetchall()
-    for worker_id, reg_pid in reg_rows:
+    now_dt = datetime.now(timezone.utc)
+    for worker_id, reg_pid, created_at in reg_rows:
         if _is_starting_reservation_pid(reg_pid):
+            if _is_stale_reservation(created_at, now_dt):
+                await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
+                continue
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -672,6 +801,9 @@ async def stop_worker(
         else:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker not found")
     w = _workers[worker_id]
+    account_id_val = w.get("account_id")
+    if isinstance(account_id_val, int):
+        await _cancel_pending_account_restart(account_id_val)
     if user["role"] != "admin" and w["user_id"] != user["id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     await _terminate_worker(w)
@@ -690,12 +822,17 @@ async def restore_workers_from_db(db: DbConnection) -> None:
     ) as cur:
         rows = await cur.fetchall()
     max_num = 0
+    now_dt = datetime.now(timezone.utc)
     for row in rows:
         worker_id, user_id, account_id, session_path, pid = row[0], row[1], row[2], row[3], row[4]
         created_at = row[5]
         if _is_starting_reservation_pid(pid):
-            # Keep reservation rows untouched during restore so we never race an in-flight
-            # launcher and accidentally start a duplicate worker for the same account.
+            # Keep only fresh reservations untouched to avoid racing active launchers.
+            # If reservation is stale (launcher crashed), delete and restore worker.
+            if _is_stale_reservation(created_at, now_dt):
+                await db.execute("DELETE FROM worker_registry WHERE worker_id = ?", (worker_id,))
+                await db.commit()
+                await _spawn_worker_for_account(db, account_id, user_id, session_path)
             continue
         try:
             os.kill(pid, 0)
@@ -724,6 +861,11 @@ async def restore_workers_from_db(db: DbConnection) -> None:
 async def terminate_all_workers(db: DbConnection) -> None:
     """Terminate all workers on API shutdown. Keep worker_registry rows so restore can
     spawn workers for these accounts on next startup."""
+    async with _pending_account_restarts_guard:
+        pending = list(_pending_account_restarts.values())
+        _pending_account_restarts.clear()
+    for task in pending:
+        task.cancel()
     to_stop = list(_workers.items())
     for wid, w in to_stop:
         await _terminate_worker(w)

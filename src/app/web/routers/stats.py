@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
@@ -10,6 +11,28 @@ from app.db.mongo import get_mongo_db
 from app.web.deps import CurrentUser, Db
 
 router = APIRouter(prefix="/stats", tags=["stats"])
+logger = logging.getLogger(__name__)
+
+
+def _ts_range_match(start_ts: datetime, end_ts: datetime) -> dict:
+    """Mongo match that supports timestamp stored as Date or ISO-like string."""
+    ts_expr = {
+        "$convert": {
+            "input": "$timestamp",
+            "to": "date",
+            "onError": None,
+            "onNull": None,
+        }
+    }
+    return {
+        "$expr": {
+            "$and": [
+                {"$ne": [ts_expr, None]},
+                {"$gte": [ts_expr, start_ts]},
+                {"$lte": [ts_expr, end_ts]},
+            ]
+        }
+    }
 
 
 @router.get("/dashboard")
@@ -68,11 +91,57 @@ async def get_dashboard_stats(user: CurrentUser, db: Db) -> dict:
     ]
     top_failing_mappings: list[dict[str, str | int]] = []
     webhook_failure_reasons: list[dict[str, str | int]] = []
+    unmapped_source_chats: list[dict[str, str | int]] = []
 
     try:
         mongo_db = get_mongo_db()
-        match = {"user_id": current_user_id, "timestamp": {"$gte": start_7d_ts, "$lte": today_end}}
-        match_prev = {"user_id": current_user_id, "timestamp": {"$gte": start_14d_ts, "$lt": start_prev_end}}
+        match = {"user_id": current_user_id, **_ts_range_match(start_7d_ts, today_end)}
+        match_prev = {
+            "user_id": current_user_id,
+            "$expr": {
+                "$and": [
+                    {
+                        "$ne": [
+                            {
+                                "$convert": {
+                                    "input": "$timestamp",
+                                    "to": "date",
+                                    "onError": None,
+                                    "onNull": None,
+                                }
+                            },
+                            None,
+                        ]
+                    },
+                    {
+                        "$gte": [
+                            {
+                                "$convert": {
+                                    "input": "$timestamp",
+                                    "to": "date",
+                                    "onError": None,
+                                    "onNull": None,
+                                }
+                            },
+                            start_14d_ts,
+                        ]
+                    },
+                    {
+                        "$lt": [
+                            {
+                                "$convert": {
+                                    "input": "$timestamp",
+                                    "to": "date",
+                                    "onError": None,
+                                    "onNull": None,
+                                }
+                            },
+                            start_prev_end,
+                        ]
+                    },
+                ]
+            },
+        }
 
         messages_last_7d = await mongo_db.message_logs.count_documents(match)
         messages_prev_7d = await mongo_db.message_logs.count_documents(match_prev)
@@ -92,7 +161,14 @@ async def get_dashboard_stats(user: CurrentUser, db: Db) -> dict:
                                 "_id": {
                                     "$dateToString": {
                                         "format": "%Y-%m-%d",
-                                        "date": "$timestamp",
+                                        "date": {
+                                            "$convert": {
+                                                "input": "$timestamp",
+                                                "to": "date",
+                                                "onError": None,
+                                                "onNull": None,
+                                            }
+                                        },
                                         "timezone": "UTC",
                                     }
                                 },
@@ -135,7 +211,14 @@ async def get_dashboard_stats(user: CurrentUser, db: Db) -> dict:
                         "date": {
                             "$dateToString": {
                                 "format": "%Y-%m-%d",
-                                "date": "$timestamp",
+                                "date": {
+                                    "$convert": {
+                                        "input": "$timestamp",
+                                        "to": "date",
+                                        "onError": None,
+                                        "onNull": None,
+                                    }
+                                },
                                 "timezone": "UTC",
                             }
                         },
@@ -238,13 +321,53 @@ async def get_dashboard_stats(user: CurrentUser, db: Db) -> dict:
             if count > 0
         ]
 
+        pipeline_unmapped_sources = [
+            {
+                "$match": {
+                    "user_id": current_user_id,
+                    **_ts_range_match(start_7d_ts, today_end),
+                    "message": {"$regex": "has no mapping"},
+                }
+            },
+            {
+                "$project": {
+                    "chat_match": {
+                        "$regexFind": {
+                            "input": "$message",
+                            "regex": "chat_id=([-0-9]+)",
+                        }
+                    }
+                }
+            },
+            {
+                "$project": {
+                    "chat_id": {
+                        "$ifNull": [
+                            {"$arrayElemAt": ["$chat_match.captures", 0]},
+                            "unknown",
+                        ]
+                    }
+                }
+            },
+            {"$group": {"_id": "$chat_id", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": 10},
+        ]
+        async for doc in mongo_db.worker_logs.aggregate(pipeline_unmapped_sources):
+            unmapped_source_chats.append(
+                {
+                    "chat_id": str(doc.get("_id", "unknown")),
+                    "count": int(doc.get("count", 0)),
+                }
+            )
+
         for i in range(7):
             d = (now - timedelta(days=6 - i)).strftime("%Y-%m-%d")
             messages_by_day[i] = {"date": d, "count": agg_by_day.get(d, 0)}
-    except Exception:
-        pass  # Keep defaults on Mongo error
+    except Exception as exc:
+        logger.exception("user dashboard aggregation failed user_id=%s: %s", current_user_id, exc)
 
-    return {
+    payload = {
         "messages_last_7d": messages_last_7d,
         "messages_prev_7d": messages_prev_7d,
         "messages_by_day": messages_by_day,
@@ -265,4 +388,12 @@ async def get_dashboard_stats(user: CurrentUser, db: Db) -> dict:
         "webhook_by_day": webhook_by_day,
         "top_failing_mappings": top_failing_mappings,
         "webhook_failure_reasons": webhook_failure_reasons,
+        "unmapped_source_chats": unmapped_source_chats,
     }
+    logger.info(
+        "user dashboard payload user_id=%s top_failing=%d failure_reasons=%d",
+        current_user_id,
+        len(top_failing_mappings),
+        len(webhook_failure_reasons),
+    )
+    return payload

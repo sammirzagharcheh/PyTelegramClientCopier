@@ -241,7 +241,7 @@ async def create_mapping(
     user: WriterUser,
 ) -> dict:
     """Create channel mapping."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
     async with db.execute(
         """INSERT INTO channel_mappings
            (user_id, source_chat_id, dest_chat_id, name, source_chat_title,
@@ -550,7 +550,7 @@ async def clone_mapping(
         row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mapping not found")
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
     base_name = (row[4] or "").strip() or f"mapping_{mapping_id}"
     new_name = f"{base_name} (copy)"
     async with db.execute(

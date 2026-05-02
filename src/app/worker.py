@@ -68,58 +68,75 @@ async def run_worker(
     except Exception as e:
         logger.warning("MongoDB worker_logs handler skipped: %s", e)
 
+    db = None
+    heartbeat_db = None
     try:
         await init_db()
         mongo_db = get_mongo_db()
         db = await get_db_connection()
-        mappings = list(
-            await list_enabled_mappings(db, user_id, telegram_account_id=telegram_account_id)
-        )
-
-        source_ids = sorted({m.source_chat_id for m in mappings})
-        logger.info(
-            "Worker starting: user_id=%s account_id=%s mappings=%d source_chat_ids=%s",
-            user_id, telegram_account_id, len(mappings), source_ids,
-        )
-        if not mappings:
-            logger.warning("No mappings loaded - worker will not forward any messages")
-
-        worker_session = _worker_session_path(session_path)
-        logger.debug("Using worker session copy: %s", worker_session)
-        client = await start_user_client(worker_session)
-        logger.info("Connected to Telegram: user_id=%s account_id=%s", user_id, telegram_account_id)
-        h_new, h_edit, h_del = build_message_handlers(
-            user_id=user_id, mappings=mappings, db=db, mongo_db=mongo_db
-        )
-        attach_message_handlers(client, h_new, h_edit, h_del)
-
-        async def _heartbeat_loop() -> None:
-            import datetime as dt_mod
-
-            pid = os.getpid()
-            while True:
-                await asyncio.sleep(30)
-                try:
-                    now = dt_mod.datetime.now(dt_mod.timezone.utc).isoformat()
-                    if telegram_account_id is not None:
-                        await db.execute(
-                            "UPDATE worker_registry SET last_heartbeat_at = ? "
-                            "WHERE account_id = ? AND pid = ?",
-                            (now, telegram_account_id, pid),
-                        )
-                        await db.commit()
-                except Exception as hb_err:
-                    logger.debug("heartbeat update skipped: %s", hb_err)
-
-        hb_task = asyncio.create_task(_heartbeat_loop())
-
+        heartbeat_db = await get_db_connection()
         try:
-            await client.run_until_disconnected()
+            mappings = list(
+                await list_enabled_mappings(db, user_id, telegram_account_id=telegram_account_id)
+            )
+
+            source_ids = sorted({m.source_chat_id for m in mappings})
+            logger.info(
+                "Worker starting: user_id=%s account_id=%s mappings=%d source_chat_ids=%s",
+                user_id, telegram_account_id, len(mappings), source_ids,
+            )
+            if not mappings:
+                logger.warning("No mappings loaded - worker will not forward any messages")
+
+            worker_session = _worker_session_path(session_path)
+            logger.debug("Using worker session copy: %s", worker_session)
+            client = await start_user_client(worker_session)
+            logger.info(
+                "Connected to Telegram: user_id=%s account_id=%s",
+                user_id,
+                telegram_account_id,
+            )
+            h_new, h_edit, h_del = build_message_handlers(
+                user_id=user_id, mappings=mappings, db=db, mongo_db=mongo_db
+            )
+            attach_message_handlers(client, h_new, h_edit, h_del)
+
+            async def _heartbeat_loop() -> None:
+                import datetime as dt_mod
+
+                pid = os.getpid()
+                while True:
+                    await asyncio.sleep(30)
+                    try:
+                        now = dt_mod.datetime.now(dt_mod.timezone.utc)
+                        if telegram_account_id is not None:
+                            await heartbeat_db.execute(
+                                "UPDATE worker_registry SET last_heartbeat_at = ? "
+                                "WHERE account_id = ? AND pid = ?",
+                                (now, telegram_account_id, pid),
+                            )
+                            await heartbeat_db.commit()
+                    except Exception as hb_err:
+                        logger.debug("heartbeat update skipped: %s", hb_err)
+
+            hb_task = asyncio.create_task(_heartbeat_loop())
+
+            try:
+                await client.run_until_disconnected()
+            finally:
+                hb_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await hb_task
+            logger.info(
+                "Worker disconnected: user_id=%s account_id=%s (Telegram client closed)",
+                user_id,
+                telegram_account_id,
+            )
         finally:
-            hb_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await hb_task
-        logger.info("Worker disconnected: user_id=%s account_id=%s (Telegram client closed)", user_id, telegram_account_id)
+            for conn in (heartbeat_db, db):
+                if conn is not None:
+                    with contextlib.suppress(Exception):
+                        await conn.close()
     except Exception as e:
         logger.exception(
             "Worker exited with uncaught exception: user_id=%s account_id=%s: %s",

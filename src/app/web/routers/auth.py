@@ -58,10 +58,10 @@ async def login(data: LoginRequest, db: Db) -> dict:
     access_token = create_access_token(sub=email, user_id=user_id, role=role)
     refresh_token = create_refresh_token(sub=email, user_id=user_id)
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
-    now_iso = datetime.now(timezone.utc).isoformat()
+    created_at = datetime.now(timezone.utc)
     await db.execute(
         "INSERT INTO refresh_tokens (user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?)",
-        (user_id, _hash_token(refresh_token), expires_at.isoformat(), now_iso),
+        (user_id, _hash_token(refresh_token), expires_at, created_at),
     )
     await db.commit()
     return {
@@ -87,12 +87,12 @@ async def refresh(data: RefreshRequest, db: Db) -> dict:
             detail="Invalid refresh token",
         )
     token_hash = _hash_token(data.refresh_token)
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_dt = datetime.now(timezone.utc)
     expires_at_expr = sql_ts_expr("expires_at")
     now_expr = sql_ts_expr("?")
     async with db.execute(
         f"SELECT id FROM refresh_tokens WHERE user_id = ? AND token_hash = ? AND {expires_at_expr} > {now_expr}",
-        (user_id, token_hash, now_iso),
+        (user_id, token_hash, now_dt),
     ) as cur:
         row = await cur.fetchone()
     if not row:
@@ -198,10 +198,10 @@ async def change_password(
             detail="Current password is incorrect",
         )
     new_hash = hash_password(data.new_password)
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_dt = datetime.now(timezone.utc)
     await db.execute(
         "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
-        (new_hash, now_iso, user["id"]),
+        (new_hash, now_dt, user["id"]),
     )
     await db.commit()
     return {"status": "ok"}

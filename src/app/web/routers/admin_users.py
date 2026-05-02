@@ -169,7 +169,7 @@ async def update_user(
         params.append(hash_password(data.password))
     if updates:
         params.append(user_id)
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc)
         await db.execute(
             f"UPDATE users SET {', '.join(updates)}, updated_at = ? WHERE id = ?",
             [*params[:-1], now, params[-1]],

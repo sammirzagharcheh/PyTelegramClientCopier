@@ -22,7 +22,7 @@ async def get_setting(db: DbConnection, key: str) -> str | None:
 
 
 async def set_setting(db: DbConnection, key: str, value: str | None) -> None:
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
     await db.execute(
         """INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at""",

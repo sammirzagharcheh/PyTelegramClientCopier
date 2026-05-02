@@ -28,6 +28,7 @@ from app.telegram.pipeline_preview import (
 )
 
 logger = logging.getLogger(__name__)
+
 _TEMPLATE_TOKEN_RE = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
 _QUOTED_TEMPLATE_TOKEN_RE = re.compile(
     r'"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}"'
@@ -343,9 +344,20 @@ def build_message_handlers(
         *,
         source_chat_id: int,
     ) -> None:
+        logger.info(
+            "Received msg %s from chat %s; matched_mappings=%d",
+            message.id,
+            source_chat_id,
+            len(matched),
+        )
         for mapping in matched:
             preview = await _message_preview_for_filters(message, mapping)
             if not passes_filters(preview, mapping.filters):
+                logger.info(
+                    "Skipped msg %s for mapping_id=%s reason=filters",
+                    message.id,
+                    mapping.id,
+                )
                 continue
             msg_time = message.date
             if msg_time.tzinfo is None:
@@ -353,7 +365,11 @@ def build_message_handlers(
             else:
                 msg_time = msg_time.astimezone(datetime.timezone.utc)
             if not passes_schedule(msg_time, mapping.schedule):
-                logger.debug("Skipped (outside schedule) msg_id=%s mapping_id=%s", message.id, mapping.id)
+                logger.info(
+                    "Skipped msg %s for mapping_id=%s reason=schedule",
+                    message.id,
+                    mapping.id,
+                )
                 continue
 
             source_chat_title = (
@@ -544,201 +560,212 @@ def build_message_handlers(
     async def _flush_album_buffer(key: tuple[int, int, int]) -> None:
         batch = album_buffers.pop(key, [])
         album_tasks.pop(key, None)
-        if not batch:
-            return
-        first = batch[0]
-        event: events.NewMessage.Event = first["event"]
-        matched: list[ChannelMapping] = first["matched"]
-        source_chat_id = first["source_chat_id"]
-        messages: list[Message] = sorted([b["message"] for b in batch], key=lambda m: m.id)
-        if len(messages) == 1:
-            await _forward_single_message(
-                event, messages[0], matched, source_chat_id=source_chat_id
-            )
-            return
-        for mapping in matched:
-            previews = [await _message_preview_for_filters(m, mapping) for m in messages]
-            if not all(passes_filters(p, mapping.filters) for p in previews):
-                continue
-            msg_time = messages[-1].date
-            if msg_time.tzinfo is None:
-                msg_time = msg_time.replace(tzinfo=datetime.timezone.utc)
-            else:
-                msg_time = msg_time.astimezone(datetime.timezone.utc)
-            if not passes_schedule(msg_time, mapping.schedule):
-                continue
-            medias = []
-            captions: list[str] = []
-            for m in messages:
-                if m.media and not isinstance(m.media, MessageMediaWebPage):
-                    medias.append(m.media)
-                captions.append(m.message or "")
-            caption = "\n".join(c for c in captions if c).strip() or " "
-            source_chat_title = (
-                (getattr(event.chat, "title", None) if event.chat else None)
-                or mapping.source_chat_title
-                or ""
-            )
-            media_type = "photo" if any(m.photo for m in messages) else media_type_for_telethon_message(messages[0])
-            template_context = {
-                "original_text": caption,
-                "source_chat_id": source_chat_id,
-                "dest_chat_id": mapping.dest_chat_id,
-                "source_chat_title": source_chat_title,
-                "dest_chat_title": mapping.dest_chat_title or "",
-                "message_id": messages[0].id,
-                "media_type": media_type,
-                "date_utc": msg_time.isoformat(),
-            }
-            transformed_text = apply_transforms(
-                caption,
-                mapping.transforms,
-                context=template_context,
-                media_type=media_type,
-            )
-            reply_to_msg_id = None
-            if messages[0].reply_to and messages[0].reply_to.reply_to_msg_id:
-                reply_to_msg_id = await _lookup_reply_dest_id(
-                    db=db,
-                    user_id=user_id,
-                    source_chat_id=source_chat_id,
-                    source_reply_msg_id=messages[0].reply_to.reply_to_msg_id,
-                    dest_chat_id=mapping.dest_chat_id,
-                )
-            source_reply_msg_id = (
-                int(messages[0].reply_to.reply_to_msg_id)
-                if messages[0].reply_to and messages[0].reply_to.reply_to_msg_id
-                else None
-            )
-            dest_reply_msg_id = reply_to_msg_id
-            if mapping.send_delay_ms and mapping.send_delay_ms > 0:
-                await asyncio.sleep(mapping.send_delay_ms / 1000.0)
-            if not medias:
+        try:
+            if not batch:
+                return
+            first = batch[0]
+            event: events.NewMessage.Event = first["event"]
+            matched: list[ChannelMapping] = first["matched"]
+            source_chat_id = first["source_chat_id"]
+            messages: list[Message] = sorted([b["message"] for b in batch], key=lambda m: m.id)
+            if len(messages) == 1:
                 await _forward_single_message(
-                    event, messages[0], [mapping], source_chat_id=source_chat_id
+                    event, messages[0], matched, source_chat_id=source_chat_id
                 )
-                continue
-            dest_ids = [mapping.dest_chat_id]
-            alt_dest = alternate_chat_id(mapping.dest_chat_id)
-            if alt_dest is not None:
-                dest_ids.append(alt_dest)
-            sent = None
-            for dest_id in dest_ids:
-                try:
-                    sent = await event.client.send_file(
-                        dest_id,
-                        medias,
-                        caption=transformed_text,
-                        reply_to=reply_to_msg_id,
-                    )
-                    break
-                except FloodWaitError as fw:
-                    logger.warning(
-                        "FloodWait (album) mapping_id=%s seconds=%s",
-                        mapping.id,
-                        getattr(fw, "seconds", None),
-                    )
-                    break
-                except ChatIdInvalidError:
+                return
+            for mapping in matched:
+                previews = [await _message_preview_for_filters(m, mapping) for m in messages]
+                if not all(passes_filters(p, mapping.filters) for p in previews):
                     continue
-            if sent is None:
-                continue
-            for m in messages:
-                await _save_dest_mapping(
-                    db=db,
-                    user_id=user_id,
-                    source_chat_id=source_chat_id,
-                    source_msg_id=m.id,
-                    dest_chat_id=mapping.dest_chat_id,
-                    dest_msg_id=sent.id,
+                msg_time = messages[-1].date
+                if msg_time.tzinfo is None:
+                    msg_time = msg_time.replace(tzinfo=datetime.timezone.utc)
+                else:
+                    msg_time = msg_time.astimezone(datetime.timezone.utc)
+                if not passes_schedule(msg_time, mapping.schedule):
+                    continue
+                medias = []
+                captions: list[str] = []
+                for m in messages:
+                    if m.media and not isinstance(m.media, MessageMediaWebPage):
+                        medias.append(m.media)
+                    captions.append(m.message or "")
+                caption = "\n".join(c for c in captions if c).strip() or " "
+                source_chat_title = (
+                    (getattr(event.chat, "title", None) if event.chat else None)
+                    or mapping.source_chat_title
+                    or ""
                 )
-            try:
-                await mongo_db.message_logs.insert_one({
-                    "user_id": user_id,
+                media_type = "photo" if any(m.photo for m in messages) else media_type_for_telethon_message(messages[0])
+                template_context = {
+                    "original_text": caption,
                     "source_chat_id": source_chat_id,
-                    "source_msg_id": messages[0].id,
                     "dest_chat_id": mapping.dest_chat_id,
-                    "dest_msg_id": sent.id,
-                    "source_chat_title": str(source_chat_title or ""),
-                    "dest_chat_title": str(mapping.dest_chat_title or ""),
-                    "timestamp": messages[0].date,
-                    "status": "ok_album",
-                })
-            except Exception as e:
-                logger.warning("Failed to write message log (non-fatal): %s", e)
-            asyncio.create_task(
-                _fire_copy_webhook(
-                    mapping,
-                    {
-                        "event": "album_copied",
+                    "source_chat_title": source_chat_title,
+                    "dest_chat_title": mapping.dest_chat_title or "",
+                    "message_id": messages[0].id,
+                    "media_type": media_type,
+                    "date_utc": msg_time.isoformat(),
+                }
+                transformed_text = apply_transforms(
+                    caption,
+                    mapping.transforms,
+                    context=template_context,
+                    media_type=media_type,
+                )
+                reply_to_msg_id = None
+                if messages[0].reply_to and messages[0].reply_to.reply_to_msg_id:
+                    reply_to_msg_id = await _lookup_reply_dest_id(
+                        db=db,
+                        user_id=user_id,
+                        source_chat_id=source_chat_id,
+                        source_reply_msg_id=messages[0].reply_to.reply_to_msg_id,
+                        dest_chat_id=mapping.dest_chat_id,
+                    )
+                source_reply_msg_id = (
+                    int(messages[0].reply_to.reply_to_msg_id)
+                    if messages[0].reply_to and messages[0].reply_to.reply_to_msg_id
+                    else None
+                )
+                dest_reply_msg_id = reply_to_msg_id
+                if mapping.send_delay_ms and mapping.send_delay_ms > 0:
+                    await asyncio.sleep(mapping.send_delay_ms / 1000.0)
+                if not medias:
+                    await _forward_single_message(
+                        event, messages[0], [mapping], source_chat_id=source_chat_id
+                    )
+                    continue
+                dest_ids = [mapping.dest_chat_id]
+                alt_dest = alternate_chat_id(mapping.dest_chat_id)
+                if alt_dest is not None:
+                    dest_ids.append(alt_dest)
+                sent = None
+                for dest_id in dest_ids:
+                    try:
+                        sent = await event.client.send_file(
+                            dest_id,
+                            medias,
+                            caption=transformed_text,
+                            reply_to=reply_to_msg_id,
+                        )
+                        break
+                    except FloodWaitError as fw:
+                        logger.warning(
+                            "FloodWait (album) mapping_id=%s seconds=%s",
+                            mapping.id,
+                            getattr(fw, "seconds", None),
+                        )
+                        break
+                    except ChatIdInvalidError:
+                        continue
+                if sent is None:
+                    continue
+                for m in messages:
+                    await _save_dest_mapping(
+                        db=db,
+                        user_id=user_id,
+                        source_chat_id=source_chat_id,
+                        source_msg_id=m.id,
+                        dest_chat_id=mapping.dest_chat_id,
+                        dest_msg_id=sent.id,
+                    )
+                try:
+                    await mongo_db.message_logs.insert_one({
                         "user_id": user_id,
-                        "mapping_id": mapping.id,
                         "source_chat_id": source_chat_id,
-                        "source_msg_ids": [m.id for m in messages],
+                        "source_msg_id": messages[0].id,
                         "dest_chat_id": mapping.dest_chat_id,
                         "dest_msg_id": sent.id,
-                        "source_reply_msg_id": source_reply_msg_id,
-                        "dest_reply_msg_id": dest_reply_msg_id,
                         "source_chat_title": str(source_chat_title or ""),
                         "dest_chat_title": str(mapping.dest_chat_title or ""),
-                        "media_type": media_type,
-                        "date_utc": msg_time.isoformat(),
-                        "text": transformed_text,
-                    },
-                    mongo_db,
+                        "timestamp": messages[0].date,
+                        "status": "ok_album",
+                    })
+                except Exception as e:
+                    logger.warning("Failed to write message log (non-fatal): %s", e)
+                asyncio.create_task(
+                    _fire_copy_webhook(
+                        mapping,
+                        {
+                            "event": "album_copied",
+                            "user_id": user_id,
+                            "mapping_id": mapping.id,
+                            "source_chat_id": source_chat_id,
+                            "source_msg_ids": [m.id for m in messages],
+                            "dest_chat_id": mapping.dest_chat_id,
+                            "dest_msg_id": sent.id,
+                            "source_reply_msg_id": source_reply_msg_id,
+                            "dest_reply_msg_id": dest_reply_msg_id,
+                            "source_chat_title": str(source_chat_title or ""),
+                            "dest_chat_title": str(mapping.dest_chat_title or ""),
+                            "media_type": media_type,
+                            "date_utc": msg_time.isoformat(),
+                            "text": transformed_text,
+                        },
+                        mongo_db,
+                    )
                 )
-            )
+        except Exception:
+            logger.exception("Album flush failed key=%s", key)
 
     async def _handler(event: events.NewMessage.Event) -> None:
         message = event.message
         if not message:
             return
 
-        source_chat_id = event.chat_id
-        candidates = [source_chat_id]
-        alt = alternate_chat_id(source_chat_id)
-        if alt is not None:
-            candidates.append(alt)
-        matched: list[ChannelMapping] = []
-        for cid in candidates:
-            if cid in mapping_by_source:
-                matched.extend(mapping_by_source[cid])
-        if not matched:
-            if source_chat_id not in logged_unknown:
-                logged_unknown.add(source_chat_id)
-                logger.info(
-                    "Message from chat_id=%s has no mapping (configured: %s). "
-                    "Verify source chat ID matches your mapping.",
-                    source_chat_id,
-                    configured_sources,
+        msg_id = getattr(message, "id", None)
+        try:
+            source_chat_id = event.chat_id
+            candidates = [source_chat_id]
+            alt = alternate_chat_id(source_chat_id)
+            if alt is not None:
+                candidates.append(alt)
+            matched: list[ChannelMapping] = []
+            for cid in candidates:
+                if cid in mapping_by_source:
+                    matched.extend(mapping_by_source[cid])
+            if not matched:
+                if source_chat_id not in logged_unknown:
+                    logged_unknown.add(source_chat_id)
+                    logger.info(
+                        "Message from chat_id=%s has no mapping (configured: %s). "
+                        "Verify source chat ID matches your mapping.",
+                        source_chat_id,
+                        configured_sources,
+                    )
+                return
+            seen: set[int] = set()
+            deduped: list[ChannelMapping] = []
+            for mapping in matched:
+                if mapping.id in seen:
+                    continue
+                seen.add(mapping.id)
+                deduped.append(mapping)
+            matched = deduped
+
+            gid = getattr(message, "grouped_id", None)
+            if gid is not None:
+                key = (user_id, source_chat_id, int(gid))
+                album_buffers.setdefault(key, []).append(
+                    {"event": event, "message": message, "matched": matched, "source_chat_id": source_chat_id}
                 )
-            return
-        seen: set[int] = set()
-        deduped: list[ChannelMapping] = []
-        for mapping in matched:
-            if mapping.id in seen:
-                continue
-            seen.add(mapping.id)
-            deduped.append(mapping)
-        matched = deduped
+                _schedule_album_flush(
+                    user_id=user_id,
+                    source_chat_id=source_chat_id,
+                    grouped_id=int(gid),
+                    album_tasks=album_tasks,
+                    album_buffers=album_buffers,
+                    flush_coro=_flush_album_buffer,
+                )
+                return
 
-        gid = getattr(message, "grouped_id", None)
-        if gid is not None:
-            key = (user_id, source_chat_id, int(gid))
-            album_buffers.setdefault(key, []).append(
-                {"event": event, "message": message, "matched": matched, "source_chat_id": source_chat_id}
+            await _forward_single_message(event, message, matched, source_chat_id=source_chat_id)
+        except Exception:
+            logger.exception(
+                "NewMessage handler failed chat_id=%s msg_id=%s",
+                getattr(event, "chat_id", None),
+                msg_id,
             )
-            _schedule_album_flush(
-                user_id=user_id,
-                source_chat_id=source_chat_id,
-                grouped_id=int(gid),
-                album_tasks=album_tasks,
-                album_buffers=album_buffers,
-                flush_coro=_flush_album_buffer,
-            )
-            return
-
-        await _forward_single_message(event, message, matched, source_chat_id=source_chat_id)
 
     async def _edit_handler(event: events.MessageEdited.Event) -> None:
         if not any_sync_edits:

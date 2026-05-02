@@ -121,7 +121,7 @@ async def create_account(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="bot_token required for bot accounts")
     if type == "user" and not session_file:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="session_file required for user accounts")
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
     session_path = None
     phone = None
     if type == "user" and session_file:

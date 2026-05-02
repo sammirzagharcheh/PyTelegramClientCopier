@@ -49,7 +49,7 @@ async def get_current_user(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid API key",
             )
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc)
         await db.execute(
             "UPDATE user_api_keys SET last_used_at = ? WHERE key_hash = ?",
             (now, key_hash),
