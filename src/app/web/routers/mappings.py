@@ -17,6 +17,10 @@ from app.telegram.pipeline_preview import (
 )
 from app.web.deps import CurrentUser, Db, WriterUser
 from app.web.routers.workers import restart_workers_for_mapping
+from app.web.validation.mapping_validation import (
+    validate_mapping_create,
+    validate_mapping_update_routing,
+)
 
 
 def _schedule_summary(row: tuple | None) -> str:
@@ -240,6 +244,14 @@ async def create_mapping(
     user: WriterUser,
 ) -> dict:
     """Create channel mapping."""
+    src, dst, account_id = await validate_mapping_create(
+        db,
+        user_id=user["id"],
+        is_admin=user["role"] == "admin",
+        source_chat_id=data.source_chat_id,
+        dest_chat_id=data.dest_chat_id,
+        telegram_account_id=data.telegram_account_id,
+    )
     now = datetime.now(timezone.utc).isoformat()
     cursor = await db.execute(
         """INSERT INTO channel_mappings
@@ -248,12 +260,12 @@ async def create_mapping(
            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)""",
         (
             user["id"],
-            data.source_chat_id,
-            data.dest_chat_id,
+            src,
+            dst,
             data.name or "",
             data.source_chat_title or "",
             data.dest_chat_title or "",
-            data.telegram_account_id,
+            account_id,
             now,
         ),
     )
@@ -356,7 +368,7 @@ async def update_mapping(
 ) -> dict:
     """Update channel mapping."""
     async with db.execute(
-        "SELECT id, user_id, source_chat_id, dest_chat_id FROM channel_mappings WHERE id = ?",
+        "SELECT id, user_id, source_chat_id, dest_chat_id, telegram_account_id FROM channel_mappings WHERE id = ?",
         (mapping_id,),
     ) as cur:
         row = await cur.fetchone()
@@ -364,10 +376,33 @@ async def update_mapping(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mapping not found")
     if user["role"] != "admin" and row[1] != user["id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    _, mapping_user_id, old_source_chat_id, old_dest_chat_id = row
+    _, mapping_user_id, old_source_chat_id, old_dest_chat_id, old_account_id = row
+
+    routing_fields_set = (
+        data.source_chat_id is not None
+        or data.dest_chat_id is not None
+        or data.telegram_account_id is not None
+    )
+    if routing_fields_set:
+        src, dst, account_id = await validate_mapping_update_routing(
+            db,
+            user_id=mapping_user_id,
+            is_admin=user["role"] == "admin",
+            mapping_id=mapping_id,
+            current_source=int(old_source_chat_id),
+            current_dest=int(old_dest_chat_id),
+            current_account_id=old_account_id,
+            source_chat_id=data.source_chat_id,
+            dest_chat_id=data.dest_chat_id,
+            telegram_account_id=data.telegram_account_id,
+        )
+    else:
+        src, dst, account_id = int(old_source_chat_id), int(old_dest_chat_id), old_account_id
+
     routing_changed = (
-        (data.source_chat_id is not None and int(data.source_chat_id) != int(old_source_chat_id))
-        or (data.dest_chat_id is not None and int(data.dest_chat_id) != int(old_dest_chat_id))
+        src != int(old_source_chat_id)
+        or dst != int(old_dest_chat_id)
+        or account_id != old_account_id
     )
     if routing_changed:
         n = await delete_dest_message_index_for_mapping(
@@ -382,11 +417,24 @@ async def update_mapping(
         params.append(data.name)
     if data.source_chat_id is not None:
         updates.append("source_chat_id = ?")
-        params.append(data.source_chat_id)
+        params.append(src)
     if data.dest_chat_id is not None:
         updates.append("dest_chat_id = ?")
-        params.append(data.dest_chat_id)
+        params.append(dst)
+    if data.telegram_account_id is not None:
+        updates.append("telegram_account_id = ?")
+        params.append(account_id)
     if data.enabled is not None:
+        if data.enabled:
+            from app.web.validation.mapping_validation import ensure_no_duplicate_active_mapping
+
+            await ensure_no_duplicate_active_mapping(
+                db,
+                mapping_user_id,
+                src,
+                dst,
+                exclude_mapping_id=mapping_id,
+            )
         updates.append("enabled = ?")
         params.append(1 if data.enabled else 0)
     if data.source_chat_title is not None:
@@ -558,7 +606,7 @@ async def clone_mapping(
             new_name,
             row[5],
             row[6],
-            row[7],
+            0,
             row[8],
             now,
             row[10] or 0,

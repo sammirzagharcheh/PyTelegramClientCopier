@@ -237,6 +237,12 @@ MIGRATIONS = [
     ALTER TABLE channel_mappings ADD COLUMN copy_webhook_secret_header_value TEXT;
     ALTER TABLE channel_mappings ADD COLUMN copy_webhook_secret_mode TEXT NOT NULL DEFAULT 'hmac_sha256';
     """,
+    # v24: one active mapping per user/source/dest route
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_channel_mappings_user_src_dest_active
+    ON channel_mappings(user_id, source_chat_id, dest_chat_id)
+    WHERE enabled = 1;
+    """,
 ]
 
 

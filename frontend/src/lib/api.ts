@@ -128,6 +128,33 @@ export type ChannelMapping = {
   webhook_secret_header_configured?: boolean;
 };
 
+export type TelegramAccount = {
+  id: number;
+  user_id: number;
+  name: string | null;
+  type: string;
+  session_path: string | null;
+  phone: string | null;
+  status: string;
+  created_at: string | null;
+};
+
+export type TelegramDialog = {
+  chat_id: number;
+  title: string;
+  username: string | null;
+  dialog_type: string;
+};
+
+export type ChannelMappingCreatePayload = {
+  source_chat_id: number;
+  dest_chat_id: number;
+  telegram_account_id: number;
+  name?: string;
+  source_chat_title?: string;
+  dest_chat_title?: string;
+};
+
 export type MappingPreviewRequest = {
   sample_text?: string;
   media_type?: string;

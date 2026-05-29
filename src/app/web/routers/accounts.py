@@ -6,10 +6,18 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi import status as http_status
 
 from app.config import settings
+from app.telegram.dialog_service import (
+    AccountCredentials,
+    SessionLockedError,
+    TelegramDialogsError,
+    list_account_dialogs,
+)
 from app.web.schemas.accounts import TelegramAccountUpdate
+from app.web.schemas.dialogs import TelegramDialogListResponse, TelegramDialogResponse
 from app.web.deps import AdminUser, CurrentUser, Db, WriterUser
 from app.web.routers.workers import stop_workers_for_account
 
@@ -24,6 +32,7 @@ async def list_accounts(
     db: Db,
     user: CurrentUser,
     user_id: int | None = None,
+    account_status: str | None = Query(None, alias="status"),
     page: int = 1,
     page_size: int = 20,
     sort_by: str = "id",
@@ -37,20 +46,32 @@ async def list_accounts(
     direction = "DESC" if sort_order.lower() == "desc" else "ASC"
     order = f"ORDER BY {col} {direction}"
 
+    status_filter = ""
+    status_params: list = []
+    if account_status is not None:
+        normalized = account_status.strip().lower()
+        if normalized not in ("active", "inactive"):
+            raise HTTPException(
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                detail="status must be 'active' or 'inactive'",
+            )
+        status_filter = " AND status = ?"
+        status_params = [normalized]
+
     if user["role"] == "admin":
         if user_id is not None:
             scope_id = user_id
         else:
             scope_id = -1
         if scope_id == -1:
-            base = "FROM telegram_accounts"
-            params: list = []
+            base = f"FROM telegram_accounts WHERE 1=1{status_filter}"
+            params: list = list(status_params)
         else:
-            base = "FROM telegram_accounts WHERE user_id = ?"
-            params = [scope_id]
+            base = f"FROM telegram_accounts WHERE user_id = ?{status_filter}"
+            params = [scope_id, *status_params]
     else:
-        base = "FROM telegram_accounts WHERE user_id = ?"
-        params = [user["id"]]
+        base = f"FROM telegram_accounts WHERE user_id = ?{status_filter}"
+        params = [user["id"], *status_params]
 
     async with db.execute(f"SELECT COUNT(*) {base}", params) as cur:
         total = (await cur.fetchone())[0]
@@ -89,9 +110,9 @@ async def get_account(
     ) as cur:
         row = await cur.fetchone()
     if not row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Account not found")
     if user["role"] != "admin" and row[1] != user["id"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail="Access denied")
     return {
         "id": row[0],
         "user_id": row[1],
@@ -104,7 +125,83 @@ async def get_account(
     }
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+async def _fetch_account_credentials(db: Db, account_id: int) -> tuple | None:
+    async with db.execute(
+        "SELECT id, user_id, type, session_path, bot_token, status FROM telegram_accounts WHERE id = ?",
+        (account_id,),
+    ) as cur:
+        return await cur.fetchone()
+
+
+@router.get("/{account_id}/dialogs", response_model=TelegramDialogListResponse)
+async def list_account_dialogs_route(
+    account_id: int,
+    db: Db,
+    user: CurrentUser,
+    limit: int = 500,
+) -> dict:
+    """List Telegram chats/channels for an active account."""
+    row = await _fetch_account_credentials(db, account_id)
+    if not row:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Account not found")
+    if user["role"] != "admin" and row[1] != user["id"]:
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if row[5] != "active":
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Account must be active to list chats",
+        )
+    acc_type = row[2]
+    session_path = row[3]
+    bot_token = row[4]
+    if acc_type == "user" and not session_path:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Account is not connected",
+        )
+    if acc_type == "bot" and not bot_token:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Account is not connected",
+        )
+
+    account = AccountCredentials(
+        account_id=row[0],
+        user_id=row[1],
+        account_type=acc_type,
+        session_path=session_path,
+        bot_token=bot_token,
+        status=row[5],
+    )
+    try:
+        dialogs = await list_account_dialogs(account, limit=limit)
+    except SessionLockedError:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail="Account session is in use; stop the worker and retry",
+        ) from None
+    except ValueError as e:
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except TelegramDialogsError:
+        raise HTTPException(
+            status_code=http_status.HTTP_502_BAD_GATEWAY,
+            detail="Could not load chats from Telegram",
+        ) from None
+
+    return {
+        "items": [
+            TelegramDialogResponse(
+                chat_id=d.chat_id,
+                title=d.title,
+                username=d.username,
+                dialog_type=d.dialog_type,
+            ).model_dump()
+            for d in dialogs
+        ],
+    }
+
+
+@router.post("", status_code=http_status.HTTP_201_CREATED)
 async def create_account(
     db: Db,
     user: WriterUser,
@@ -115,11 +212,11 @@ async def create_account(
 ) -> dict:
     """Create telegram account. For type=user, upload session file. For type=bot, provide bot_token."""
     if type not in ("user", "bot"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="type must be 'user' or 'bot'")
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="type must be 'user' or 'bot'")
     if type == "bot" and not bot_token:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="bot_token required for bot accounts")
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="bot_token required for bot accounts")
     if type == "user" and not session_file:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="session_file required for user accounts")
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="session_file required for user accounts")
     now = datetime.now(timezone.utc).isoformat()
     session_path = None
     phone = None
@@ -182,9 +279,9 @@ async def update_account(
     ) as cur:
         row = await cur.fetchone()
     if not row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Account not found")
     if user["role"] != "admin" and row[1] != user["id"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail="Access denied")
     updates = []
     params = []
     if data.name is not None:
@@ -227,9 +324,9 @@ async def delete_account(
     ) as cur:
         row = await cur.fetchone()
     if not row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Account not found")
     if user["role"] != "admin" and row[1] != user["id"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     # Disable mappings that use this account
     await db.execute(

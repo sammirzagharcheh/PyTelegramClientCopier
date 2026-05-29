@@ -90,7 +90,7 @@ class ChannelMappingCreate(BaseModel):
     source_chat_id: int
     dest_chat_id: int
     name: str | None = None
-    telegram_account_id: int | None = None
+    telegram_account_id: int
     source_chat_title: str | None = None
     dest_chat_title: str | None = None
 
@@ -99,6 +99,7 @@ class ChannelMappingUpdate(BaseModel):
     name: str | None = None
     source_chat_id: int | None = None
     dest_chat_id: int | None = None
+    telegram_account_id: int | None = None
     enabled: bool | None = None
     source_chat_title: str | None = None
     dest_chat_title: str | None = None

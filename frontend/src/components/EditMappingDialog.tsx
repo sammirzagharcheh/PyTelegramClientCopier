@@ -3,8 +3,15 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { ChannelMapping } from '../lib/api';
-import { MappingFormFields } from './MappingFormFields';
+import { MappingRouteFields } from './MappingRouteFields';
 import { useToast } from './Toast';
+import {
+  hasRouteErrors,
+  parseChatId,
+  validateMappingRoute,
+  type MappingRouteFieldErrors,
+  type MappingRouteValues,
+} from '../lib/mappingValidation';
 
 export type { ChannelMapping as Mapping } from '../lib/api';
 
@@ -39,10 +46,21 @@ const WEBHOOK_TEMPLATE_TOKENS = [
   { label: 'guid', value: '{{guid}}' },
 ];
 
+function buildInitialRoute(m: ChannelMapping): MappingRouteValues {
+  return {
+    telegramAccountId: m.telegram_account_id,
+    sourceChatId: String(m.source_chat_id),
+    destChatId: String(m.dest_chat_id),
+    sourceChatTitle: m.source_chat_title ?? '',
+    destChatTitle: m.dest_chat_title ?? '',
+    useManualIds: m.telegram_account_id == null,
+  };
+}
+
 export function EditMappingDialog({ mapping, onClose }: Props) {
   const [name, setName] = useState(mapping.name ?? '');
-  const [sourceChatId, setSourceChatId] = useState(String(mapping.source_chat_id));
-  const [destChatId, setDestChatId] = useState(String(mapping.dest_chat_id));
+  const [route, setRoute] = useState<MappingRouteValues>(() => buildInitialRoute(mapping));
+  const [fieldErrors, setFieldErrors] = useState<MappingRouteFieldErrors>({});
   const [sendDelayMs, setSendDelayMs] = useState(String(mapping.send_delay_ms ?? 0));
   const [syncEdits, setSyncEdits] = useState(Boolean(mapping.sync_edits));
   const [syncDeletes, setSyncDeletes] = useState(Boolean(mapping.sync_deletes));
@@ -79,10 +97,23 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
       const body: Record<string, unknown> = {};
       const nextName = name.trim() || null;
       if (nextName !== (mapping.name ?? null)) body.name = nextName;
-      const src = parseInt(sourceChatId, 10);
-      const dst = parseInt(destChatId, 10);
+      const src = parseChatId(route.sourceChatId);
+      const dst = parseChatId(route.destChatId);
+      if (src == null || dst == null) {
+        throw new Error('Invalid chat IDs');
+      }
       if (src !== mapping.source_chat_id) body.source_chat_id = src;
       if (dst !== mapping.dest_chat_id) body.dest_chat_id = dst;
+      const srcTitle = route.sourceChatTitle.trim();
+      const dstTitle = route.destChatTitle.trim();
+      if (srcTitle !== (mapping.source_chat_title ?? '')) body.source_chat_title = srcTitle || null;
+      if (dstTitle !== (mapping.dest_chat_title ?? '')) body.dest_chat_title = dstTitle || null;
+      if (
+        route.telegramAccountId != null &&
+        route.telegramAccountId !== mapping.telegram_account_id
+      ) {
+        body.telegram_account_id = route.telegramAccountId;
+      }
 
       const delay = parseInt(sendDelayMs, 10);
       if (Number.isNaN(delay) || delay < 0 || delay > MAX_SEND_DELAY_MS) {
@@ -207,12 +238,9 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    const src = parseInt(sourceChatId, 10);
-    const dst = parseInt(destChatId, 10);
-    if (isNaN(src) || isNaN(dst)) {
-      setError('Invalid chat IDs');
-      return;
-    }
+    const errors = validateMappingRoute(route);
+    setFieldErrors(errors);
+    if (hasRouteErrors(errors)) return;
     const delay = parseInt(sendDelayMs, 10);
     if (isNaN(delay) || delay < 0 || delay > MAX_SEND_DELAY_MS) {
       setError(`Send delay must be between 0 and ${MAX_SEND_DELAY_MS} ms`);
@@ -223,8 +251,8 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
 
   useEffect(() => {
     setName(mapping.name ?? '');
-    setSourceChatId(String(mapping.source_chat_id));
-    setDestChatId(String(mapping.dest_chat_id));
+    setRoute(buildInitialRoute(mapping));
+    setFieldErrors({});
     setSendDelayMs(String(mapping.send_delay_ms ?? 0));
     setSyncEdits(Boolean(mapping.sync_edits));
     setSyncDeletes(Boolean(mapping.sync_deletes));
@@ -271,13 +299,16 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
           {error && (
             <div className="p-3 rounded bg-red-50 dark:bg-red-900/20 text-red-600 text-sm">{error}</div>
           )}
-          <MappingFormFields
+          <MappingRouteFields
+            values={route}
+            onChange={setRoute}
+            errors={fieldErrors}
             name={name}
-            sourceChatId={sourceChatId}
-            destChatId={destChatId}
             onNameChange={setName}
-            onSourceChatIdChange={setSourceChatId}
-            onDestChatIdChange={setDestChatId}
+            initialSourceChatId={mapping.source_chat_id}
+            initialDestChatId={mapping.dest_chat_id}
+            initialSourceTitle={mapping.source_chat_title}
+            initialDestTitle={mapping.dest_chat_title}
           />
 
           <fieldset className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 space-y-3">

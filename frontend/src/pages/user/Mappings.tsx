@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { coerceChannelMappingForEdit } from '../../lib/channelMappingDefaults';
+import { useActiveAccounts, formatAccountLabel } from '../../hooks/useActiveAccounts';
 import { AddMappingDialog } from '../../components/AddMappingDialog';
 import { EditMappingDialog } from '../../components/EditMappingDialog';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -22,6 +23,7 @@ type Mapping = {
   source_chat_title?: string | null;
   dest_chat_title?: string | null;
   enabled: boolean;
+  telegram_account_id?: number | null;
   schedule_summary?: string;
   copy_webhook_payload_template?: string | null;
   copy_webhook_secret_header_name?: string | null;
@@ -48,6 +50,13 @@ export function Mappings() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const queryClient = useQueryClient();
   const { show: showToast } = useToast();
+  const { data: activeAccounts = [] } = useActiveAccounts();
+
+  const accountNameById = (id: number | null | undefined) => {
+    if (id == null) return '—';
+    const acc = activeAccounts.find((a) => a.id === id);
+    return acc ? formatAccountLabel(acc) : `#${id}`;
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: ['mappings', page, pageSize, sortBy, sortOrder],
@@ -152,6 +161,9 @@ export function Mappings() {
           <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
               <SortableTh label="Name" sortKey="name" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
+                Account
+              </th>
               <SortableTh label="Source" sortKey="source_chat_id" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
               <SortableTh label="Dest" sortKey="dest_chat_id" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
               <SortableTh label="Status" sortKey="enabled" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
@@ -163,6 +175,9 @@ export function Mappings() {
             {mappings.map((m) => (
               <tr key={m.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                 <td className="px-6 py-4 text-sm">{m.name || `Mapping ${m.id}`}</td>
+                <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
+                  {accountNameById(m.telegram_account_id)}
+                </td>
                 <td className="px-6 py-4 text-sm font-mono" title={`ID: ${m.source_chat_id}`}>
                   {formatChannelLabel(m, 'source')}
                 </td>

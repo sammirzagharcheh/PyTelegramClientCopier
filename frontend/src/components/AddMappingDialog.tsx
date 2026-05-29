@@ -2,27 +2,49 @@ import { GitBranch } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { MappingFormFields } from './MappingFormFields';
+import { MappingRouteFields } from './MappingRouteFields';
 import { useToast } from './Toast';
+import {
+  hasRouteErrors,
+  parseChatId,
+  validateMappingRoute,
+  type MappingRouteFieldErrors,
+  type MappingRouteValues,
+} from '../lib/mappingValidation';
 
 type Props = {
   onClose: () => void;
 };
 
+const initialRoute: MappingRouteValues = {
+  telegramAccountId: null,
+  sourceChatId: '',
+  destChatId: '',
+  sourceChatTitle: '',
+  destChatTitle: '',
+  useManualIds: false,
+};
+
 export function AddMappingDialog({ onClose }: Props) {
   const [name, setName] = useState('');
-  const [sourceChatId, setSourceChatId] = useState('');
-  const [destChatId, setDestChatId] = useState('');
+  const [route, setRoute] = useState<MappingRouteValues>(initialRoute);
+  const [fieldErrors, setFieldErrors] = useState<MappingRouteFieldErrors>({});
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
   const { show: showToast } = useToast();
+
   const mutation = useMutation({
     mutationFn: async () => {
+      const src = parseChatId(route.sourceChatId)!;
+      const dst = parseChatId(route.destChatId)!;
       return (
         await api.post('/mappings', {
-          name: name || undefined,
-          source_chat_id: parseInt(sourceChatId, 10),
-          dest_chat_id: parseInt(destChatId, 10),
+          name: name.trim() || undefined,
+          source_chat_id: src,
+          dest_chat_id: dst,
+          telegram_account_id: route.telegramAccountId,
+          source_chat_title: route.sourceChatTitle || undefined,
+          dest_chat_title: route.destChatTitle || undefined,
         })
       ).data;
     },
@@ -51,19 +73,16 @@ export function AddMappingDialog({ onClose }: Props) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    const src = parseInt(sourceChatId, 10);
-    const dst = parseInt(destChatId, 10);
-    if (isNaN(src) || isNaN(dst)) {
-      setError('Invalid chat IDs');
-      return;
-    }
+    const errors = validateMappingRoute(route);
+    setFieldErrors(errors);
+    if (hasRouteErrors(errors)) return;
     mutation.mutate();
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full"
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 mb-4">
@@ -74,13 +93,12 @@ export function AddMappingDialog({ onClose }: Props) {
           {error && (
             <div className="p-3 rounded bg-red-50 dark:bg-red-900/20 text-red-600 text-sm">{error}</div>
           )}
-          <MappingFormFields
+          <MappingRouteFields
+            values={route}
+            onChange={setRoute}
+            errors={fieldErrors}
             name={name}
-            sourceChatId={sourceChatId}
-            destChatId={destChatId}
             onNameChange={setName}
-            onSourceChatIdChange={setSourceChatId}
-            onDestChatIdChange={setDestChatId}
           />
           <div className="flex gap-2 justify-end">
             <button type="button" onClick={onClose} className="px-4 py-2 rounded border border-gray-300">
@@ -88,7 +106,7 @@ export function AddMappingDialog({ onClose }: Props) {
             </button>
             <button
               type="submit"
-              disabled={mutation.isPending}
+              disabled={mutation.isPending || route.telegramAccountId == null}
               className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
             >
               Create
