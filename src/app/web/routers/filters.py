@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, status
 from app.web.deps import CurrentUser, Db, WriterUser
 from app.web.mapping_access import get_mapping_scope
 from app.web.routers.workers import restart_workers_for_mapping
+from app.web.validation.filter_validation import validate_filter_payload
 from app.web.schemas.mappings import (
     MappingFilterCreate,
     MappingFilterUpdate,
@@ -14,6 +15,19 @@ from app.web.schemas.mappings import (
 )
 
 router = APIRouter(prefix="/mappings", tags=["filters"])
+
+_FILTER_COLUMNS = (
+    "include_text",
+    "exclude_text",
+    "media_types",
+    "regex_pattern",
+    "or_group_id",
+    "allowed_sender_ids",
+    "denied_usernames",
+    "min_url_count",
+    "max_url_count",
+    "required_hashtags",
+)
 
 
 def _row_to_filter_dict(row: tuple) -> dict:
@@ -65,6 +79,17 @@ async def create_filter(
             detail="or_group_id must be non-negative",
         )
     mapping_user_id, mapping_account_id = await get_mapping_scope(db, user, mapping_id)
+    validate_filter_payload(
+        include_text=data.include_text,
+        exclude_text=data.exclude_text,
+        media_types=data.media_types,
+        regex_pattern=data.regex_pattern,
+        allowed_sender_ids=data.allowed_sender_ids,
+        denied_usernames=data.denied_usernames,
+        min_url_count=data.min_url_count,
+        max_url_count=data.max_url_count,
+        required_hashtags=data.required_hashtags,
+    )
     ogid = data.or_group_id
     cursor = await db.execute(
         """INSERT INTO mapping_filters (
@@ -129,38 +154,52 @@ async def update_filter(
         row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Filter not found")
+
+    async with db.execute(
+        """SELECT include_text, exclude_text, media_types, regex_pattern, or_group_id,
+               allowed_sender_ids, denied_usernames, min_url_count, max_url_count, required_hashtags
+           FROM mapping_filters WHERE id = ?""",
+        (filter_id,),
+    ) as cur:
+        current = await cur.fetchone()
+    assert current is not None
+    merged = {
+        "include_text": current[0],
+        "exclude_text": current[1],
+        "media_types": current[2],
+        "regex_pattern": current[3],
+        "or_group_id": current[4],
+        "allowed_sender_ids": current[5],
+        "denied_usernames": current[6],
+        "min_url_count": current[7],
+        "max_url_count": current[8],
+        "required_hashtags": current[9],
+    }
+    patch = data.model_dump(exclude_unset=True)
+    merged.update(patch)
+    if "or_group_id" in patch and patch["or_group_id"] is not None and patch["or_group_id"] < 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="or_group_id must be non-negative",
+        )
+    validate_filter_payload(
+        include_text=merged["include_text"],
+        exclude_text=merged["exclude_text"],
+        media_types=merged["media_types"],
+        regex_pattern=merged["regex_pattern"],
+        allowed_sender_ids=merged["allowed_sender_ids"],
+        denied_usernames=merged["denied_usernames"],
+        min_url_count=merged["min_url_count"],
+        max_url_count=merged["max_url_count"],
+        required_hashtags=merged["required_hashtags"],
+    )
+
     updates = []
     params = []
-    if data.include_text is not None:
-        updates.append("include_text = ?")
-        params.append(data.include_text)
-    if data.exclude_text is not None:
-        updates.append("exclude_text = ?")
-        params.append(data.exclude_text)
-    if data.media_types is not None:
-        updates.append("media_types = ?")
-        params.append(data.media_types)
-    if data.regex_pattern is not None:
-        updates.append("regex_pattern = ?")
-        params.append(data.regex_pattern)
-    if data.or_group_id is not None:
-        updates.append("or_group_id = ?")
-        params.append(data.or_group_id)
-    if data.allowed_sender_ids is not None:
-        updates.append("allowed_sender_ids = ?")
-        params.append(data.allowed_sender_ids)
-    if data.denied_usernames is not None:
-        updates.append("denied_usernames = ?")
-        params.append(data.denied_usernames)
-    if data.min_url_count is not None:
-        updates.append("min_url_count = ?")
-        params.append(data.min_url_count)
-    if data.max_url_count is not None:
-        updates.append("max_url_count = ?")
-        params.append(data.max_url_count)
-    if data.required_hashtags is not None:
-        updates.append("required_hashtags = ?")
-        params.append(data.required_hashtags)
+    for col in _FILTER_COLUMNS:
+        if col in patch:
+            updates.append(f"{col} = ?")
+            params.append(patch[col])
     if updates:
         params.append(filter_id)
         await db.execute(f"UPDATE mapping_filters SET {', '.join(updates)} WHERE id = ?", params)

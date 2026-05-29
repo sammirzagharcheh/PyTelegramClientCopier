@@ -10,6 +10,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterable
 
 from app.services.mapping_service import MappingFilter, MappingTransform, Schedule
+from app.web.validation.filter_validation import (
+    compile_filter_regex,
+    hashtag_present,
+    mapping_filter_has_criteria,
+)
 
 if TYPE_CHECKING:
     from telethon.tl.custom.message import Message as TLMessage
@@ -76,6 +81,8 @@ def single_filter_matches(
     text: str,
     media_type: str,
 ) -> bool:
+    if not mapping_filter_has_criteria(filter_rule):
+        return False
     if filter_rule.media_types:
         allowed = {
             part.strip().lower()
@@ -88,19 +95,21 @@ def single_filter_matches(
         return False
     if filter_rule.exclude_text and filter_rule.exclude_text in text:
         return False
-    if filter_rule.regex_pattern and not re.search(filter_rule.regex_pattern, text):
-        return False
+    if filter_rule.regex_pattern:
+        compiled = compile_filter_regex(filter_rule.regex_pattern)
+        if compiled is None or not compiled.search(text):
+            return False
     if filter_rule.allowed_sender_ids and filter_rule.allowed_sender_ids.strip():
-        allowed: set[int] = set()
+        allowed_ids: set[int] = set()
         for x in filter_rule.allowed_sender_ids.split(","):
             x = x.strip()
             if not x:
                 continue
             try:
-                allowed.add(int(x))
+                allowed_ids.add(int(x))
             except ValueError:
                 continue
-        if allowed and (preview.sender_id is None or preview.sender_id not in allowed):
+        if allowed_ids and (preview.sender_id is None or preview.sender_id not in allowed_ids):
             return False
     if filter_rule.denied_usernames and filter_rule.denied_usernames.strip():
         denied = {u.strip().lower().lstrip("@") for u in filter_rule.denied_usernames.split(",") if u.strip()}
@@ -113,14 +122,11 @@ def single_filter_matches(
     if filter_rule.max_url_count is not None and n_urls > filter_rule.max_url_count:
         return False
     if filter_rule.required_hashtags and filter_rule.required_hashtags.strip():
-        lower = text.lower()
         for tag in filter_rule.required_hashtags.split(","):
-            t = tag.strip().lower()
+            t = tag.strip()
             if not t:
                 continue
-            if not t.startswith("#"):
-                t = "#" + t
-            if t not in lower:
+            if not hashtag_present(text, t):
                 return False
     return True
 

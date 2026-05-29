@@ -51,7 +51,21 @@ def test_passes_filters_all_none_rules():
         regex_pattern=None,
         or_group_id=1,
     )
-    assert _passes_filters(msg, [f]) is True
+    assert _passes_filters(msg, [f]) is False
+
+
+def test_passes_filters_exclude_empty_string_no_criteria():
+    msg = DummyMessage("hello")
+    filters = [
+        MappingFilter(
+            include_text=None,
+            exclude_text="",
+            media_types=None,
+            regex_pattern=None,
+            or_group_id=1,
+        )
+    ]
+    assert _passes_filters(msg, filters) is False
 
 
 def test_passes_filters_include_exclude():
@@ -208,18 +222,18 @@ def test_passes_filters_combined_rules():
     assert _passes_filters(msg, filters) is True
 
 
-def test_passes_filters_exclude_empty_string_no_op():
+def test_passes_filters_invalid_regex_does_not_match():
     msg = DummyMessage("hello")
     filters = [
         MappingFilter(
             include_text=None,
-            exclude_text="",
+            exclude_text=None,
             media_types=None,
-            regex_pattern=None,
+            regex_pattern="[invalid",
             or_group_id=1,
         )
     ]
-    assert _passes_filters(msg, filters) is True
+    assert _passes_filters(msg, filters) is False
 
 
 def test_passes_filters_same_or_group_either_matches():

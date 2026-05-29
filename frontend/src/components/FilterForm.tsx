@@ -184,6 +184,15 @@ export function FilterForm({
       setError('Min URL count cannot be greater than max URL count.');
       return;
     }
+    if (hasRegex) {
+      try {
+        // eslint-disable-next-line no-new
+        new RegExp(regexPattern.trim());
+      } catch {
+        setError('Invalid regex pattern.');
+        return;
+      }
+    }
     let parsedGroup: number | undefined;
     const g = orGroupId.trim();
     if (g !== '') {

@@ -66,7 +66,24 @@ def test_denied_username():
 
 
 def test_passes_filters_or_groups():
-    g1 = MappingFilter(None, None, None, None, 1)
+    g1 = MappingFilter("hello", None, None, None, 1)
     g2 = MappingFilter("must", None, None, None, 1)
     p = MessagePreview(text="hello", media_type="text")
     assert passes_filters(p, [g1, g2])
+    p2 = MessagePreview(text="other", media_type="text")
+    assert not passes_filters(p2, [g1, g2])
+
+
+def test_hashtag_whole_word_only():
+    f = MappingFilter(
+        include_text=None,
+        exclude_text=None,
+        media_types=None,
+        regex_pattern=None,
+        or_group_id=0,
+        required_hashtags="news",
+    )
+    p = MessagePreview(text="Hello #news today", media_type="text")
+    assert single_filter_matches(p, f, text=p.text, media_type="text")
+    p2 = MessagePreview(text="Hello #newsletter today", media_type="text")
+    assert not single_filter_matches(p2, f, text=p2.text, media_type="text")

@@ -232,6 +232,59 @@ def test_patch_filter_or_group_id(api_client, user_token):
     assert r.json()["or_group_id"] == 99
 
 
+def test_create_filter_empty_body_400(api_client, user_token):
+    r = api_client.post(
+        "/api/mappings/1/filters",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={},
+    )
+    assert r.status_code == 400
+    assert "required" in r.json()["detail"].lower()
+
+
+def test_create_filter_invalid_regex_400(api_client, user_token):
+    r = api_client.post(
+        "/api/mappings/1/filters",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"regex_pattern": "[unclosed"},
+    )
+    assert r.status_code == 400
+    assert "regex" in r.json()["detail"].lower()
+
+
+def test_patch_filter_clears_include_text(api_client, user_token):
+    create = api_client.post(
+        "/api/mappings/1/filters",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"include_text": "keep-me", "media_types": "text"},
+    )
+    assert create.status_code == 201
+    fid = create.json()["id"]
+    r = api_client.patch(
+        f"/api/mappings/1/filters/{fid}",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"include_text": None},
+    )
+    assert r.status_code == 200
+    assert r.json()["include_text"] is None
+    assert r.json()["media_types"] == "text"
+
+
+def test_patch_filter_cannot_remove_all_criteria(api_client, user_token):
+    create = api_client.post(
+        "/api/mappings/1/filters",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"include_text": "only-rule"},
+    )
+    fid = create.json()["id"]
+    r = api_client.patch(
+        f"/api/mappings/1/filters/{fid}",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"include_text": None},
+    )
+    assert r.status_code == 400
+
+
 def test_list_filters_include_or_group_id(api_client, user_token):
     api_client.post(
         "/api/mappings/1/filters",
