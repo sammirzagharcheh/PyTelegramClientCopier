@@ -138,8 +138,16 @@ Without Mongo container (external Mongo / Atlas):
 ```bash
 NO_MONGO=1 ./deploy/scripts/deploy-env.sh uat
 # Set MONGO_URI in deploy/env/docker.env.uat to your external URI
+# SQLite/sessions still persist on tgc-uat_app_data (or bind …/uat/app)
 ```
 
+Host folders instead of named volumes (optional):
+
+```bash
+BIND_MOUNTS=1 HOST_DATA_ROOT=/var/lib/telegram-copier ./deploy/scripts/deploy-env.sh uat
+# → /var/lib/telegram-copier/uat/app/app.db  (+ sessions/, media_assets/)
+# → /var/lib/telegram-copier/uat/mongo/
+```
 First boot — create admin:
 
 ```bash
@@ -161,9 +169,18 @@ docker compose -p tgc-uat \
 | uat | `tgc-uat` | 8082 | 8003 | 27020 | `deploy/env/docker.env.uat` |
 | prod | `tgc-prod` | 80 | *(not published)* | *(not published)* | `deploy/env/docker.env.prod` |
 
-Each environment has its own Docker volumes (`tgc-<env>_app_data`, `tgc-<env>_mongo_data`) and should use a **different** `JWT_SECRET` and `MONGO_DB`.
+Each environment has its own Docker data (never shared):
 
-Full Docker details: [docker-multi-env.md](docker-multi-env.md)
+| Env | SQLite / sessions / media | MongoDB data |
+|-----|---------------------------|--------------|
+| dev | volume `tgc-dev_app_data` (or bind `…/dev/app`) | `tgc-dev_mongo_data` (or `…/dev/mongo`) |
+| tst | `tgc-tst_app_data` | `tgc-tst_mongo_data` |
+| uat | `tgc-uat_app_data` | `tgc-uat_mongo_data` |
+| prod | `tgc-prod_app_data` | `tgc-prod_mongo_data` |
+
+Inside the backend container those files are always under `/app/data` (`SQLITE_PATH=/app/data/app.db`, sessions, media). Use a **different** `JWT_SECRET` and `MONGO_DB` per env.
+
+Full volume / bind-mount explanation: [docker-multi-env.md — Data volumes](docker-multi-env.md#data-volumes-sqlite-sessions-media-mongodb).
 
 ---
 

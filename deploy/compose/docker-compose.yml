@@ -1,5 +1,11 @@
 # GHCR-based stack (no local build). Used by deploy/scripts/deploy-env.sh
 # Overlay with deploy/compose/docker-compose.<env>.yml for ports / project naming.
+#
+# Data mounts (per Compose project tgc-<env> → isolated host volumes):
+#   app_data   → backend /app/data   = SQLite app.db + sessions + media_assets
+#   mongo_data → mongodb /data/db    = MongoDB files
+# Optional host bind mounts: docker-compose.bind-mounts.yml (BIND_MOUNTS=1)
+# Docs: docs/docker-multi-env.md#data-volumes-sqlite-sessions-media-mongodb
 
 services:
   mongodb:
@@ -16,7 +22,7 @@ services:
 
   backend:
     image: ${BACKEND_IMAGE:-ghcr.io/sammirzagharcheh/pytelegramclientcopier/backend:latest}
-    pull_policy: always
+    pull_policy: ${PULL_POLICY:-always}
     restart: unless-stopped
     depends_on:
       mongodb:
@@ -32,7 +38,7 @@ services:
 
   frontend-proxy:
     image: ${FRONTEND_IMAGE:-ghcr.io/sammirzagharcheh/pytelegramclientcopier/frontend:latest}
-    pull_policy: always
+    pull_policy: ${PULL_POLICY:-always}
     restart: unless-stopped
     depends_on:
       backend:

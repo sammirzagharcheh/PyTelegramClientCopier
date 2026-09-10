@@ -378,6 +378,8 @@ UPDATE_ONLY=true curl -fsSL "https://raw.githubusercontent.com/sammirzagharcheh/
 
 Data lives under `/opt/telegram-copier/data/` (SQLite DB, Telethon sessions, media assets). Keep backups of this folder.
 
+**Docker contrast:** with Compose, the same files live inside a volume mounted at `/app/data` (named volume `…_app_data`, or a host bind mount). Multi-env stacks isolate that per environment — see [Docker multi-env — Data volumes](docker-multi-env.md#data-volumes-sqlite-sessions-media-mongodb).
+
 ---
 
 ## Production checklist

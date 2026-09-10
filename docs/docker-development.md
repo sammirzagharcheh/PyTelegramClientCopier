@@ -174,7 +174,9 @@ Vite proxies `/api` and `/health` to the backend (`VITE_PROXY_TARGET=http://back
 ## Tips
 
 - Prefer opening **http://localhost:5173**, not port 80 (nginx is off in this mode).
-- SQLite + sessions persist in the `app_data` volume unless you use `down -v`.
+- **SQLite / sessions / media** persist in the Docker named volume `…_app_data` mounted at `/app/data` inside backend (`SQLITE_PATH=/app/data/app.db`, etc.). **Mongo** uses `…_mongo_data` → `/data/db`. Both survive `down` unless you use `down -v`.
+- Code bind-mounts (`./src`, `./frontend`) are for hot reload only; they are **not** where the database files live.
+- For per-environment data isolation (dev/tst/uat/prod), see [Docker — multi-env — Data volumes](docker-multi-env.md#data-volumes-sqlite-sessions-media-mongodb).
 - For a production-like check of the built UI, switch to [Docker — production](docker-production.md).
 - Worker issues: [WORKER_TROUBLESHOOTING.md](WORKER_TROUBLESHOOTING.md)
 - Feature → test map: [dev-cheatsheet.md](dev-cheatsheet.md)

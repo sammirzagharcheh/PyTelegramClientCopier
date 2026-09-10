@@ -5,6 +5,7 @@ services:
     ports:
       - "27017:27017"
     volumes:
+      # Host Docker named volume …_mongo_data → Mongo engine files
       - mongo_data:/data/db
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
@@ -26,6 +27,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      # Host Docker named volume …_app_data → SQLite, sessions, media (/app/data)
       - app_data:/app/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

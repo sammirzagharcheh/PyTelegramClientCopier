@@ -59,10 +59,12 @@ docker compose -f docker-compose.yml -f docker-compose.no-mongo.yml down
 | `backend` | Yes |
 | `frontend-proxy` (nginx) | Yes |
 | `mongodb` container | **No** |
-| SQLite / sessions / media (`app_data`) | Yes |
+| SQLite / sessions / media (`app_data` → `/app/data`) | Yes — same named volume as full production; SQLite is the primary app DB |
 | Message / worker / webhook logs UI | Needs **external** Mongo, or stays empty / warns |
 
 Core Telegram copying does **not** require Mongo. Mongo is for logs and some stats.
+
+**Where files live:** backend mounts volume `…_app_data` at `/app/data` (`SQLITE_PATH=/app/data/app.db`, `SESSIONS_DIR`, `MEDIA_ASSETS_DIR`). There is **no** `mongo_data` volume in this mode. Multi-env GHCR deploys use per-env volumes or bind mounts — [Data volumes](docker-multi-env.md#data-volumes-sqlite-sessions-media-mongodb).
 
 ---
 
@@ -224,8 +226,9 @@ docker compose -f docker-compose.yml -f docker-compose.no-mongo.yml up --build -
 | Stop (keep data) | `… down` |
 | Wipe app volume | `… down -v` ⚠️ deletes SQLite/sessions |
 
-Only **`app_data`** is used here (no `mongo_data` from this stack).
+Only **`app_data`** (Compose project prefix + `_app_data`) is used here — it holds SQLite `app.db`, Telethon sessions, and media assets under `/app/data`. There is no `mongo_data` volume from this stack (external Mongo owns its own storage).
 
+`down` keeps the app volume; `down -v` deletes SQLite/sessions/media for this project.
 ---
 
 ## Production checklist

@@ -11,7 +11,7 @@ Simple guides for installing and running **Telegram Client Copier**.
 | [Docker — production](docker-production.md) | Full stack in containers (backend + frontend + **MongoDB**), build on the host. |
 | [Docker — production without Mongo](docker-production-no-mongo.md) | Backend + frontend only; no Mongo container (optional external Mongo). |
 | [Docker — development](docker-development.md) | Hot-reload coding with Docker (Vite + API reload). |
-| [Docker — multi-env (dev/tst/uat/prod)](docker-multi-env.md) | Pull GHCR images; separate env files + ports per environment. |
+| [Docker — multi-env (dev/tst/uat/prod)](docker-multi-env.md) | Pull GHCR images; separate env files, ports, and **SQLite/Mongo data volumes** (or host bind mounts) per environment. |
 | [GitHub Actions CI/CD](github-actions-ci-cd.md) | Tests → GHCR images → optional SSH deploy per environment. |
 
 ## Operations

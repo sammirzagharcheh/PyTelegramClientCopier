@@ -199,26 +199,40 @@ Example with host nginx reverse-proxying to `127.0.0.1:80`, then:
 sudo certbot --nginx -d copier.example.com
 ```
 
-### Data persistence
+### Data persistence (SQLite, sessions, media, MongoDB)
 
-Named volumes (survive `docker compose down`):
+Nothing important is stored in the image. The backend and Mongo containers mount **Docker named volumes** on the host so data survives `docker compose down` and image rebuilds.
 
-| Volume | Contents |
-|--------|----------|
-| `mongo_data` | MongoDB files |
-| `app_data` | SQLite DB, Telethon sessions, media assets, worker logs |
+| Volume (name is prefixed by Compose project) | Mounted as | Contents |
+|----------------------------------------------|------------|----------|
+| `…_app_data` | backend → `/app/data` | **SQLite** `app.db`, Telethon **sessions**, **media_assets** |
+| `…_mongo_data` | mongodb → `/data/db` | MongoDB engine files (logs DB) |
 
-Backup example:
+Paths inside the backend come from `docker.env` and must stay under `/app/data`:
+
+```env
+SQLITE_PATH=/app/data/app.db
+SESSIONS_DIR=/app/data/sessions
+MEDIA_ASSETS_DIR=/app/data/media_assets
+MONGO_URI=mongodb://mongodb:27017
+MONGO_DB=telegram_copier
+```
+
+For a **single** root compose stack, volume names look like `telegramclientcopier_app_data` (project = directory name). Check with `docker volume ls`.
+
+For **dev / tst / uat / prod** side-by-side stacks (GHCR deploy), each env gets its **own** volumes (`tgc-dev_app_data`, `tgc-uat_mongo_data`, …) or optional host bind mounts — see [Docker — multi-env — Data volumes](docker-multi-env.md#data-volumes-sqlite-sessions-media-mongodb).
+
+Backup example (stop writers first if possible):
 
 ```bash
 docker compose stop backend
+# Replace volume name with yours from: docker volume ls
 docker run --rm -v telegramclientcopier_app_data:/data -v "$(pwd):/backup" alpine \
   tar czf /backup/app_data-backup.tgz -C /data .
 docker compose start backend
 ```
 
-(Volume name may differ; check with `docker volume ls`.)
-
+`docker compose down` keeps volumes. `docker compose down -v` **deletes** SQLite, sessions, media, and Mongo data for that project.
 ---
 
 ## Update to latest code

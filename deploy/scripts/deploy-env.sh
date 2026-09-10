@@ -9,6 +9,14 @@
 #   ./deploy/scripts/deploy-env.sh prod v1.2.3
 #   IMAGE_TAG=sha-abc1234 ./deploy/scripts/deploy-env.sh tst
 #   NO_MONGO=1 ./deploy/scripts/deploy-env.sh uat
+#   BIND_MOUNTS=1 ./deploy/scripts/deploy-env.sh uat
+#   BIND_MOUNTS=1 HOST_DATA_ROOT=/var/lib/telegram-copier ./deploy/scripts/deploy-env.sh prod
+#   SKIP_PULL=1 BACKEND_IMAGE=local/tgc-backend:dev FRONTEND_IMAGE=local/tgc-frontend:dev ./deploy/scripts/deploy-env.sh dev
+#
+# Data (default = Docker named volumes, isolated per Compose project tgc-<env>):
+#   tgc-<env>_app_data   → container /app/data  (SQLite, sessions, media)
+#   tgc-<env>_mongo_data → container /data/db   (MongoDB files)
+# With BIND_MOUNTS=1, same paths are bind-mounted from the host instead.
 #
 # Prerequisites:
 #   - Docker Engine + Compose plugin
@@ -57,10 +65,21 @@ OWNER_REPO="${GHCR_OWNER_REPO:-${OWNER_REPO_DEFAULT}}"
 export BACKEND_IMAGE="${BACKEND_IMAGE:-ghcr.io/${OWNER_REPO}/backend:${IMAGE_TAG}}"
 export FRONTEND_IMAGE="${FRONTEND_IMAGE:-ghcr.io/${OWNER_REPO}/frontend:${IMAGE_TAG}}"
 export IMAGE_TAG
+export COMPOSE_ENV="${ENV_NAME}"
+export HOST_DATA_ROOT="${HOST_DATA_ROOT:-${ROOT_DIR}/data/docker-envs}"
+if [[ "${SKIP_PULL:-0}" == "1" ]]; then
+  export PULL_POLICY="${PULL_POLICY:-missing}"
+else
+  export PULL_POLICY="${PULL_POLICY:-always}"
+fi
 
 COMPOSE_FILES=(-f "${BASE}" -f "${OVERLAY}")
 if [[ "${NO_MONGO:-0}" == "1" ]]; then
   COMPOSE_FILES+=(-f "${COMPOSE_DIR}/docker-compose.no-mongo.yml")
+fi
+if [[ "${BIND_MOUNTS:-0}" == "1" ]]; then
+  mkdir -p "${HOST_DATA_ROOT}/${ENV_NAME}/app" "${HOST_DATA_ROOT}/${ENV_NAME}/mongo"
+  COMPOSE_FILES+=(-f "${COMPOSE_DIR}/docker-compose.bind-mounts.yml")
 fi
 
 echo "==> Environment : ${ENV_NAME}"
@@ -68,10 +87,23 @@ echo "==> Project     : ${PROJECT}"
 echo "==> Backend     : ${BACKEND_IMAGE}"
 echo "==> Frontend    : ${FRONTEND_IMAGE}"
 echo "==> Env file    : ${ENV_FILE}"
+if [[ "${BIND_MOUNTS:-0}" == "1" ]]; then
+  echo "==> Data mode   : host bind mounts under ${HOST_DATA_ROOT}/${ENV_NAME}/"
+  echo "                 app → …/app  (SQLite, sessions, media)"
+  echo "                 mongo → …/mongo"
+else
+  echo "==> Data mode   : Docker named volumes"
+  echo "                 ${PROJECT}_app_data   → /app/data"
+  echo "                 ${PROJECT}_mongo_data → /data/db"
+fi
 
 cd "${ROOT_DIR}"
 
-docker compose -p "${PROJECT}" "${COMPOSE_FILES[@]}" --env-file "${ENV_FILE}" pull
+if [[ "${SKIP_PULL:-0}" == "1" ]]; then
+  echo "==> Skipping image pull (SKIP_PULL=1)"
+else
+  docker compose -p "${PROJECT}" "${COMPOSE_FILES[@]}" --env-file "${ENV_FILE}" pull
+fi
 docker compose -p "${PROJECT}" "${COMPOSE_FILES[@]}" --env-file "${ENV_FILE}" up -d --remove-orphans
 
 echo
@@ -92,5 +124,9 @@ Default host ports:
   tst  → http://HOST:8081   (API :8002, Mongo :27019)
   uat  → http://HOST:8082   (API :8003, Mongo :27020)
   prod → http://HOST:80     (API/Mongo not published)
+
+Data (this env):
+  named volumes: docker volume ls | grep ${PROJECT}
+  or bind mounts: ${HOST_DATA_ROOT}/${ENV_NAME}/   (when BIND_MOUNTS=1)
 
 EOF
