@@ -2,12 +2,11 @@
 
 Run the stack in Docker with **live reload** while you edit code.
 
-- Backend: uvicorn `--reload` + bind-mount `./src`
+- Backend: uvicorn `--reload` + bind-mount `./src` (API only in this mode; no baked SPA required)
 - Frontend: Vite on port **5173** inside a Node container
 - MongoDB: same as production compose
-- `frontend-proxy` (nginx) is **disabled** in this mode
 
-For a production-like container run (built SPA on port 80), see [Docker — production](docker-production.md).
+For a production-like container run (unified image serves SPA + API on port 80), see [Docker — production](docker-production.md).
 
 ---
 
@@ -107,7 +106,6 @@ What this overlay does (`docker-compose.dev.yml`):
 |--------|--------|
 | Backend command | `init-db` + uvicorn `--reload` |
 | `./src` mounted | Python code reloads on save |
-| `frontend-proxy` | Disabled (`profiles: ["prodlike"]`) |
 | `frontend-dev` | `npm ci` + `npm run dev` on **5173** |
 | `./frontend` mounted | Vite HMR for UI changes |
 
@@ -173,7 +171,7 @@ Vite proxies `/api` and `/health` to the backend (`VITE_PROXY_TARGET=http://back
 
 ## Tips
 
-- Prefer opening **http://localhost:5173**, not port 80 (nginx is off in this mode).
+- Prefer opening **http://localhost:5173** (Vite HMR). Port 80 still maps to the API container but will not serve a baked SPA unless you use [Docker — production](docker-production.md).
 - **SQLite / sessions / media** persist in the Docker named volume `…_app_data` mounted at `/app/data` inside backend (`SQLITE_PATH=/app/data/app.db`, etc.). **Mongo** uses `…_mongo_data` → `/data/db`. Both survive `down` unless you use `down -v`.
 - Code bind-mounts (`./src`, `./frontend`) are for hot reload only; they are **not** where the database files live.
 - For per-environment data isolation (dev/tst/uat/prod), see [Docker — multi-env — Data volumes](docker-multi-env.md#data-volumes-sqlite-sessions-media-mongodb).

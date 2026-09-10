@@ -11,7 +11,7 @@
 #   NO_MONGO=1 ./deploy/scripts/deploy-env.sh uat
 #   BIND_MOUNTS=1 ./deploy/scripts/deploy-env.sh uat
 #   BIND_MOUNTS=1 HOST_DATA_ROOT=/var/lib/telegram-copier ./deploy/scripts/deploy-env.sh prod
-#   SKIP_PULL=1 BACKEND_IMAGE=local/tgc-backend:dev FRONTEND_IMAGE=local/tgc-frontend:dev ./deploy/scripts/deploy-env.sh dev
+#   SKIP_PULL=1 BACKEND_IMAGE=local/tgc-backend:dev ./deploy/scripts/deploy-env.sh dev
 #
 # Data (default = Docker named volumes, isolated per Compose project tgc-<env>):
 #   tgc-<env>_app_data   → container /app/data  (SQLite, sessions, media)
@@ -63,7 +63,6 @@ fi
 OWNER_REPO_DEFAULT="sammirzagharcheh/pytelegramclientcopier"
 OWNER_REPO="${GHCR_OWNER_REPO:-${OWNER_REPO_DEFAULT}}"
 export BACKEND_IMAGE="${BACKEND_IMAGE:-ghcr.io/${OWNER_REPO}/backend:${IMAGE_TAG}}"
-export FRONTEND_IMAGE="${FRONTEND_IMAGE:-ghcr.io/${OWNER_REPO}/frontend:${IMAGE_TAG}}"
 export IMAGE_TAG
 export COMPOSE_ENV="${ENV_NAME}"
 export HOST_DATA_ROOT="${HOST_DATA_ROOT:-${ROOT_DIR}/data/docker-envs}"
@@ -84,8 +83,7 @@ fi
 
 echo "==> Environment : ${ENV_NAME}"
 echo "==> Project     : ${PROJECT}"
-echo "==> Backend     : ${BACKEND_IMAGE}"
-echo "==> Frontend    : ${FRONTEND_IMAGE}"
+echo "==> Image       : ${BACKEND_IMAGE}"
 echo "==> Env file    : ${ENV_FILE}"
 if [[ "${BIND_MOUNTS:-0}" == "1" ]]; then
   echo "==> Data mode   : host bind mounts under ${HOST_DATA_ROOT}/${ENV_NAME}/"
@@ -119,11 +117,11 @@ Done. Next steps (first deploy only):
     --env-file ${ENV_FILE} \\
     exec backend tg-copier db create-admin you@example.com 'YourStrongPassword'
 
-Default host ports:
-  dev  → http://HOST:8080   (API :8001, Mongo :27018)
-  tst  → http://HOST:8081   (API :8002, Mongo :27019)
-  uat  → http://HOST:8082   (API :8003, Mongo :27020)
-  prod → http://HOST:80     (API/Mongo not published)
+Default host ports (panel = SPA + /api on same port):
+  dev  → http://HOST:8080   (API alias :8001, Mongo :27018)
+  tst  → http://HOST:8081   (API alias :8002, Mongo :27019)
+  uat  → http://HOST:8082   (API alias :8003, Mongo :27020)
+  prod → http://HOST:80     (Mongo not published)
 
 Data (this env):
   named volumes: docker volume ls | grep ${PROJECT}

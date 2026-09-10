@@ -10,9 +10,6 @@ services:
       - app_data:/app/data
       - ./src:/app/src
 
-  frontend-proxy:
-    profiles: ["prodlike"]
-
   frontend-dev:
     image: node:20-alpine
     working_dir: /app

@@ -83,7 +83,7 @@ Optional environment variables:
 | Variable | Meaning |
 |----------|---------|
 | `IMAGE_TAG` | Tag if not passed as 2nd argument (default `latest`) |
-| `BACKEND_IMAGE` / `FRONTEND_IMAGE` | Full image refs (override defaults) |
+| `BACKEND_IMAGE` | Full image ref (override default; unified SPA + API image) |
 | `GHCR_OWNER_REPO` | Override `owner/repo` used in default image names |
 | `NO_MONGO=1` | Apply `docker-compose.no-mongo.yml` |
 | `BIND_MOUNTS=1` | Store SQLite/sessions/media + Mongo on host paths (see [Data volumes](#data-volumes-sqlite-sessions-media-mongodb)) |
@@ -109,7 +109,7 @@ These paths are set in every `deploy/env/docker.env.<env>` (and must stay under 
 | **Media assets** | `MEDIA_ASSETS_DIR` | `/app/data/media_assets/` | Uploaded/transform media used by workers |
 | **MongoDB** | `MONGO_URI` / `MONGO_DB` | Mongo container `/data/db` | Message / worker / webhook logs (optional if `NO_MONGO=1`) |
 
-Frontend has **no** database volume (static nginx files only).
+The unified `backend` image serves the SPA from `/app/frontend_dist` (no separate frontend container or volume).
 
 ### Default mode: Docker named volumes on the host
 
@@ -223,8 +223,8 @@ These are **different** volumes. Running both on one host does not share SQLite;
 
 ## Ports
 
-| Env | Panel (HTTP) | Backend API | MongoDB |
-|-----|--------------|-------------|---------|
+| Env | Panel (SPA + `/api`) | API alias | MongoDB |
+|-----|----------------------|-----------|---------|
 | **dev** | `8080` | `8001` | `27018` |
 | **tst** | `8081` | `8002` | `27019` |
 | **uat** | `8082` | `8003` | `27020` |
@@ -264,10 +264,8 @@ Copy-Item deploy\env\docker.env.dev.example deploy\env\docker.env.dev
 
 ```bash
 docker build -f Dockerfile.backend -t local/tgc-backend:dev .
-docker build -f Dockerfile.frontend -t local/tgc-frontend:dev .
 SKIP_PULL=1 BIND_MOUNTS=1 \
   BACKEND_IMAGE=local/tgc-backend:dev \
-  FRONTEND_IMAGE=local/tgc-frontend:dev \
   ./deploy/scripts/deploy-env.sh dev
 ```
 
@@ -276,8 +274,8 @@ SKIP_PULL=1 BIND_MOUNTS=1 \
 | Check | Expect |
 |-------|--------|
 | Panel | http://localhost:8080 |
-| API health | http://localhost:8001/health → `{"status":"ok"}` |
-| Proxied health | http://localhost:8080/health → `{"status":"ok"}` |
+| API health (alias) | http://localhost:8001/health → `{"status":"ok"}` |
+| Panel health | http://localhost:8080/health → `{"status":"ok"}` |
 | SQLite on host (bind mounts) | `data/docker-envs/dev/app/app.db` |
 | Mongo on host (bind mounts) | `data/docker-envs/dev/mongo/` |
 
@@ -360,7 +358,7 @@ Multi-env stacks use `tgc-*` and alternate ports (except prod `:80`).
 
 ## Checklist
 
-- [ ] GHCR images exist (`backend` + `frontend`)
+- [ ] GHCR image exists (`backend` — unified SPA + API; legacy `frontend` packages are obsolete)
 - [ ] `docker login ghcr.io` on the host (if private packages)
 - [ ] Real `deploy/env/docker.env.<env>` created from examples
 - [ ] Unique `JWT_SECRET` / `MONGO_DB` per env
@@ -368,7 +366,7 @@ Multi-env stacks use `tgc-*` and alternate ports (except prod `:80`).
 - [ ] `./deploy/scripts/deploy-env.sh <env>` succeeds
 - [ ] Admin user created
 - [ ] Panel opens on the env’s HTTP port
-- [ ] `/health` OK (via panel proxy or published API port on non-prod)
+- [ ] `/health` OK (panel port or API alias on non-prod)
 - [ ] Backup plan for SQLite (`app.db`), sessions, and Mongo per env
 ---
 

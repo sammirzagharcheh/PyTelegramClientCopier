@@ -1,7 +1,7 @@
 # Deploy one multi-env stack on Windows (PowerShell) using local or GHCR images.
 #
 # Examples:
-#   # Build local images, then deploy dev with host bind mounts (no GHCR):
+#   # Build local image, then deploy dev with host bind mounts (no GHCR):
 #   .\deploy\scripts\deploy-env.ps1 -Environment dev -LocalBuild -BindMounts
 #
 #   # Pull from GHCR (after CI publish):
@@ -18,7 +18,6 @@ param(
     [string]$ImageTag = "latest",
 
     [string]$BackendImage = "",
-    [string]$FrontendImage = "",
 
     [switch]$LocalBuild,
     [switch]$SkipPull,
@@ -38,22 +37,17 @@ if (-not (Test-Path $EnvFile)) {
 }
 
 if ($LocalBuild) {
-    Write-Host "==> Building local images..."
+    Write-Host "==> Building local unified image (SPA + API)..."
     docker build -f Dockerfile.backend -t "local/tgc-backend:$Environment" .
     if ($LASTEXITCODE -ne 0) { throw "backend build failed" }
-    docker build -f Dockerfile.frontend -t "local/tgc-frontend:$Environment" .
-    if ($LASTEXITCODE -ne 0) { throw "frontend build failed" }
     $BackendImage = "local/tgc-backend:$Environment"
-    $FrontendImage = "local/tgc-frontend:$Environment"
     $SkipPull = $true
 }
 
 $OwnerRepo = if ($env:GHCR_OWNER_REPO) { $env:GHCR_OWNER_REPO } else { "sammirzagharcheh/pytelegramclientcopier" }
 if (-not $BackendImage) { $BackendImage = "ghcr.io/$OwnerRepo/backend:$ImageTag" }
-if (-not $FrontendImage) { $FrontendImage = "ghcr.io/$OwnerRepo/frontend:$ImageTag" }
 
 $env:BACKEND_IMAGE = $BackendImage
-$env:FRONTEND_IMAGE = $FrontendImage
 $env:IMAGE_TAG = $ImageTag
 $env:COMPOSE_ENV = $Environment
 $env:PULL_POLICY = if ($SkipPull) { "missing" } else { "always" }
@@ -78,8 +72,7 @@ $ComposeArgs += @("--env-file", "deploy/env/docker.env.$Environment")
 
 Write-Host "==> Environment : $Environment"
 Write-Host "==> Project     : $Project"
-Write-Host "==> Backend     : $BackendImage"
-Write-Host "==> Frontend    : $FrontendImage"
+Write-Host "==> Image       : $BackendImage"
 Write-Host "==> Env file    : $EnvFile"
 if ($BindMounts) {
     Write-Host "==> Data mode   : bind mounts under $HostDataRoot\$Environment\"

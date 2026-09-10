@@ -3,6 +3,8 @@
 Install Telegram Client Copier on a Linux server **without Docker**.  
 Uses: Python 3.11+, Node.js 20, nginx, systemd. MongoDB is optional (needed for message/worker logs).
 
+**Docker note:** container deploys use a **single** image where FastAPI serves the SPA and API ([docker-production.md](docker-production.md)). This native guide still uses **host nginx** in front of the Python process — that is intentional and unchanged.
+
 **Supported:** Ubuntu 22.04 and 24.04 (script also works on 20.04 with Python 3.11).
 
 ---

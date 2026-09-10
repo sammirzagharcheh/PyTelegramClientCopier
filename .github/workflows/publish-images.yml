@@ -1,4 +1,4 @@
-# Build and push backend + frontend images to GitHub Container Registry (GHCR)
+# Build and push the unified backend image (SPA + API) to GitHub Container Registry (GHCR)
 # after a successful CI run on main/master, or on version tags / manual dispatch.
 name: Publish images
 
@@ -81,7 +81,7 @@ jobs:
           echo "Resolved image_tag=${IMAGE_TAG} extra=${EXTRA}"
 
   publish:
-    name: Push GHCR images
+    name: Push GHCR image
     needs: guard
     if: needs.guard.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
@@ -117,16 +117,7 @@ jobs:
             type=raw,value=${{ needs.guard.outputs.image_tag }}
             type=raw,value=latest,enable=${{ needs.guard.outputs.extra_tags == 'latest' }}
 
-      - name: Frontend metadata
-        id: meta-frontend
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ steps.names.outputs.prefix }}/frontend
-          tags: |
-            type=raw,value=${{ needs.guard.outputs.image_tag }}
-            type=raw,value=latest,enable=${{ needs.guard.outputs.extra_tags == 'latest' }}
-
-      - name: Build and push backend
+      - name: Build and push unified image (SPA + API)
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -137,27 +128,17 @@ jobs:
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 
-      - name: Build and push frontend
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.frontend
-          push: true
-          tags: ${{ steps.meta-frontend.outputs.tags }}
-          labels: ${{ steps.meta-frontend.outputs.labels }}
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
-
       - name: Summary
         run: |
           {
-            echo "## GHCR images published"
+            echo "## GHCR image published"
             echo ""
-            echo "- Backend: \`${{ steps.names.outputs.prefix }}/backend:${{ needs.guard.outputs.image_tag }}\`"
-            echo "- Frontend: \`${{ steps.names.outputs.prefix }}/frontend:${{ needs.guard.outputs.image_tag }}\`"
+            echo "- Image: \`${{ steps.names.outputs.prefix }}/backend:${{ needs.guard.outputs.image_tag }}\` (SPA + API)"
             if [ "${{ needs.guard.outputs.extra_tags }}" = "latest" ]; then
               echo "- Also tagged: \`latest\`"
             fi
+            echo ""
+            echo "Legacy \`frontend\` GHCR packages are obsolete (unified into \`backend\`)."
             echo ""
             echo "Deploy with: \`./deploy/scripts/deploy-env.sh <dev|tst|uat|prod>\`"
           } >> "$GITHUB_STEP_SUMMARY"

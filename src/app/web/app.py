@@ -4,9 +4,12 @@ import asyncio
 import contextlib
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.db.cleanup import purge_old_login_sessions
@@ -36,6 +39,39 @@ from app.web.routers import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _mount_spa(app: FastAPI) -> None:
+    """Serve the Vite build when FRONTEND_DIST_DIR points at a valid dist folder."""
+    raw = (settings.frontend_dist_dir or "").strip()
+    if not raw:
+        return
+    dist = Path(raw)
+    index = dist / "index.html"
+    if not dist.is_dir() or not index.is_file():
+        logger.info("SPA dist not found at %s; API-only mode", dist)
+        return
+
+    assets = dist / "assets"
+    if assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets)), name="frontend-assets")
+
+    @app.get("/")
+    async def spa_root():
+        return FileResponse(index)
+
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str):
+        candidate = (dist / full_path).resolve()
+        try:
+            candidate.relative_to(dist.resolve())
+        except ValueError:
+            return FileResponse(index)
+        if candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(index)
+
+    logger.info("Serving SPA from %s", dist)
 
 
 @asynccontextmanager
@@ -137,5 +173,8 @@ def create_app() -> FastAPI:
     app.include_router(workers.router, prefix="/api")
     app.include_router(stats.router, prefix="/api")
     app.include_router(admin_stats.router, prefix="/api")
+
+    # Mount SPA last so /api and /health take precedence over the catch-all.
+    _mount_spa(app)
 
     return app

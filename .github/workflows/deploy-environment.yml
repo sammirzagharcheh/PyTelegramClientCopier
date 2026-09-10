@@ -73,7 +73,6 @@ jobs:
           REPO_LC="$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
           PREFIX="ghcr.io/${REPO_LC}"
           echo "backend=${PREFIX}/backend:${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
-          echo "frontend=${PREFIX}/frontend:${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
 
       - name: Sync deploy assets and env file
         env:
@@ -110,7 +109,6 @@ jobs:
           ACTOR: ${{ github.actor }}
           ENV_NAME: ${{ inputs.environment }}
           BACKEND_IMAGE: ${{ steps.images.outputs.backend }}
-          FRONTEND_IMAGE: ${{ steps.images.outputs.frontend }}
           IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
           set -euo pipefail
@@ -119,7 +117,6 @@ jobs:
           cd '${DEPLOY_PATH}'
           echo '${GHCR_TOKEN}' | docker login ghcr.io -u '${ACTOR}' --password-stdin
           export BACKEND_IMAGE='${BACKEND_IMAGE}'
-          export FRONTEND_IMAGE='${FRONTEND_IMAGE}'
           export IMAGE_TAG='${IMAGE_TAG}'
           chmod +x deploy/scripts/deploy-env.sh
           ./deploy/scripts/deploy-env.sh '${ENV_NAME}'
@@ -130,7 +127,6 @@ jobs:
           {
             echo "## Deployed \`${{ inputs.environment }}\`"
             echo ""
-            echo "- Backend: \`${{ steps.images.outputs.backend }}\`"
-            echo "- Frontend: \`${{ steps.images.outputs.frontend }}\`"
+            echo "- Image: \`${{ steps.images.outputs.backend }}\` (SPA + API)"
             echo "- Host path: \`${{ secrets.DEPLOY_PATH }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

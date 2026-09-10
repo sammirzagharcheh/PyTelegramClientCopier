@@ -3,8 +3,8 @@
 This project’s pipeline:
 
 1. **CI** — backend pytest + frontend lint/test/build + Docker build smoke  
-2. **Publish** — push **backend** and **frontend** images to **GitHub Container Registry (GHCR)** after CI succeeds on `main`/`master` (also on `v*.*.*` tags)  
-3. **Deploy** — pull those images and run Docker Compose for **dev / tst / uat / prod**, each with its own env file and ports
+2. **Publish** — push the unified **backend** image (SPA + API) to **GitHub Container Registry (GHCR)** after CI succeeds on `main`/`master` (also on `v*.*.*` tags)  
+3. **Deploy** — pull that image and run Docker Compose for **dev / tst / uat / prod**, each with its own env file and ports
 
 Related guide: [Docker multi-environment deploy](docker-multi-env.md)
 
@@ -22,20 +22,19 @@ Related guide: [Docker multi-environment deploy](docker-multi-env.md)
 
 ## Image names (GHCR)
 
-Images are published as (owner/repo lowercased):
+The unified image is published as (owner/repo lowercased):
 
 ```text
 ghcr.io/<owner>/<repo>/backend:<tag>
-ghcr.io/<owner>/<repo>/frontend:<tag>
 ```
 
 For this repository that is typically:
 
 ```text
 ghcr.io/sammirzagharcheh/pytelegramclientcopier/backend:latest
-ghcr.io/sammirzagharcheh/pytelegramclientcopier/frontend:latest
 ```
 
+That image includes the built SPA and the FastAPI API. Legacy `…/frontend` GHCR packages are obsolete and unused by current compose files.
 **Tags:**
 
 | Source | Tags |
@@ -46,9 +45,9 @@ ghcr.io/sammirzagharcheh/pytelegramclientcopier/frontend:latest
 
 ### First-time GHCR setup
 
-1. Push to `main` (or run **Publish images** manually) so packages exist.  
-2. In GitHub → **Packages**, open each package → **Package settings** → set visibility (private for private repos is typical).  
-3. Grant the repo **write** access to the packages if GitHub does not link them automatically.  
+1. Push to `main` (or run **Publish images** manually) so the `backend` package exists.  
+2. In GitHub → **Packages**, open the package → **Package settings** → set visibility (private for private repos is typical).  
+3. Grant the repo **write** access to the package if GitHub does not link it automatically.  
 4. On deploy hosts, log in when packages are private:
 
 ```bash
@@ -77,7 +76,7 @@ PAT needs at least `read:packages` (and `write:packages` only for pushing).
 
 **Docker smoke**
 
-- Builds `Dockerfile.backend` and `Dockerfile.frontend` (no registry push)
+- Builds unified `Dockerfile.backend` (SPA + API; no registry push)
 
 ---
 

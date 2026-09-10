@@ -25,6 +25,8 @@ services:
       mongodb:
         condition: service_healthy
     ports:
+      # Panel (SPA + /api) on :80; direct API also on :8000
+      - "80:8000"
       - "8000:8000"
     volumes:
       # Host Docker named volume …_app_data → SQLite, sessions, media (/app/data)
@@ -35,17 +37,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-
-  frontend-proxy:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
-    restart: unless-stopped
-    depends_on:
-      backend:
-        condition: service_healthy
-    ports:
-      - "80:80"
 
 volumes:
   mongo_data:

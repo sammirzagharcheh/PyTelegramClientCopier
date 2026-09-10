@@ -8,8 +8,6 @@ services:
     env_file:
       - ../env/docker.env.dev
     ports:
+      # Panel (SPA + /api) and direct API alias
+      - "8080:8000"
       - "8001:8000"
-
-  frontend-proxy:
-    ports:
-      - "8080:80"

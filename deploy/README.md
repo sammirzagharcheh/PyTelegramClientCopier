@@ -1,6 +1,6 @@
 # Multi-environment Docker deploy (GHCR images)
 
-Pull pre-built images and run isolated stacks for **dev**, **tst**, **uat**, and **prod**.
+Pull the pre-built **unified** image (SPA + API) and run isolated stacks for **dev**, **tst**, **uat**, and **prod**.
 
 | Doc | Purpose |
 |-----|---------|

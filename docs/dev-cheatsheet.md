@@ -6,6 +6,7 @@ Feature-to-files and test-command map for day-to-day work in this project.
 
 | Feature change | Edit files | Run tests |
 |---|---|---|
+| Change SPA static serving / Docker unified image | `src/app/web/app.py`, `src/app/config.py`, `Dockerfile.backend`, compose files | `pytest tests/unit/test_spa_static.py` |
 | Add/edit mapping fields (name/source/dest/account binding) | `src/app/web/schemas/mappings.py`, `src/app/web/routers/mappings.py`, `frontend/src/components/AddMappingDialog.tsx`, `frontend/src/components/EditMappingDialog.tsx`, `frontend/src/pages/user/Mappings.tsx`, `frontend/src/pages/user/MappingDetail.tsx` | `pytest tests/api/test_schedules_api.py`, `pytest tests/integration/test_mapping_service.py`, `cd frontend && npm run test -- src/pages/user/MappingDetail.test.tsx` |
 | Change filter matching behavior (include/exclude/media/regex) | `src/app/telegram/handlers.py`, `src/app/services/mapping_service.py` | `pytest tests/unit/test_filters.py tests/functional/test_handler_flow.py` |
 | Change filter CRUD API | `src/app/web/routers/filters.py`, `src/app/web/schemas/mappings.py`, `frontend/src/pages/user/MappingDetail.tsx` | `pytest tests/api/test_filters_api.py`, `cd frontend && npm run test -- src/pages/user/MappingDetail.test.tsx` |

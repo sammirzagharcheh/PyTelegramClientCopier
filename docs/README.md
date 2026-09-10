@@ -8,8 +8,8 @@ Simple guides for installing and running **Telegram Client Copier**.
 |-------|-------------|
 | [Git clone & private GitHub repos](git-clone-and-private-repo.md) | Clone the project; SSH deploy keys / PAT for **private** repos. |
 | [Deploy on Ubuntu 22.04+](deploy-ubuntu.md) | Native install on a Linux VPS (systemd + nginx). No Docker required. |
-| [Docker — production](docker-production.md) | Full stack in containers (backend + frontend + **MongoDB**), build on the host. |
-| [Docker — production without Mongo](docker-production-no-mongo.md) | Backend + frontend only; no Mongo container (optional external Mongo). |
+| [Docker — production](docker-production.md) | Full stack in containers (**unified app** + **MongoDB**), build on the host. |
+| [Docker — production without Mongo](docker-production-no-mongo.md) | Unified app container only; no Mongo container (optional external Mongo). |
 | [Docker — development](docker-development.md) | Hot-reload coding with Docker (Vite + API reload). |
 | [Docker — multi-env (dev/tst/uat/prod)](docker-multi-env.md) | Pull GHCR images; separate env files, ports, and **SQLite/Mongo data volumes** (or host bind mounts) per environment. |
 | [GitHub Actions CI/CD](github-actions-ci-cd.md) | Tests → GHCR images → optional SSH deploy per environment. |

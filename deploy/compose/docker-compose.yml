@@ -1,6 +1,8 @@
 # GHCR-based stack (no local build). Used by deploy/scripts/deploy-env.sh
 # Overlay with deploy/compose/docker-compose.<env>.yml for ports / project naming.
 #
+# Unified backend image serves SPA + API on :8000.
+#
 # Data mounts (per Compose project tgc-<env> → isolated host volumes):
 #   app_data   → backend /app/data   = SQLite app.db + sessions + media_assets
 #   mongo_data → mongodb /data/db    = MongoDB files
@@ -35,14 +37,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-
-  frontend-proxy:
-    image: ${FRONTEND_IMAGE:-ghcr.io/sammirzagharcheh/pytelegramclientcopier/frontend:latest}
-    pull_policy: ${PULL_POLICY:-always}
-    restart: unless-stopped
-    depends_on:
-      backend:
-        condition: service_healthy
 
 volumes:
   mongo_data:

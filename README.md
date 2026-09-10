@@ -32,8 +32,8 @@ Multi-tenant Telegram copier with admin controls, filtering, and media forwardin
 Full step-by-step guides (with quick start + clone steps in each):
 
 - **[Git clone & private repos](docs/git-clone-and-private-repo.md)** — SSH deploy keys, PAT, `gh`
-- **[Docker — production](docs/docker-production.md)** — frontend + backend + MongoDB (port 80)
-- **[Docker — production without Mongo](docs/docker-production-no-mongo.md)** — frontend + backend only (optional external Mongo)
+- **[Docker — production](docs/docker-production.md)** — unified app (SPA + API) + MongoDB (port 80)
+- **[Docker — production without Mongo](docs/docker-production-no-mongo.md)** — unified app only (optional external Mongo)
 - **[Docker — development](docs/docker-development.md)** — hot reload (Vite `:5173` + API reload)
 - **[Docker — multi-env (dev/tst/uat/prod)](docs/docker-multi-env.md)** — GHCR images + per-env config, ports, and SQLite/Mongo data volumes
 - **[GitHub Actions CI/CD](docs/github-actions-ci-cd.md)** — tests → publish images → deploy environments

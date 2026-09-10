@@ -1,6 +1,6 @@
 # Docker — production (production-like)
 
-Run the full stack in containers: **MongoDB + backend API + nginx frontend**.
+Run the full stack in containers: **MongoDB + one unified app container** (FastAPI serves the SPA and `/api`).
 
 Use this for:
 
@@ -143,8 +143,7 @@ Services started:
 | Service | Role | Host port |
 |---------|------|-----------|
 | `mongodb` | Logs database | `27017` |
-| `backend` | FastAPI + workers | `8000` |
-| `frontend-proxy` | nginx SPA + `/api` proxy | `80` |
+| `backend` | SPA + FastAPI API + workers | `80` (panel) and `8000` (API alias) |
 
 Check:
 
@@ -251,8 +250,7 @@ docker compose logs -f backend
 | Task | Command |
 |------|---------|
 | Status | `docker compose ps` |
-| Backend logs | `docker compose logs -f backend` |
-| Frontend logs | `docker compose logs -f frontend-proxy` |
+| App logs | `docker compose logs -f backend` |
 | Mongo logs | `docker compose logs -f mongodb` |
 | Shell in backend | `docker compose exec backend sh` |
 | Show config | `docker compose exec backend tg-copier db show-config` |

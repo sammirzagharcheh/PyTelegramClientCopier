@@ -1,6 +1,6 @@
 # Docker — production without MongoDB container
 
-Run **backend + nginx frontend** in Docker **without** starting the `mongodb` container.
+Run the **unified app container** (SPA + API) in Docker **without** starting the `mongodb` container.
 
 Use this when:
 
@@ -56,8 +56,7 @@ docker compose -f docker-compose.yml -f docker-compose.no-mongo.yml down
 
 | Component | This mode |
 |-----------|-----------|
-| `backend` | Yes |
-| `frontend-proxy` (nginx) | Yes |
+| `backend` (SPA + API) | Yes |
 | `mongodb` container | **No** |
 | SQLite / sessions / media (`app_data` → `/app/data`) | Yes — same named volume as full production; SQLite is the primary app DB |
 | Message / worker / webhook logs UI | Needs **external** Mongo, or stays empty / warns |
@@ -173,7 +172,7 @@ docker compose -f docker-compose.yml -f docker-compose.no-mongo.yml up --build -
 docker compose -f docker-compose.yml -f docker-compose.no-mongo.yml ps
 ```
 
-You should see **`backend`** and **`frontend-proxy`** only (no `mongodb`).
+You should see **`backend`** only (no `mongodb`).
 
 ```bash
 curl -s http://localhost/health
@@ -219,8 +218,7 @@ docker compose -f docker-compose.yml -f docker-compose.no-mongo.yml up --build -
 | Task | Command |
 |------|---------|
 | Status | `docker compose -f docker-compose.yml -f docker-compose.no-mongo.yml ps` |
-| Backend logs | `… logs -f backend` |
-| Frontend logs | `… logs -f frontend-proxy` |
+| App logs | `… logs -f backend` |
 | Shell | `… exec backend sh` |
 | Test Mongo | `… exec backend tg-copier db test-mongo` |
 | Stop (keep data) | `… down` |

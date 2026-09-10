@@ -1,4 +1,16 @@
-FROM python:3.11.12-slim AS builder
+# Unified image: Vite SPA + FastAPI (uvicorn serves /api and the built frontend).
+
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /frontend
+
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend/ ./
+RUN npm run build
+
+FROM python:3.11.12-slim AS python-builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -18,7 +30,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 FROM python:3.11.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    FRONTEND_DIST_DIR=/app/frontend_dist
 
 WORKDIR /app
 
@@ -28,10 +41,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN useradd --create-home --uid 10001 --shell /bin/bash appuser
 
-COPY --from=builder /tmp/wheels /tmp/wheels
+COPY --from=python-builder /tmp/wheels /tmp/wheels
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir /tmp/wheels/*.whl && \
     rm -rf /tmp/wheels
+
+COPY --from=frontend-builder /frontend/dist /app/frontend_dist
 
 RUN mkdir -p /app/data
 RUN chown -R appuser:appuser /app
