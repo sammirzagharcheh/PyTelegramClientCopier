@@ -20,6 +20,11 @@ Feature-to-files and test-command map for day-to-day work in this project.
 | Change Mongo log listing/query filters | `src/app/web/routers/message_logs.py`, `src/app/web/routers/worker_logs.py`, `src/app/db/mongo.py` | `pytest tests/api/test_message_logs_api.py tests/integration/test_mongo.py tests/integration/test_mongo_indexes.py` |
 | DB schema/migration change | `src/app/db/sqlite.py`, `src/app/db/migrations.py`, affected routers/services | `pytest tests/unit/test_migrations.py` plus feature-specific tests |
 
+## Delivery order (AI / contributors)
+
+1. Plan doc updates → 2. Tests first → 3. Make green → 4. Run tests → 5. Update docs  
+See `.cursor/rules/docs-and-test-first.mdc`. CI gate: `.github/workflows/ci.yml`.
+
 ## Quick command bundles
 
 ### Backend targeted regression pack

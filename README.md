@@ -35,6 +35,8 @@ Full step-by-step guides (with quick start + clone steps in each):
 - **[Docker — production](docs/docker-production.md)** — frontend + backend + MongoDB (port 80)
 - **[Docker — production without Mongo](docs/docker-production-no-mongo.md)** — frontend + backend only (optional external Mongo)
 - **[Docker — development](docs/docker-development.md)** — hot reload (Vite `:5173` + API reload)
+- **[Docker — multi-env (dev/tst/uat/prod)](docs/docker-multi-env.md)** — GHCR images + per-env config files
+- **[GitHub Actions CI/CD](docs/github-actions-ci-cd.md)** — tests → publish images → deploy environments
 
 ### Production-like (short)
 

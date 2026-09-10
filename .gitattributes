@@ -1,2 +1,3 @@
-# Ensure shell scripts always use LF (avoids bash syntax errors on Linux)
+# Keep shell/workflow files LF so Linux runners and deploy hosts parse them correctly.
 *.sh text eol=lf
+.github/workflows/* text eol=lf

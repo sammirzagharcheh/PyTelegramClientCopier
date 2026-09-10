@@ -1,0 +1,46 @@
+---
+description: Require docs updates, test-first workflow, green tests, then run tests and refresh docs
+alwaysApply: true
+---
+
+# Docs + test-first delivery
+
+For every code or config change in this repo, follow this order. Do not skip steps.
+
+## Required order
+
+1. **Document intent** — Note which user-facing/docs files will need updates (or confirm none). Prefer updating docs in the same change.
+2. **Tests first** — Add or extend failing tests that describe the desired behavior before implementing (or immediately with the fix for bugs).
+3. **Make tests green** — Implement the minimal change that passes those tests.
+4. **Run the relevant tests** — Execute the focused suite (see `docs/dev-cheatsheet.md`), then broaden if the change is cross-cutting.
+5. **Update documentation** — Keep docs accurate for behavior, CLI, Docker, CI/CD, and env files you touched.
+
+## Documentation map
+
+| Change area | Update these docs |
+|-------------|-------------------|
+| Feature / API / worker behavior | `docs/dev-cheatsheet.md`, relevant troubleshooting |
+| Docker / compose / env files | `docs/docker-*.md`, `docs/docker-multi-env.md`, `docs/README.md` |
+| CI / GHCR / deploy | `docs/github-actions-ci-cd.md`, `docs/docker-multi-env.md` |
+| Ubuntu / native install | `docs/deploy-ubuntu.md` |
+| Clone / private GitHub | `docs/git-clone-and-private-repo.md` |
+| New top-level guide | Link it from `docs/README.md` and root `README.md` when appropriate |
+
+## Test commands (minimum)
+
+```bash
+# Backend (CI-equivalent; skip live Telegram)
+pytest -q --ignore=tests/integration/test_telethon_live.py
+
+# Frontend
+cd frontend && npm run lint && npm run test && npm run build
+```
+
+Use narrower paths from `docs/dev-cheatsheet.md` while iterating; run the broader packs before considering the change done.
+
+## Do / Don't
+
+- **Do** keep `deploy/env/*.example` and docs in sync when env vars change.
+- **Do** treat a green local/CI test run as the gate before claiming done.
+- **Don't** commit real secrets (`docker.env`, `deploy/env/docker.env.*`, `.env`).
+- **Don't** ship behavior changes without updating the matching guide when users/operators would notice.

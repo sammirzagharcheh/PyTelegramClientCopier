@@ -1,0 +1,43 @@
+# GHCR-based stack (no local build). Used by deploy/scripts/deploy-env.sh
+# Overlay with deploy/compose/docker-compose.<env>.yml for ports / project naming.
+
+services:
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/sammirzagharcheh/pytelegramclientcopier/backend:latest}
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    volumes:
+      - app_data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend-proxy:
+    image: ${FRONTEND_IMAGE:-ghcr.io/sammirzagharcheh/pytelegramclientcopier/frontend:latest}
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  mongo_data:
+  app_data:

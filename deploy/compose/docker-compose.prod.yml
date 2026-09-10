@@ -1,0 +1,9 @@
+# Production overlay — public HTTP only. Do not expose Mongo/API on the host.
+services:
+  backend:
+    env_file:
+      - ../env/docker.env.prod
+
+  frontend-proxy:
+    ports:
+      - "80:80"
