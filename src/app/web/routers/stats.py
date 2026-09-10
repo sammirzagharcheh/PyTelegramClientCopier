@@ -234,6 +234,15 @@ async def get_dashboard_stats(user: CurrentUser, db: Db) -> dict:
     except Exception:
         pass  # Keep defaults on Mongo error
 
+    if not messages_by_day:
+        for i in range(7):
+            d = (now - timedelta(days=6 - i)).strftime("%Y-%m-%d")
+            messages_by_day.append({"date": d, "count": 0})
+    if not webhook_by_day:
+        for i in range(7):
+            d = (now - timedelta(days=6 - i)).strftime("%Y-%m-%d")
+            webhook_by_day.append({"date": d, "success": 0, "failed": 0})
+
     return {
         "messages_last_7d": messages_last_7d,
         "messages_prev_7d": messages_prev_7d,

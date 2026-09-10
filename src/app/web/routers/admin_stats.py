@@ -307,6 +307,15 @@ async def get_admin_dashboard_stats(user: AdminUser, db: Db) -> dict:
     except Exception:
         pass
 
+    if not messages_by_day:
+        for i in range(7):
+            d = (now - timedelta(days=6 - i)).strftime("%Y-%m-%d")
+            messages_by_day.append({"date": d, "count": 0})
+    if not webhook_by_day:
+        for i in range(7):
+            d = (now - timedelta(days=6 - i)).strftime("%Y-%m-%d")
+            webhook_by_day.append({"date": d, "success": 0, "failed": 0})
+
     return {
         "users_total": users_total,
         "mappings_total": mappings_total,

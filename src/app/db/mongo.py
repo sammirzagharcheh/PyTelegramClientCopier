@@ -19,7 +19,12 @@ def _resolve_mongo_db() -> str:
 
 
 def get_mongo_client() -> AsyncIOMotorClient:
-    return AsyncIOMotorClient(_resolve_mongo_uri())
+    kwargs: dict = {}
+    if settings.testing:
+        # Fail fast in CI/tests when Mongo is not running.
+        kwargs["serverSelectionTimeoutMS"] = 500
+        kwargs["connectTimeoutMS"] = 500
+    return AsyncIOMotorClient(_resolve_mongo_uri(), **kwargs)
 
 
 def get_mongo_db():

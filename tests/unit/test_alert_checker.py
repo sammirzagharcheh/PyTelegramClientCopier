@@ -42,7 +42,9 @@ async def test_alert_checker_sends_when_stale_heartbeat(tmp_path, monkeypatch):
 
         import app.services.alert_checker as ac
 
+        ac._last_alert_at.clear()
         monkeypatch.setattr(ac, "post_json_webhook", fake_post)
+        monkeypatch.setattr(ac, "_pid_alive", lambda _pid: True)
         n = await check_stale_workers_and_alert(db)
         assert n >= 1
         assert posted and posted[0]["payload"]["type"] == "worker_stale_heartbeat"
