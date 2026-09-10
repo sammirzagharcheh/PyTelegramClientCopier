@@ -1,0 +1,15 @@
+# Overlay: run production-like stack without a MongoDB container.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.no-mongo.yml up --build -d
+#
+# Core copying still works (SQLite). Message/worker/webhook logs need an external
+# MongoDB via MONGO_URI in docker.env, or those features degrade gracefully.
+
+services:
+  mongodb:
+    profiles: ["with-mongo"]
+
+  backend:
+    depends_on: !reset []
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
