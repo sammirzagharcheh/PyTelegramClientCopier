@@ -9,8 +9,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: false
 
 jobs:
   backend-tests:
@@ -36,7 +36,8 @@ jobs:
           JWT_SECRET: ci-test-secret
           API_ID: "0"
           API_HASH: "ci-placeholder"
-        run: pytest -q --ignore=tests/integration/test_telethon_live.py
+          PYTHONUNBUFFERED: "1"
+        run: pytest -q --tb=short --maxfail=20 --ignore=tests/integration/test_telethon_live.py
 
   frontend-tests:
     name: Frontend lint, test, build

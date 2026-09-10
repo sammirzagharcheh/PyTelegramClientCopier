@@ -72,7 +72,8 @@ PAT needs at least `read:packages` (and `write:packages` only for pushing).
 **Frontend**
 
 - Node 20  
-- `npm ci` → `lint` → `test` → `build`
+- `npm ci` → `lint` → `test` → `build`  
+- Lint allows warnings (legacy `any`, React Hook Form); errors still fail the job
 
 **Docker smoke**
 

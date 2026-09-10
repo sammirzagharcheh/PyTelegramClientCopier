@@ -186,7 +186,6 @@ export function FilterForm({
     }
     if (hasRegex) {
       try {
-        // eslint-disable-next-line no-new
         new RegExp(regexPattern.trim());
       } catch {
         setError('Invalid regex pattern.');
