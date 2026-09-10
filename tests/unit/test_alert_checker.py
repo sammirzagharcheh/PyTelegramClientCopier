@@ -1,52 +1,48 @@
 """Unit tests for stale worker alert checker."""
 
-import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
-import aiosqlite
-
-from app.config import settings
-from app.db.sqlite import init_sqlite
+import app.services.alert_checker as ac
 from app.services.alert_checker import check_stale_workers_and_alert
 
 
+class _FakeCursor:
+    def __init__(self, rows):
+        self._rows = rows
+
+    async def fetchall(self):
+        return self._rows
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+
+class _FakeDB:
+    def execute(self, sql, params=None):
+        if "FROM worker_registry" in sql:
+            old = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+            return _FakeCursor([("wtest", 1, 1, 12345, old, old)])
+        if "FROM user_alert_webhooks" in sql:
+            return _FakeCursor([("http://example.invalid/webhook", None)])
+        return _FakeCursor([])
+
+
 @pytest.mark.asyncio
-async def test_alert_checker_sends_when_stale_heartbeat(tmp_path, monkeypatch):
-    settings.sqlite_path = str(tmp_path / "alert.db")
-    await init_sqlite()
-    db = await aiosqlite.connect(settings.sqlite_path)
-    try:
-        await db.execute(
-            "INSERT INTO users (email, role, status, password_hash, name) VALUES (?, ?, ?, ?, ?)",
-            ("a@b.com", "user", "active", "x", "A"),
-        )
-        await db.execute(
-            "INSERT INTO user_alert_webhooks (user_id, url, secret, enabled) VALUES (1, ?, NULL, 1)",
-            ("http://example.invalid/webhook",),
-        )
-        old = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
-        pid = os.getpid()
-        await db.execute(
-            "INSERT INTO worker_registry (worker_id, user_id, account_id, session_path, pid, created_at, last_heartbeat_at) "
-            "VALUES (?, 1, 1, 's.session', ?, ?, ?)",
-            ("wtest", pid, old, old),
-        )
-        await db.commit()
+async def test_alert_checker_sends_when_stale_heartbeat(monkeypatch):
+    ac._last_alert_at.clear()
+    posted: list[dict] = []
 
-        posted: list[dict] = []
+    async def fake_post(url, secret, payload):
+        posted.append({"url": url, "payload": payload})
 
-        async def fake_post(url, secret, payload):
-            posted.append({"url": url, "payload": payload})
+    monkeypatch.setattr(ac, "post_json_webhook", fake_post)
+    monkeypatch.setattr(ac, "_pid_alive", lambda _pid: True)
 
-        import app.services.alert_checker as ac
-
-        ac._last_alert_at.clear()
-        monkeypatch.setattr(ac, "post_json_webhook", fake_post)
-        monkeypatch.setattr(ac, "_pid_alive", lambda _pid: True)
-        n = await check_stale_workers_and_alert(db)
-        assert n >= 1
-        assert posted and posted[0]["payload"]["type"] == "worker_stale_heartbeat"
-    finally:
-        await db.close()
+    n = await check_stale_workers_and_alert(_FakeDB())
+    assert n >= 1
+    assert posted and posted[0]["payload"]["type"] == "worker_stale_heartbeat"
