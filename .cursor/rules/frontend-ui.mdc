@@ -1,0 +1,57 @@
+---
+description: Design and accessibility rules for the React frontend. Consult before any UI work.
+globs: frontend/**/*.tsx,frontend/**/*.ts,frontend/**/*.css,frontend/index.html
+alwaysApply: false
+---
+
+# Frontend UI work
+
+Before changing anything visual in `frontend/`, read the vendored design skill:
+
+- `.cursor/skills/taste-skill/PROJECT-NOTES.md` first. It has the design read,
+  the dial values, the list of upstream rules this project overrides and why,
+  and the seven house rules. It is short.
+- `.cursor/skills/taste-skill/skills/redesign-skill/SKILL.md` when changing
+  existing screens. It is the audit checklist this frontend was brought up to.
+- `.cursor/skills/taste-skill/skills/taste-skill/SKILL.md` for the full
+  reference. Note its section 13: it scopes itself out of dashboards and data
+  tables, which is most of this app. `PROJECT-NOTES.md` records which sections
+  apply here and which do not.
+- `.cursor/skills/taste-skill/UPSTREAM.md` for provenance and for the procedure
+  to refresh the vendored copy from upstream.
+
+## Non-negotiables
+
+1. Use the semantic tokens in `frontend/src/index.css` (`surface`,
+   `surface-raised`, `surface-sunken`, `line`, `ink`, `ink-muted`, `ink-subtle`,
+   `accent`). Raw palette literals such as `bg-gray-800` are drift. Tailwind's
+   `emerald`, `amber`, and `red` are allowed only for real semantic state.
+2. Build from `frontend/src/components/ui/` before writing new markup. Adding
+   another bespoke button or modal is how the previous inconsistency happened.
+3. Blue is the only accent. One radius rule: pills for status badges,
+   `rounded-md` for controls, `rounded-lg` for surfaces.
+4. Every async view ships four states: skeleton shaped like the real content,
+   empty state with a next action, error state with a retry, success.
+5. Keyboard and screen readers are part of done. Real `<button>` and `<a>`
+   elements, a visible `focus-visible` ring, labelled form controls, overlays
+   that trap focus and close on Escape and restore focus on close.
+6. No em-dash characters anywhere, in UI strings or in code. Use a hyphen, a
+   comma, or two sentences.
+7. Motion stays at CSS transitions on `transform`, `opacity`, `color`, and
+   `background-color`, gated by the `prefers-reduced-motion` block already in
+   `index.css`. Do not add an animation library.
+8. Reuse before installing. Check `frontend/package.json` first, and prefer an
+   existing dependency or a few lines of local code over a new package.
+
+## Keeping the skill current
+
+Do not edit anything under `.cursor/skills/taste-skill/skills/` or its
+`LICENSE`. Those are a verbatim upstream copy, pinned to a commit, so that
+refreshing is a clean replace. Project opinions go in `PROJECT-NOTES.md`.
+`UPSTREAM.md` has the update commands and the checks to run afterwards.
+
+## Validation
+
+From `frontend/`: `npm run lint`, `npm run build` (runs `tsc -b` first), and
+`npm run test`. All three must pass. Backend contracts are fixed: do not change
+API request or response shapes, route paths, or query keys to suit the UI.
