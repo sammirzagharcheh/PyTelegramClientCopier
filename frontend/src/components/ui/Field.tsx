@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { forwardRef, useId } from 'react';
 
 const controlBase =
   'w-full rounded-control border bg-surface-raised px-3 text-sm text-ink ' +
@@ -78,10 +78,15 @@ export function Select({
   );
 }
 
-export function Textarea({
-  className = '',
-  invalid,
-  ...rest
-}: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }) {
-  return <textarea className={`${controlBase} ${borderFor(invalid)} py-2 ${className}`} {...rest} />;
-}
+export const Textarea = forwardRef<
+  HTMLTextAreaElement,
+  React.TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }
+>(function Textarea({ className = '', invalid, ...rest }, ref) {
+  return (
+    <textarea
+      ref={ref}
+      className={`${controlBase} ${borderFor(invalid)} py-2 ${className}`}
+      {...rest}
+    />
+  );
+});
