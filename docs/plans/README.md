@@ -11,5 +11,6 @@ Durable planning notes for non-trivial work. The agent writes a plan here **befo
 | Date | Plan | Status |
 |------|------|--------|
 | 2026-09-11 | [Admin invites](2026-09-11-admin-invites.md) | Done |
+| 2026-09-11 | [Safe production update](2026-09-11-safe-prod-update.md) | Guidance (ops) |
 
 When a plan is implemented, update its **Status** to `Done` (and note the commit hash if known).
