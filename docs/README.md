@@ -7,6 +7,7 @@ Simple guides for installing and running **Telegram Client Copier**.
 | Guide | When to use |
 |-------|-------------|
 | [System architecture](architecture.md) | **Single source of truth** for components, data flow, tenancy, deployment shapes, failure modes, and change protocol. Read before design or code changes. |
+| [Change plans](plans/README.md) | Durable planning notes written before non-trivial implementations (`docs/plans/YYYY-MM-DD-*.md`). |
 
 ## Deploy / install
 

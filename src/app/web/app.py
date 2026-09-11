@@ -18,6 +18,7 @@ from app.db.sqlite import get_sqlite, init_sqlite
 from app.web.routers import (
     accounts,
     accounts_login,
+    admin_invites,
     admin_settings,
     admin_stats,
     admin_users,
@@ -158,6 +159,7 @@ def create_app() -> FastAPI:
     app.include_router(api_keys.router, prefix="/api")
     app.include_router(user_feature_flags.router, prefix="/api")
     app.include_router(admin_users.router, prefix="/api")
+    app.include_router(admin_invites.router, prefix="/api")
     app.include_router(admin_settings.router, prefix="/api")
     app.include_router(accounts.router, prefix="/api")
     app.include_router(accounts_login.router, prefix="/api")

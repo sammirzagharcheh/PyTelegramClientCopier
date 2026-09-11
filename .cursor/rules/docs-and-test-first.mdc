@@ -25,6 +25,7 @@ For every code or config change in this repo, follow this order. Do not skip ste
 | Ubuntu / native install | `docs/deploy-ubuntu.md` |
 | Clone / private GitHub | `docs/git-clone-and-private-repo.md` |
 | New top-level guide | Link it from `docs/README.md` and root `README.md` when appropriate |
+| Architectural / feature planning notes | `docs/plans/YYYY-MM-DD-*.md` + `docs/plans/README.md` index |
 
 ## Test commands (minimum)
 

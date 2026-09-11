@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './store/AuthContext';
 import { AuthLayout } from './layouts/AuthLayout';
 import { MainLayout } from './layouts/MainLayout';
 import { Login } from './pages/Login';
+import { InviteAccept } from './pages/InviteAccept';
 import { UserDashboard } from './pages/user/Dashboard';
 import { Accounts } from './pages/user/Accounts';
 import { Mappings } from './pages/user/Mappings';
@@ -65,6 +66,9 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={<AuthLayout />}>
         <Route index element={<Login />} />
+      </Route>
+      <Route path="/invite/:token" element={<AuthLayout />}>
+        <Route index element={<InviteAccept />} />
       </Route>
       <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
         <Route index element={<RootRedirect />} />

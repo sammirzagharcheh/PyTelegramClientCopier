@@ -185,3 +185,18 @@ async def test_migration_v18_through_v23_schema(tmp_path):
             "SELECT name FROM sqlite_master WHERE type='table' AND name = 'user_api_keys'"
         ) as cur:
             assert await cur.fetchone()
+
+
+@pytest.mark.asyncio
+async def test_migration_v25_admin_invites_hashed(tmp_path):
+    """v25 recreates admin_invites with token_hash, role, used_at."""
+    settings.sqlite_path = str(tmp_path / "migrations_v25.db")
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    await init_sqlite()
+    async with aiosqlite.connect(settings.sqlite_path) as db:
+        async with db.execute("PRAGMA table_info(admin_invites)") as cur:
+            cols = {r[1] for r in await cur.fetchall()}
+        assert "token_hash" in cols
+        assert "role" in cols
+        assert "used_at" in cols
+        assert "token" not in cols

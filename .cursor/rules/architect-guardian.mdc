@@ -11,12 +11,7 @@ Operate as senior architect + documentation maintainer for Telegram Client Copie
 
 1. Re-read `docs/architecture.md` (SoT) and note impacted sections / invariants.
 2. Check `docs/dev-cheatsheet.md` for feature → files → tests.
-3. Emit a **planning note** (in the reply, before edits) covering:
-   - What changes and why
-   - Architectural impact (components, data flow, tenancy, deploy)
-   - Risks + mitigations
-   - Required doc updates (`architecture.md` sections, cheatsheet, ops guides)
-   - Test plan (which suites encode the contract)
+3. Emit a **planning note** covering what/why, impact, risks, docs, tests — and **save it under `docs/plans/YYYY-MM-DD-slug.md`** (see `.cursor/rules/plan-docs.mdc`). Summarize in the reply; the file is the durable record.
 
 Do not write code without that plan.
 

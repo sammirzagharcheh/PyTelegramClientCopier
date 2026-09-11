@@ -9,10 +9,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.auth import create_access_token, create_refresh_token, decode_token
+from app.auth.invites import hash_invite_token, invite_is_expired
 from app.auth.password import hash_password, verify_password
 from app.web.deps import CurrentUser, Db
 from app.web.schemas.auth import (
     ChangePasswordRequest,
+    InviteAcceptRequest,
+    InvitePreviewResponse,
     LoginRequest,
     LoginResponse,
     RefreshRequest,
@@ -198,3 +201,81 @@ async def change_password(
     )
     await db.commit()
     return {"status": "ok"}
+
+
+async def _load_valid_invite(db, token: str) -> tuple:
+    """Return invite row or raise 404/410."""
+    token_hash = hash_invite_token(token)
+    async with db.execute(
+        """SELECT id, email, role, expires_at, used_at
+           FROM admin_invites WHERE token_hash = ?""",
+        (token_hash,),
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found")
+    if row[4]:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Invite already used")
+    if invite_is_expired(row[3]):
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Invite expired")
+    return row
+
+
+@router.get("/invites/{token}", response_model=InvitePreviewResponse)
+async def preview_invite(token: str, db: Db) -> dict:
+    """Public: validate invite token and return email/role for the accept form."""
+    row = await _load_valid_invite(db, token)
+    return {"email": row[1], "role": row[2], "expires_at": row[3]}
+
+
+@router.post("/invites/{token}/accept", response_model=LoginResponse)
+async def accept_invite(token: str, data: InviteAcceptRequest, db: Db) -> dict:
+    """Public: accept invite, create user, mark invite used, return JWT pair."""
+    if len(data.password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters",
+        )
+    row = await _load_valid_invite(db, token)
+    invite_id, email, role = row[0], row[1], row[2]
+    async with db.execute("SELECT id FROM users WHERE email = ?", (email,)) as cur:
+        if await cur.fetchone():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email already registered",
+            )
+    password_hash = hash_password(data.password)
+    try:
+        cursor = await db.execute(
+            """INSERT INTO users (email, password_hash, name, role, status)
+               VALUES (?, ?, ?, ?, 'active')""",
+            (email, password_hash, (data.name or "").strip(), role),
+        )
+        await db.commit()
+        uid = cursor.lastrowid
+    except Exception as e:
+        if "UNIQUE" in str(e) or "unique" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email already registered",
+            ) from e
+        raise
+
+    used_at = datetime.now(timezone.utc).isoformat()
+    await db.execute(
+        "UPDATE admin_invites SET used_at = ? WHERE id = ?",
+        (used_at, invite_id),
+    )
+    access_token = create_access_token(sub=email, user_id=uid, role=role)
+    refresh_token = create_refresh_token(sub=email, user_id=uid)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    await db.execute(
+        "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)",
+        (uid, _hash_token(refresh_token), expires_at.isoformat()),
+    )
+    await db.commit()
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+    }

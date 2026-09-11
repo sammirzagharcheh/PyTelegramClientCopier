@@ -74,8 +74,8 @@ flowchart TB
 
 | Area | Module(s) | Responsibility |
 |------|-----------|----------------|
-| Auth | `auth/`, `web/deps.py`, `web/scope_deps.py`, `routers/auth.py`, `routers/api_keys.py` | JWT access/refresh, password hashing, `X-Api-Key` + scopes, role guards (`admin` / writer / viewer) |
-| Tenancy admin | `routers/admin_users.py`, `admin_settings.py`, `admin_stats.py` | User CRUD, global settings (including Mongo URI override in `app_settings`), cross-tenant analytics |
+| Auth | `auth/`, `web/deps.py`, `web/scope_deps.py`, `routers/auth.py`, `routers/api_keys.py`, `routers/admin_invites.py` | JWT access/refresh, password hashing, `X-Api-Key` + scopes, admin invites (create/list/revoke + public accept), role guards (`admin` / writer / viewer) |
+| Tenancy admin | `routers/admin_users.py`, `admin_invites.py`, `admin_settings.py`, `admin_stats.py` | User CRUD, invites, global settings (including Mongo URI override in `app_settings`), cross-tenant analytics |
 | Accounts | `routers/accounts.py`, `accounts_login.py` | Telegram account records; phone-code login wizard writing session files |
 | Mappings & rules | `routers/mappings.py`, `filters.py`, `schedules.py`, `transforms.py`, `media_assets.py` | CRUD for copy configuration; filter/transform changes may restart affected workers |
 | Workers | `routers/workers.py` | Start/stop/list/restore; process spawn via CLI entry |
@@ -108,7 +108,7 @@ flowchart TB
 
 | Store | Module(s) | Owns |
 |-------|-----------|------|
-| SQLite | `sqlite.py`, `migrations.py` | Schema bootstrap + incremental `_migrations`; users, accounts, mappings, filters, schedules, transforms, media metadata, worker registry, dest message index, refresh tokens, API keys, invites, app settings |
+| SQLite | `sqlite.py`, `migrations.py` | Schema bootstrap + incremental `_migrations`; users, accounts, mappings, filters, schedules, transforms, media metadata, worker registry, dest message index, refresh tokens, API keys, admin invites (hashed token + role + used_at), app settings |
 | Mongo | `mongo.py`, `mongo_indexes.py` | `message_logs`, `worker_logs`, `webhook_logs` with query indexes plus **30-day TTL** on `timestamp` (`ix_ttl_30d`) |
 | Cleanup | `cleanup.py`, `message_index_cleanup.py` | Login-session retention; orphan dest-index purge |
 
@@ -221,6 +221,10 @@ flowchart LR
 ```
 
 Refresh tokens are stored hashed in SQLite. Feature flags are per-user JSON blobs in `app_settings` (`user_feature_flags_{id}`), not a separate tenancy database.
+
+### Admin invites
+
+Admins create invites (`POST /api/admin/invites`) with email + role; the plaintext token is shown once and stored as SHA-256 (`token_hash`). Invitees open `/invite/{token}`, set a password via public `GET/POST /api/auth/invites/{token}`, and receive a JWT pair. Used or expired invites return 410. Direct “create user with password” remains available for operators who set credentials themselves.
 
 ### API key scopes
 
@@ -380,11 +384,12 @@ Feature-level command map: [dev-cheatsheet.md](dev-cheatsheet.md).
 | Deploy topology only | Section 6 if topology class changes | matching `docs/docker-*.md` / Ubuntu / CI |
 | UI-only copy or styling | No | frontend as needed |
 | Env var added/removed | Section 10 | `*.example` env files + deploy docs |
+| Non-trivial feature / AuthZ / schema plan | No (unless design lands) | `docs/plans/YYYY-MM-DD-*.md` before implementation |
 
 ### Change protocol
 
 1. Re-read this document and note impacted sections.
-2. Write a short planning note (impacts, risks, doc/test updates).
+2. Write a short planning note under `docs/plans/` (see [plans/README.md](plans/README.md)); cover impacts, risks, doc/test updates.
 3. Add or extend failing tests that express the architectural expectation.
 4. Implement the minimal change that restores green tests.
 5. Sync this file, cheatsheet, and any operator-facing guide in the same change.

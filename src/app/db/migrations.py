@@ -243,6 +243,25 @@ MIGRATIONS = [
     ON channel_mappings(user_id, source_chat_id, dest_chat_id)
     WHERE enabled = 1;
     """,
+    # v25: admin_invites — hashed token, role, used_at (replace legacy plaintext token)
+    """
+    CREATE TABLE IF NOT EXISTS admin_invites_v25 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        role TEXT NOT NULL DEFAULT 'user',
+        created_by INTEGER NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(created_by) REFERENCES users(id)
+    );
+    INSERT INTO admin_invites_v25 (id, email, token_hash, role, created_by, expires_at, used_at, created_at)
+    SELECT id, email, token, 'user', created_by, expires_at, NULL, created_at FROM admin_invites;
+    DROP TABLE admin_invites;
+    ALTER TABLE admin_invites_v25 RENAME TO admin_invites;
+    CREATE INDEX IF NOT EXISTS ix_admin_invites_email ON admin_invites(email);
+    """,
 ]
 
 

@@ -47,3 +47,14 @@ class UserMe(BaseModel):
 
 class UpdateProfileRequest(BaseModel):
     timezone: str | None = None
+
+
+class InvitePreviewResponse(BaseModel):
+    email: str
+    role: str
+    expires_at: str
+
+
+class InviteAcceptRequest(BaseModel):
+    password: str
+    name: str | None = None

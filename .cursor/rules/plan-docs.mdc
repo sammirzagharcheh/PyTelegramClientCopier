@@ -1,0 +1,28 @@
+---
+description: Persist architectural planning notes under docs/plans before code changes
+alwaysApply: true
+---
+
+# Planning notes live in docs/plans
+
+Before any non-trivial code or config change:
+
+1. Write (or update) a planning note under **`docs/plans/`**.
+2. Name files `YYYY-MM-DD-short-slug.md` (UTC or local project date).
+3. Keep the same content in the chat reply (summary OK if the file is complete).
+4. Link new plans from `docs/plans/README.md` when adding a plan.
+5. Do **not** implement until the user approves the plan (unless they already said approve implement).
+
+## Required plan sections
+
+- What / why
+- Architectural impact (vs `docs/architecture.md`)
+- Risks + mitigations
+- Doc updates required
+- Test plan
+- Implementation order
+
+## Exceptions
+
+- Typo-only / one-line comment fixes: no plan file required.
+- Pure chat Q&A with no repo edits: no plan file.

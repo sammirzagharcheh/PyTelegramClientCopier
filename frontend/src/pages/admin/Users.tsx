@@ -1,9 +1,10 @@
-import { Lock, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
+import { Lock, MailPlus, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { errorMessage } from '../../lib/apiError';
 import { CreateUserDialog } from '../../components/CreateUserDialog';
+import { InviteUserDialog } from '../../components/InviteUserDialog';
 import { EditUserDialog } from '../../components/EditUserDialog';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { useAuth } from '../../store/AuthContext';
@@ -14,6 +15,7 @@ import { Pagination } from '../../components/Pagination';
 import { TableSkeleton } from '../../components/Skeleton';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
+import { Card, CardHeader } from '../../components/ui/Card';
 import { Field, Input, Select } from '../../components/ui/Field';
 import { FormError } from '../../components/ui/FormError';
 import { EmptyState, ErrorState } from '../../components/ui/States';
@@ -30,11 +32,24 @@ type User = {
 
 type PaginatedUsers = { items: User[]; total: number; page: number; page_size: number; total_pages: number };
 
+type InviteItem = {
+  id: number;
+  email: string;
+  role: string;
+  expires_at: string;
+  used_at: string | null;
+  created_at: string | null;
+  created_by: number;
+  status: string;
+};
+
 export function AdminUsers() {
   const { user: currentUser } = useAuth();
   const [showCreate, setShowCreate] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [deletingUser, setDeletingUser] = useState<User | null>(null);
+  const [inviteToRevoke, setInviteToRevoke] = useState<InviteItem | null>(null);
   const [actionError, setActionError] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -59,6 +74,19 @@ export function AdminUsers() {
     },
   });
 
+  const revokeInviteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await api.delete(`/admin/invites/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'invites'] });
+      setInviteToRevoke(null);
+    },
+    onError: (err: unknown) => {
+      setActionError(errorMessage(err, 'Failed to revoke invite'));
+    },
+  });
+
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['admin', 'users', page, pageSize, roleFilter, statusFilter, search, sortBy, sortOrder],
     queryFn: async () => {
@@ -75,8 +103,20 @@ export function AdminUsers() {
     },
   });
 
+  const {
+    data: invites = [],
+    isLoading: invitesLoading,
+    isError: invitesError,
+    error: invitesLoadError,
+    refetch: refetchInvites,
+  } = useQuery({
+    queryKey: ['admin', 'invites'],
+    queryFn: async () => (await api.get<InviteItem[]>('/admin/invites')).data,
+  });
+
   const users = data?.items ?? [];
   const isFiltered = search !== '' || roleFilter !== '' || statusFilter !== '';
+  const pendingInvites = invites.filter((i) => i.status === 'pending');
 
   const handleSort = (key: string, order: 'asc' | 'desc') => {
     setSortBy(key);
@@ -93,11 +133,57 @@ export function AdminUsers() {
         icon={Users}
         subtitle="Manage user accounts and permissions"
         actions={
-          <Button icon={Plus} onClick={() => setShowCreate(true)}>
-            Create User
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" icon={MailPlus} onClick={() => setShowInvite(true)}>
+              Invite user
+            </Button>
+            <Button icon={Plus} onClick={() => setShowCreate(true)}>
+              Create User
+            </Button>
+          </div>
         }
       />
+
+      <Card className="mb-6">
+        <CardHeader
+          title="Pending invites"
+          description="Invitees set their own password from the link. Links expire after 72 hours by default."
+        />
+        {invitesLoading ? (
+          <TableSkeleton columns={4} rows={2} />
+        ) : invitesError ? (
+          <ErrorState
+            title="Could not load invites"
+            error={invitesLoadError}
+            onRetry={() => void refetchInvites()}
+          />
+        ) : pendingInvites.length === 0 ? (
+          <EmptyState
+            icon={MailPlus}
+            title="No pending invites"
+            description="Invite someone by email, or create a user with a password you choose."
+          />
+        ) : (
+          <ul className="divide-y divide-line">
+            {pendingInvites.map((inv) => (
+              <li
+                key={inv.id}
+                className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div>
+                  <p className="text-sm font-medium text-ink">{inv.email}</p>
+                  <p className="text-xs text-ink-subtle">
+                    Role {inv.role} · Expires {inv.expires_at}
+                  </p>
+                </div>
+                <Button type="button" variant="danger" size="sm" onClick={() => setInviteToRevoke(inv)}>
+                  Revoke
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
       <div className="mb-4 flex flex-wrap items-end gap-4">
         <Field label="Search" className="w-56">
@@ -165,6 +251,7 @@ export function AdminUsers() {
       </div>
 
       {showCreate && <CreateUserDialog onClose={() => setShowCreate(false)} />}
+      {showInvite && <InviteUserDialog onClose={() => setShowInvite(false)} />}
       {editingUser && <EditUserDialog user={editingUser} onClose={() => setEditingUser(null)} />}
       {deletingUser && (
         <ConfirmDialog
@@ -175,6 +262,17 @@ export function AdminUsers() {
           isPending={deleteMutation.isPending}
           onCancel={() => setDeletingUser(null)}
           onConfirm={() => deleteMutation.mutate(deletingUser.id)}
+        />
+      )}
+      {inviteToRevoke && (
+        <ConfirmDialog
+          title="Revoke invite?"
+          message={`Revoke the invite for ${inviteToRevoke.email}? The link will stop working.`}
+          confirmLabel="Revoke"
+          variant="danger"
+          isPending={revokeInviteMutation.isPending}
+          onCancel={() => setInviteToRevoke(null)}
+          onConfirm={() => revokeInviteMutation.mutate(inviteToRevoke.id)}
         />
       )}
       <FormError message={actionError} className="mb-4" />
