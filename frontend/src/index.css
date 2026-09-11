@@ -28,6 +28,14 @@
   --accent-ring: #2563eb;
   --accent-fg: #ffffff;
 
+  /* Categorical chart palette. Ordered so adjacent slices differ in hue and
+     lightness, which keeps them apart for the common colour-vision types. */
+  --chart-1: #2563eb;
+  --chart-2: #0d9488;
+  --chart-3: #d97706;
+  --chart-4: #7c3aed;
+  --chart-5: #db2777;
+
   --shadow-color: 16 18 22;
 }
 
@@ -50,6 +58,13 @@
   --accent-soft: #17233d;
   --accent-ring: #60a5fa;
   --accent-fg: #ffffff;
+
+  /* Lifted for the dark canvas so each series keeps a similar perceived weight. */
+  --chart-1: #60a5fa;
+  --chart-2: #2dd4bf;
+  --chart-3: #fbbf24;
+  --chart-4: #a78bfa;
+  --chart-5: #f472b6;
 
   --shadow-color: 0 0 0;
 }

@@ -12,9 +12,6 @@ type Props = {
   valueKey?: string;
 };
 
-const LIGHT_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444'];
-const DARK_COLORS = ['#60a5fa', '#34d399', '#fbbf24', '#a78bfa', '#f87171'];
-
 export function PieChartCard({
   title,
   data,
@@ -24,7 +21,6 @@ export function PieChartCard({
 }: Props) {
   const theme = useChartTheme();
   const isEmpty = !data || data.length === 0;
-  const colors = theme.isDark ? DARK_COLORS : LIGHT_COLORS;
 
   const chartData = data.map((d) => ({
     name: d[nameKey as keyof DataPoint] ?? d.name,
@@ -46,19 +42,29 @@ export function PieChartCard({
                 paddingAngle={2}
                 dataKey="value"
                 nameKey="name"
+                stroke={theme.tooltipBg}
+                strokeWidth={2}
               >
-                {chartData.map((_, index) => (
-                  <Cell key={index} fill={colors[index % colors.length]} />
+                {chartData.map((entry, index) => (
+                  <Cell key={String(entry.name)} fill={theme.series[index % theme.series.length]} />
                 ))}
               </Pie>
               <Tooltip
                 contentStyle={{
                   backgroundColor: theme.tooltipBg,
                   border: `1px solid ${theme.tooltipBorder}`,
-                  borderRadius: '0.5rem',
+                  borderRadius: 'var(--radius-control)',
+                  color: theme.tooltipInk,
+                  fontSize: '0.8125rem',
+                  boxShadow: 'var(--shadow-raised)',
                 }}
+                itemStyle={{ color: theme.tooltipInk }}
               />
-              <Legend />
+              <Legend
+                iconType="circle"
+                iconSize={8}
+                wrapperStyle={{ fontSize: '0.75rem', color: theme.textColor }}
+              />
             </PieChart>
           </ResponsiveContainer>
         </div>

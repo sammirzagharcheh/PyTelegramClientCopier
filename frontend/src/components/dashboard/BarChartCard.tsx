@@ -28,8 +28,6 @@ type TooltipContentProps = {
   dataKey: string;
 };
 
-const DEFAULT_COLOR = '#3b82f6';
-
 function CustomTooltip(props: TooltipContentProps) {
   const { active, payload, tooltipLabelKey, dataKey } = props;
   const theme = useChartTheme();
@@ -45,13 +43,14 @@ function CustomTooltip(props: TooltipContentProps) {
       style={{
         backgroundColor: theme.tooltipBg,
         border: `1px solid ${theme.tooltipBorder}`,
-        borderRadius: '0.5rem',
+        borderRadius: 'var(--radius-control)',
         padding: '0.5rem 0.75rem',
-        fontSize: '0.875rem',
+        fontSize: '0.8125rem',
+        boxShadow: 'var(--shadow-raised)',
       }}
     >
-      <div style={{ fontWeight: 500 }}>{label}</div>
-      <div style={{ color: theme.textColor, opacity: 0.9 }}>
+      <div style={{ color: theme.tooltipInk, fontWeight: 500 }}>{label}</div>
+      <div style={{ color: theme.textColor }}>
         {dataKey}: {String(value)}
       </div>
     </div>
@@ -63,7 +62,7 @@ export function BarChartCard({
   data,
   isLoading = false,
   dataKey = 'count',
-  color = DEFAULT_COLOR,
+  color,
   tooltipLabelKey,
 }: Props) {
   const theme = useChartTheme();
@@ -86,15 +85,23 @@ export function BarChartCard({
         <div className="h-48 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={theme.gridStroke} />
-              <XAxis type="number" tick={{ fontSize: 11, fill: theme.textColor }} />
+              <CartesianGrid strokeDasharray="3 3" stroke={theme.gridStroke} horizontal={false} />
+              <XAxis
+                type="number"
+                tick={{ fontSize: 11, fill: theme.textColor }}
+                tickLine={false}
+                axisLine={{ stroke: theme.gridStroke }}
+              />
               <YAxis
                 type="category"
                 dataKey="name"
                 width={100}
                 tick={{ fontSize: 10, fill: theme.textColor }}
+                tickLine={false}
+                axisLine={false}
               />
               <Tooltip
+                cursor={{ fill: theme.gridStroke, fillOpacity: 0.4 }}
                 content={(contentProps: unknown) => (
                   <CustomTooltip
                     {...(contentProps as Omit<TooltipContentProps, 'tooltipLabelKey' | 'dataKey'>)}
@@ -103,7 +110,7 @@ export function BarChartCard({
                   />
                 )}
               />
-              <Bar dataKey={dataKey} fill={color} radius={[0, 4, 4, 0]} />
+              <Bar dataKey={dataKey} fill={color ?? theme.stroke} radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
