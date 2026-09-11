@@ -2,8 +2,12 @@ import { Pencil } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import { errorMessage } from '../lib/apiError';
 import { MappingFormFields } from './MappingFormFields';
 import { useToast } from './Toast';
+import { Button } from './ui/Button';
+import { FormError } from './ui/FormError';
+import { Modal } from './ui/Modal';
 
 export type Mapping = {
   id: number;
@@ -26,6 +30,7 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
   const [sourceChatId, setSourceChatId] = useState(String(mapping.source_chat_id));
   const [destChatId, setDestChatId] = useState(String(mapping.dest_chat_id));
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{ sourceChatId?: string; destChatId?: string }>({});
   const queryClient = useQueryClient();
   const { show: showToast } = useToast();
 
@@ -42,23 +47,11 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
       queryClient.invalidateQueries({ queryKey: ['mapping', String(mapping.id)] });
-      showToast('Mapping updated. Workers restarting to apply changes.');
+      showToast('Mapping updated. Workers are restarting to apply it.');
       onClose();
     },
     onError: (err: unknown) => {
-      setError(
-        err &&
-          typeof err === 'object' &&
-          'response' in err &&
-          err.response &&
-          typeof err.response === 'object' &&
-          'data' in err.response &&
-          err.response.data &&
-          typeof err.response.data === 'object' &&
-          'detail' in err.response.data
-          ? String((err.response.data as { detail: unknown }).detail)
-          : 'Failed to update mapping'
-      );
+      setError(errorMessage(err, 'We could not update this mapping.'));
     },
   });
 
@@ -67,49 +60,44 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
     setError('');
     const src = parseInt(sourceChatId, 10);
     const dst = parseInt(destChatId, 10);
-    if (isNaN(src) || isNaN(dst)) {
-      setError('Invalid chat IDs');
-      return;
-    }
+    const nextFieldErrors = {
+      sourceChatId: isNaN(src) ? 'Enter a numeric chat ID.' : undefined,
+      destChatId: isNaN(dst) ? 'Enter a numeric chat ID.' : undefined,
+    };
+    setFieldErrors(nextFieldErrors);
+    if (nextFieldErrors.sourceChatId || nextFieldErrors.destChatId) return;
     mutation.mutate();
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div
-        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 mb-4">
-          <Pencil className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-          <h2 className="text-xl font-bold">Edit Channel Mapping</h2>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="p-3 rounded bg-red-50 dark:bg-red-900/20 text-red-600 text-sm">{error}</div>
-          )}
-          <MappingFormFields
-            name={name}
-            sourceChatId={sourceChatId}
-            destChatId={destChatId}
-            onNameChange={setName}
-            onSourceChatIdChange={setSourceChatId}
-            onDestChatIdChange={setDestChatId}
-          />
-          <div className="flex gap-2 justify-end">
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded border border-gray-300">
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={mutation.isPending}
-              className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
-            >
-              {mutation.isPending ? 'Saving…' : 'Save'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <Modal
+      title="Edit channel mapping"
+      icon={<Pencil className="h-5 w-5 text-ink-subtle" strokeWidth={2} aria-hidden />}
+      size="sm"
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" form="edit-mapping-form" isLoading={mutation.isPending}>
+            Save changes
+          </Button>
+        </>
+      }
+    >
+      <form id="edit-mapping-form" onSubmit={handleSubmit} className="space-y-4" noValidate>
+        <FormError message={error} />
+        <MappingFormFields
+          name={name}
+          sourceChatId={sourceChatId}
+          destChatId={destChatId}
+          onNameChange={setName}
+          onSourceChatIdChange={setSourceChatId}
+          onDestChatIdChange={setDestChatId}
+          errors={fieldErrors}
+        />
+      </form>
+    </Modal>
   );
 }
