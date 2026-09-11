@@ -10,6 +10,7 @@ import {
   Image,
   KeyRound,
   LayoutDashboard,
+  Bell,
   LogOut,
   Menu,
   MessageSquare,
@@ -55,6 +56,7 @@ const userNav: NavGroup[] = [
       { to: '/logs', label: 'Message Logs', icon: MessageSquare },
       { to: '/message-index', label: 'Message Index', icon: Database },
       { to: '/api-keys', label: 'API Keys', icon: KeyRound },
+      { to: '/alert-webhooks', label: 'Alert Webhooks', icon: Bell },
     ],
   },
 ];
@@ -70,6 +72,7 @@ const adminNav: NavGroup[] = [
       { to: '/admin/users', label: 'Users', icon: Users },
       { to: '/admin/settings', label: 'Settings', icon: Settings },
       { to: '/api-keys', label: 'API Keys', icon: KeyRound },
+      { to: '/alert-webhooks', label: 'Alert Webhooks', icon: Bell },
     ],
   },
   {

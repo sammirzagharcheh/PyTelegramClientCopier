@@ -118,8 +118,8 @@ Note: an `alembic/` tree may exist on disk; **live SQLite evolution is `db/migra
 
 Vite + React SPA with two surfaces:
 
-- **User panel** (`/`): dashboard, accounts, mappings (+ detail for filters/transforms/schedules), workers, logs, message index, schedule, media assets, API keys.
-- **Admin panel** (`/admin`): users, all mappings, workers, logs, settings, cross-tenant views (API keys link to `/api-keys`).
+- **User panel** (`/`): dashboard, accounts, mappings (+ detail for filters/transforms/schedules, clone), workers, logs, message index, schedule, media assets, API keys, alert webhooks.
+- **Admin panel** (`/admin`): users, all mappings (clone), workers, logs, settings, cross-tenant views (API keys and alert webhooks link to user routes).
 
 Auth state (`AuthContext`) sends Bearer tokens to `/api`. Dev mode proxies to the API; production unified image serves the built SPA from the same FastAPI process.
 
@@ -295,7 +295,7 @@ Durable paths in containers typically map under `/app/data` (`SQLITE_PATH`, `SES
 | Telegram MTProto (Telethon) | Outbound / event-driven | Requires `API_ID` / `API_HASH`; sessions on disk |
 | MongoDB | Bidirectional | Logs + indexes; URI overridable via admin `app_settings` |
 | Copy webhooks | Outbound HTTP | Per-mapping notify after successful copy; results in `webhook_logs` |
-| Alert webhooks | Outbound HTTP | Stale worker alerts from API background loop |
+| Alert webhooks | Outbound HTTP | Stale worker alerts from API background loop; panel CRUD at `/alert-webhooks` |
 | SPA ↔ API | Browser | JWT; Vite proxy in dev; same-origin in unified image |
 | External API clients | Inbound | `X-Api-Key` header; scopes from `user_api_keys` enforced per route family |
 

@@ -1,5 +1,6 @@
 import { Layers, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { coerceChannelMappingForEdit } from '../../lib/channelMappingDefaults';
@@ -16,6 +17,7 @@ import { SortableTh } from '../../components/SortableTh';
 import { TableSkeleton } from '../../components/Skeleton';
 import { EmptyState, ErrorState } from '../../components/ui/States';
 import { TableShell, Tbody, Td, Th, Thead, Tr } from '../../components/ui/TableShell';
+import { errorMessage } from '../../lib/apiError';
 
 type Mapping = {
   id: number;
@@ -47,6 +49,7 @@ export function AdminMappings() {
   const [editingMapping, setEditingMapping] = useState<Mapping | null>(null);
   const [mappingToDelete, setMappingToDelete] = useState<Mapping | null>(null);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { show: showToast } = useToast();
 
   const { data: usersData } = useQuery({
@@ -74,6 +77,20 @@ export function AdminMappings() {
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
       setMappingToDelete(null);
       showToast('Mapping deleted. Workers are restarting to apply it.', 'success');
+    },
+  });
+
+  const cloneMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return (await api.post<Mapping>(`/mappings/${id}/clone`)).data;
+    },
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ['mappings'] });
+      showToast('Mapping cloned as disabled. Review and enable when ready.', 'success');
+      navigate(`/admin/mappings/${created.id}`);
+    },
+    onError: (err: unknown) => {
+      showToast(errorMessage(err, 'Cloning the mapping failed'), 'error');
     },
   });
 
@@ -246,6 +263,8 @@ export function AdminMappings() {
                     mappingId={m.id}
                     onEdit={() => setEditingMapping(m)}
                     onDelete={() => setMappingToDelete(m)}
+                    onClone={() => cloneMutation.mutate(m.id)}
+                    clonePending={cloneMutation.isPending && cloneMutation.variables === m.id}
                     viewBasePath="/admin/mappings"
                   />
                 </Td>

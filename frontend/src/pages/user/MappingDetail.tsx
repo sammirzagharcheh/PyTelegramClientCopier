@@ -1,4 +1,4 @@
-import { ArrowLeft, Clock, Eye, Filter, GitBranch, Pencil, Plus, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowLeft, Clock, Copy, Eye, Filter, GitBranch, Pencil, Plus, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
@@ -233,6 +233,20 @@ export function MappingDetail() {
     },
   });
 
+  const cloneMutation = useMutation({
+    mutationFn: async () => {
+      return (await api.post<ChannelMapping>(`/mappings/${id}/clone`)).data;
+    },
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ['mappings'] });
+      showToast('Mapping cloned as disabled. Review and enable when ready.', 'success');
+      navigate(isAdminView ? `/admin/mappings/${created.id}` : `/mappings/${created.id}`);
+    },
+    onError: (err: unknown) => {
+      showToast(errorMessage(err, 'Cloning the mapping failed'), 'error');
+    },
+  });
+
   const enableMutation = useMutation({
     mutationFn: async (enabled: boolean) => {
       return (await api.patch<ChannelMapping>(`/mappings/${id}`, { enabled })).data;
@@ -443,6 +457,17 @@ export function MappingDetail() {
             {canWrite ? (
               <Button variant="secondary" size="sm" icon={Pencil} onClick={() => setEditingMapping(true)}>
                 Edit
+              </Button>
+            ) : null}
+            {canWrite ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={Copy}
+                onClick={() => cloneMutation.mutate()}
+                isLoading={cloneMutation.isPending}
+              >
+                Clone
               </Button>
             ) : null}
             {canWrite ? (

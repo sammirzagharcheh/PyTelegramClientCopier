@@ -1,5 +1,6 @@
 import { GitBranch, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { coerceChannelMappingForEdit } from '../../lib/channelMappingDefaults';
@@ -18,6 +19,8 @@ import { TableSkeleton } from '../../components/Skeleton';
 import { Button } from '../../components/ui/Button';
 import { EmptyState, ErrorState } from '../../components/ui/States';
 import { TableShell, Tbody, Td, Th, Thead, Tr } from '../../components/ui/TableShell';
+import { errorMessage } from '../../lib/apiError';
+import { useAuth } from '../../store/AuthContext';
 
 type Mapping = {
   id: number;
@@ -48,7 +51,10 @@ export function Mappings() {
   const [sortBy, setSortBy] = useState<string>('id');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { show: showToast } = useToast();
+  const { user } = useAuth();
+  const canWrite = Boolean(user && user.role !== 'viewer');
   const { data: activeAccounts = [] } = useActiveAccounts();
 
   const accountNameById = (id: number | null | undefined) => {
@@ -72,6 +78,20 @@ export function Mappings() {
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
       setMappingToDelete(null);
       showToast('Mapping deleted. Workers are restarting to apply it.', 'success');
+    },
+  });
+
+  const cloneMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return (await api.post<Mapping>(`/mappings/${id}/clone`)).data;
+    },
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ['mappings'] });
+      showToast('Mapping cloned as disabled. Review and enable when ready.', 'success');
+      navigate(`/mappings/${created.id}`);
+    },
+    onError: (err: unknown) => {
+      showToast(errorMessage(err, 'Cloning the mapping failed'), 'error');
     },
   });
 
@@ -240,6 +260,8 @@ export function Mappings() {
                     mappingId={m.id}
                     onEdit={() => setEditingMapping(m)}
                     onDelete={() => setMappingToDelete(m)}
+                    onClone={canWrite ? () => cloneMutation.mutate(m.id) : undefined}
+                    clonePending={cloneMutation.isPending && cloneMutation.variables === m.id}
                   />
                 </Td>
               </Tr>

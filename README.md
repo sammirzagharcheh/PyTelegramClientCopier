@@ -64,7 +64,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ## Web Panel
 
 - **Admin panel** (`/admin/*`): Manage users, view all mappings, logs, workers.
-- **User panel** (`/dashboard`, `/accounts`, `/mappings`, `/api-keys`, etc.): Manage Telegram accounts, channel mappings, filters, workers, and API keys.
+- **User panel** (`/dashboard`, `/accounts`, `/mappings`, `/api-keys`, `/alert-webhooks`, etc.): Manage Telegram accounts, channel mappings (including clone), filters, workers, API keys, and stale-worker alert webhooks.
 
 ### API keys (`X-Api-Key`)
 

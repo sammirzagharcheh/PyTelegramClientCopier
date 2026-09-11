@@ -166,6 +166,29 @@ describe('MappingDetail', () => {
     });
   });
 
+  it('clones the mapping via POST /mappings/:id/clone', async () => {
+    mockApiPost.mockImplementation(async (url: string) => {
+      if (url === '/mappings/1/clone') {
+        return { data: { ...defaultMapping, id: 42, name: 'Test (copy)', enabled: false } };
+      }
+      return {
+        data: {
+          passes_filters: true,
+          passes_schedule: true,
+          transformed_text: 'preview-out',
+        },
+      };
+    });
+    renderDetail();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Clone' })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Clone' }));
+    await waitFor(() => {
+      expect(mockApiPost).toHaveBeenCalledWith('/mappings/1/clone');
+    });
+  });
+
   it('runs pipeline preview via POST /mappings/:id/preview', async () => {
     renderDetail();
     await waitFor(() => {

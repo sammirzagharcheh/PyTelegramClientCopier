@@ -34,6 +34,9 @@ describe('getBreadcrumbs', () => {
     expect(getBreadcrumbs('/dashboard')).toEqual([{ to: '/dashboard', label: 'Dashboard' }]);
     expect(getBreadcrumbs('/worker-logs')).toEqual([{ to: '/worker-logs', label: 'Worker logs' }]);
     expect(getBreadcrumbs('/api-keys')).toEqual([{ to: '/api-keys', label: 'API keys' }]);
+    expect(getBreadcrumbs('/alert-webhooks')).toEqual([
+      { to: '/alert-webhooks', label: 'Alert webhooks' },
+    ]);
   });
 
   it('handles user mapping detail', () => {

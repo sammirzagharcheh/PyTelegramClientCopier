@@ -10,6 +10,7 @@ const USER_PAGE_LABELS: Record<string, string> = {
   schedule: 'Schedule',
   'media-assets': 'Media assets',
   'api-keys': 'API keys',
+  'alert-webhooks': 'Alert webhooks',
 };
 
 const ADMIN_CHILD_LABELS: Record<string, string> = {
