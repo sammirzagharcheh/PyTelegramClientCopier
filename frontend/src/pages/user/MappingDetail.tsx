@@ -1,7 +1,7 @@
 import { ArrowLeft, Clock, Filter, GitBranch, Pencil, Plus, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../lib/api';
 import type { FilterFormValues } from '../../components/FilterForm';
 import { EditMappingDialog } from '../../components/EditMappingDialog';
@@ -20,6 +20,13 @@ import {
 import { TransformForm } from '../../components/TransformForm';
 import { formatScheduleSummary } from '../../lib/formatDateTime';
 import type { Transform, TransformCreate } from '../../lib/api';
+import { CardSkeleton } from '../../components/Skeleton';
+import { Button, ButtonLink } from '../../components/ui/Button';
+import { Card, CardHeader } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { Modal } from '../../components/ui/Modal';
+import { EmptyState, ErrorState } from '../../components/ui/States';
+import { errorMessage } from '../../lib/apiError';
 
 type Filter = {
   id: number;
@@ -79,7 +86,13 @@ export function MappingDetail() {
   const [editingMapping, setEditingMapping] = useState<boolean>(false);
   const [mappingToDelete, setMappingToDelete] = useState<boolean>(false);
 
-  const { data: mapping } = useQuery({
+  const {
+    data: mapping,
+    isLoading: mappingLoading,
+    isError: mappingError,
+    error: mappingLoadError,
+    refetch: refetchMapping,
+  } = useQuery({
     queryKey: ['mapping', id],
     queryFn: async () => (await api.get(`/mappings/${id}`)).data,
     enabled: !!id,
@@ -178,8 +191,8 @@ export function MappingDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
       setMappingToDelete(false);
-      showToast('Mapping deleted. Workers restarting to apply changes.');
-      navigate('/mappings');
+      showToast('Mapping deleted. Workers are restarting to apply it.', 'success');
+      navigate(isAdminView ? '/admin/mappings' : '/mappings');
     },
   });
 
@@ -190,7 +203,9 @@ export function MappingDetail() {
     onSuccess: (enabled) => {
       queryClient.invalidateQueries({ queryKey: ['mapping', id] });
       showToast(
-        (enabled ? 'Mapping enabled' : 'Mapping disabled') + '. Workers restarting to apply changes.'
+        (enabled ? 'Mapping enabled' : 'Mapping disabled') +
+          '. Workers are restarting to apply it.',
+        'success'
       );
     },
   });
@@ -202,9 +217,9 @@ export function MappingDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mapping', id, 'schedule'] });
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
-      showToast('Schedule saved. Workers restarting to apply changes.');
+      showToast('Schedule saved. Workers are restarting to apply it.', 'success');
     },
-    onError: () => showToast('Failed to save schedule'),
+    onError: () => showToast('Saving the schedule failed', 'error'),
   });
 
   const scheduleDeleteMutation = useMutation({
@@ -214,9 +229,9 @@ export function MappingDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mapping', id, 'schedule'] });
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
-      showToast('Using default schedule. Workers restarting to apply changes.');
+      showToast('Using the default schedule. Workers are restarting to apply it.', 'success');
     },
-    onError: () => showToast('Failed to remove schedule override'),
+    onError: () => showToast('Removing the schedule override failed', 'error'),
   });
 
   const transformCreateMutation = useMutation({
@@ -226,11 +241,10 @@ export function MappingDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mapping', id, 'transforms'] });
       setTransformModalOpen(null);
-      showToast('Transform added. Workers restarting to apply changes.');
+      showToast('Transform added. Workers are restarting to apply it.', 'success');
     },
     onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      showToast(msg ?? 'Failed to add transform');
+      showToast(errorMessage(err, 'Adding the transform failed'), 'error');
     },
   });
 
@@ -241,11 +255,10 @@ export function MappingDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mapping', id, 'transforms'] });
       setTransformModalOpen(null);
-      showToast('Transform updated. Workers restarting to apply changes.');
+      showToast('Transform updated. Workers are restarting to apply it.', 'success');
     },
     onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      showToast(msg ?? 'Failed to update transform');
+      showToast(errorMessage(err, 'Updating the transform failed'), 'error');
     },
   });
 
@@ -256,11 +269,10 @@ export function MappingDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mapping', id, 'transforms'] });
       setTransformDeleteConfirm(null);
-      showToast('Transform removed. Workers restarting to apply changes.');
+      showToast('Transform removed. Workers are restarting to apply it.', 'success');
     },
     onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      showToast(msg ?? 'Failed to remove transform');
+      showToast(errorMessage(err, 'Removing the transform failed'), 'error');
     },
   });
 
@@ -296,7 +308,25 @@ export function MappingDetail() {
       }
     : null;
 
-  if (!mapping) return null;
+  if (mappingError) {
+    return (
+      <ErrorState
+        title="We couldn't load this mapping"
+        error={mappingLoadError}
+        onRetry={() => refetchMapping()}
+      />
+    );
+  }
+
+  if (mappingLoading || !mapping) {
+    return (
+      <div className="space-y-4">
+        <CardSkeleton lines={2} />
+        <CardSkeleton lines={4} />
+        <CardSkeleton lines={3} />
+      </div>
+    );
+  }
 
   const sourceLabel = mapping.source_chat_title
     ? `${mapping.source_chat_title} (${mapping.source_chat_id})`
@@ -305,38 +335,56 @@ export function MappingDetail() {
     ? `${mapping.dest_chat_title} (${mapping.dest_chat_id})`
     : String(mapping.dest_chat_id);
 
+  const hasCustomSchedule =
+    mappingSchedule && Object.values(mappingSchedule).some((v) => v != null && v !== '');
+  const ownsMapping = Boolean(user && mapping.user_id === user.id);
+  const listPath = isAdminView ? '/admin/mappings' : '/mappings';
+
+  const switchToCustom = async () => {
+    const hasUserSchedule =
+      userSchedule && Object.values(userSchedule).some((v) => v != null && v !== '');
+    const payload = hasUserSchedule
+      ? userSchedule!
+      : {
+          mon_start_utc: '09:00',
+          mon_end_utc: '17:00',
+          tue_start_utc: '09:00',
+          tue_end_utc: '17:00',
+          wed_start_utc: '09:00',
+          wed_end_utc: '17:00',
+          thu_start_utc: '09:00',
+          thu_end_utc: '17:00',
+          fri_start_utc: '09:00',
+          fri_end_utc: '17:00',
+          sat_start_utc: null,
+          sat_end_utc: null,
+          sun_start_utc: null,
+          sun_end_utc: null,
+        };
+    await api.put(`/mappings/${id}/schedule`, payload);
+    queryClient.invalidateQueries({ queryKey: ['mapping', id, 'schedule'] });
+    queryClient.invalidateQueries({ queryKey: ['mappings'] });
+    showToast('Now using a custom schedule. Edit below and save.', 'success');
+  };
+
   return (
     <div>
       <PageHeader
         title={mapping.name || `Mapping ${id}`}
         icon={GitBranch}
-        subtitle={`Source: ${sourceLabel} → Dest: ${destLabel}`}
+        subtitle={`Source: ${sourceLabel} to dest: ${destLabel}`}
         actions={
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setEditingMapping(true)}
-              className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
-            >
-              <Pencil className="h-4 w-4" />
+          <>
+            <Button variant="secondary" size="sm" icon={Pencil} onClick={() => setEditingMapping(true)}>
               Edit
-            </button>
-            <button
-              type="button"
-              onClick={() => setMappingToDelete(true)}
-              className="flex items-center gap-2 text-sm text-red-600 hover:underline"
-            >
-              <Trash2 className="h-4 w-4" />
+            </Button>
+            <Button variant="secondary" size="sm" icon={Trash2} onClick={() => setMappingToDelete(true)}>
               Delete
-            </button>
-            <Link
-              to={isAdminView ? '/admin/mappings' : '/mappings'}
-              className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
-            >
-              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <ButtonLink to={listPath} size="sm" icon={ArrowLeft}>
               Back to mappings
-            </Link>
-          </div>
+            </ButtonLink>
+          </>
         }
       />
 
@@ -348,14 +396,14 @@ export function MappingDetail() {
           title="Delete Channel Mapping"
           message={
             <>
-              Are you sure you want to delete the mapping{' '}
-              <span className="font-semibold">{mapping.name || `Mapping ${id}`}</span>? This will also
-              remove all associated filters. This action cannot be undone.
+              Deleting{' '}
+              <span className="font-medium text-ink">{mapping.name || `Mapping ${id}`}</span> also
+              removes all of its filters and transformations. This cannot be undone.
             </>
           }
           confirmLabel="Delete mapping"
           variant="danger"
-          icon={<Trash2 className="h-5 w-5 text-red-600" />}
+          icon={<Trash2 className="h-5 w-5" />}
           onConfirm={() => mappingDeleteMutation.mutate()}
           onCancel={() => setMappingToDelete(false)}
           isPending={mappingDeleteMutation.isPending}
@@ -364,29 +412,41 @@ export function MappingDetail() {
       {transformDeleteConfirm !== null && (
         <ConfirmDialog
           title="Delete transform"
-          message="Are you sure you want to remove this transform rule? Workers will restart to apply the change."
+          message="Removing this transform rule will restart workers so the change takes effect."
           confirmLabel="Delete"
           variant="danger"
-          icon={<Trash2 className="h-5 w-5 text-red-600" />}
+          icon={<Trash2 className="h-5 w-5" />}
           onConfirm={() => transformDeleteMutation.mutate(transformDeleteConfirm)}
           onCancel={() => setTransformDeleteConfirm(null)}
           isPending={transformDeleteMutation.isPending}
         />
       )}
+      {deleteConfirm !== null && (
+        <ConfirmDialog
+          title="Delete filter"
+          message="Messages that only this filter was holding back will start copying again."
+          confirmLabel="Delete"
+          variant="danger"
+          icon={<Trash2 className="h-5 w-5" />}
+          onConfirm={() => filterDeleteMutation.mutate(deleteConfirm)}
+          onCancel={() => setDeleteConfirm(null)}
+          isPending={filterDeleteMutation.isPending}
+        />
+      )}
 
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6 transition-shadow hover:shadow-lg">
-        <dl className="grid grid-cols-2 gap-4">
+      <Card className="mb-4">
+        <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
-            <dt className="text-sm text-gray-500">Source channel</dt>
-            <dd className="font-mono">{sourceLabel}</dd>
+            <dt className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Source channel</dt>
+            <dd className="mt-1 font-mono text-sm text-ink">{sourceLabel}</dd>
           </div>
           <div>
-            <dt className="text-sm text-gray-500">Destination channel</dt>
-            <dd className="font-mono">{destLabel}</dd>
+            <dt className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Destination channel</dt>
+            <dd className="mt-1 font-mono text-sm text-ink">{destLabel}</dd>
           </div>
           <div>
-            <dt className="text-sm text-gray-500">Status</dt>
-            <dd>
+            <dt className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Status</dt>
+            <dd className="mt-1">
               <MappingEnableToggle
                 enabled={mapping.enabled}
                 onToggle={() => enableMutation.mutate(!mapping.enabled)}
@@ -395,338 +455,220 @@ export function MappingDetail() {
             </dd>
           </div>
         </dl>
-      </div>
+      </Card>
 
-      <div className="mb-4">
-        <h2 className="text-lg font-semibold mb-1">Schedule</h2>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-          When to copy messages for this mapping. Use default (global) or set a custom schedule.
-        </p>
-      </div>
-
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg mb-6">
-        {(() => {
-          const hasCustomSchedule =
-            mappingSchedule && Object.values(mappingSchedule).some((v) => v != null && v !== '');
-          const ownsMapping = user && mapping.user_id === user.id;
-
-          if (hasCustomSchedule) {
-            return (
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Custom schedule for this mapping
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => scheduleDeleteMutation.mutate()}
-                    disabled={scheduleDeleteMutation.isPending}
-                    className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
-                  >
-                    <RotateCcw className="h-4 w-4" />
-                    Switch to default
-                  </button>
-                </div>
-                <MappingScheduleForm
-                  initialSchedule={mappingSchedule}
-                  timezone={tz}
-                  onSave={(payload) => scheduleSaveMutation.mutate(payload)}
-                  isSaving={scheduleSaveMutation.isPending}
-                  saveLabel="Save schedule"
-                  showDescription={false}
-                />
-              </div>
-            );
-          }
-
-          return (
-            <div className="p-6">
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm">
-                    {ownsMapping && userSchedule
-                      ? formatScheduleSummary(userSchedule)
-                      : 'Default'}
-                  </span>
-                </div>
-                {ownsMapping && (
-                  <Link to="/schedule" className="text-sm text-blue-600 hover:underline">
-                    Configure global schedule
-                  </Link>
-                )}
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const hasUserSchedule =
-                      userSchedule && Object.values(userSchedule).some((v) => v != null && v !== '');
-                    const payload = hasUserSchedule
-                      ? userSchedule!
-                      : {
-                          mon_start_utc: '09:00',
-                          mon_end_utc: '17:00',
-                          tue_start_utc: '09:00',
-                          tue_end_utc: '17:00',
-                          wed_start_utc: '09:00',
-                          wed_end_utc: '17:00',
-                          thu_start_utc: '09:00',
-                          thu_end_utc: '17:00',
-                          fri_start_utc: '09:00',
-                          fri_end_utc: '17:00',
-                          sat_start_utc: null,
-                          sat_end_utc: null,
-                          sun_start_utc: null,
-                          sun_end_utc: null,
-                        };
-                    await api.put(`/mappings/${id}/schedule`, payload);
-                    queryClient.invalidateQueries({ queryKey: ['mapping', id, 'schedule'] });
-                    queryClient.invalidateQueries({ queryKey: ['mappings'] });
-                    showToast('Now using custom schedule. Edit below and save.');
-                  }}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
-                >
-                  Switch to custom
-                </button>
-              </div>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                {ownsMapping
-                  ? 'Uses your global schedule from the Schedule page.'
-                  : "Uses the mapping owner's default schedule."}
-              </p>
+      <Card className="mb-4">
+        <CardHeader
+          title="Schedule"
+          icon={Clock}
+          description="When to copy messages for this mapping. Use the default (global) schedule, or set a custom one."
+        />
+        {hasCustomSchedule ? (
+          <div>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <span className="text-sm font-medium text-ink">Custom schedule for this mapping</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={RotateCcw}
+                onClick={() => scheduleDeleteMutation.mutate()}
+                disabled={scheduleDeleteMutation.isPending}
+                isLoading={scheduleDeleteMutation.isPending}
+              >
+                Switch to default
+              </Button>
             </div>
-          );
-        })()}
-      </div>
-
-      <div className="mb-4">
-        <h2 className="text-lg font-semibold mb-1">Transforms</h2>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-          Transform copied messages before sending: replace text, regex patterns, emojis; use templates; or replace media with uploaded assets. Rules are applied by priority (lower first).
-        </p>
-        <button
-          type="button"
-          onClick={() => setTransformModalOpen('add')}
-          className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm"
-        >
-          <Plus className="h-4 w-4" />
-          Add transform
-        </button>
-      </div>
-
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg mb-6">
-        {transformsLoading ? (
-          <div className="p-8 animate-pulse">
-            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-4" />
-            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2 mb-4" />
-            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-5/6" />
+            <MappingScheduleForm
+              initialSchedule={mappingSchedule}
+              timezone={tz}
+              onSave={(payload) => scheduleSaveMutation.mutate(payload)}
+              isSaving={scheduleSaveMutation.isPending}
+              saveLabel="Save schedule"
+              showDescription={false}
+            />
           </div>
         ) : (
-          <>
-            <div className="divide-y divide-gray-200 dark:divide-gray-700">
-              {(transforms ?? []).map((t) => (
-                <div key={t.id} className="p-4 flex items-start justify-between gap-4">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`text-xs font-medium px-2 py-0.5 rounded ${
-                          !t.enabled ? 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-400' : 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
-                        }`}
-                      >
-                        {t.rule_type}
-                      </span>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">priority {t.priority}</span>
-                    </div>
-                    <p className="text-sm mt-1">{describeTransform(t)}</p>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setTransformModalOpen(t.id)}
-                      className="px-3 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTransformDeleteConfirm(t.id)}
-                      className="px-3 py-1 text-sm rounded border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 dark:border-red-800"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {(transforms ?? []).length === 0 && (
-              <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-                No transforms. Messages are copied as-is.
-                <button
-                  type="button"
-                  onClick={() => setTransformModalOpen('add')}
-                  className="ml-2 inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline"
-                >
-                  <Plus className="h-4 w-4" /> Add your first transform
-                </button>
+          <div>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2 text-sm text-ink">
+                <Clock className="h-4 w-4 text-ink-subtle" aria-hidden />
+                <span>
+                  {ownsMapping && userSchedule ? formatScheduleSummary(userSchedule) : 'Default'}
+                </span>
               </div>
-            )}
-          </>
-        )}
-      </div>
-
-      {transformModalOpen !== null && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="transform-dialog-title"
-          onClick={() => setTransformModalOpen(null)}
-          onKeyDown={(e) => e.key === 'Escape' && setTransformModalOpen(null)}
-        >
-          <div
-            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2 mb-4">
-              <Sparkles className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-              <h2 id="transform-dialog-title" className="text-xl font-bold">
-                {transformModalOpen === 'add' ? 'Add transform' : 'Edit transform'}
-              </h2>
+              {ownsMapping && (
+                <ButtonLink to="/schedule" variant="ghost" size="sm">
+                  Configure global schedule
+                </ButtonLink>
+              )}
+              <Button variant="secondary" size="sm" onClick={() => void switchToCustom()}>
+                Switch to custom
+              </Button>
             </div>
-            <TransformForm
-              key={transformModalOpen === 'add' ? 'new' : transformModalOpen}
-              initialValues={editingTransform ?? undefined}
-              mediaAssets={mediaAssets ?? []}
-              onSubmit={handleTransformSubmit}
-              onCancel={() => setTransformModalOpen(null)}
-              submitLabel={transformModalOpen === 'add' ? 'Add' : 'Save'}
-              isSubmitting={transformCreateMutation.isPending || transformUpdateMutation.isPending}
-            />
+            <p className="mt-2 text-sm text-ink-subtle">
+              {ownsMapping
+                ? 'Uses your global schedule from the Schedule page.'
+                : "Uses the mapping owner's default schedule."}
+            </p>
           </div>
-        </div>
-      )}
+        )}
+      </Card>
 
-      <div className="mb-4">
-        <h2 className="text-lg font-semibold mb-1">Filters</h2>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-          Filters determine which messages are copied from source to destination. All rules in each filter must pass
-          (AND). With multiple filters, a message is copied if it passes every filter.
-        </p>
-        <button
-          type="button"
-          onClick={() => setFilterModalOpen('add')}
-          className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm"
-        >
-          <Plus className="h-4 w-4" />
-          Add filter
-        </button>
-      </div>
-
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg">
-        <div className="divide-y divide-gray-200 dark:divide-gray-700">
-          {(filters ?? []).map((f) => (
-            <div key={f.id} className="p-4 flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                {describeFilter(f).length > 0 ? (
-                  <ul className="text-sm space-y-0.5">
-                    {describeFilter(f).map((line, i) => (
-                      <li key={i}>{line}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <span className="text-gray-500 text-sm">No rules (all messages pass)</span>
-                )}
-              </div>
-              <div className="flex gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setFilterModalOpen(f.id)}
-                  className="px-3 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
-                >
-                  Edit
-                </button>
-                {deleteConfirm === f.id ? (
-                  <div className="flex gap-1">
-                    <button
-                      type="button"
-                      onClick={() => filterDeleteMutation.mutate(f.id)}
-                      disabled={filterDeleteMutation.isPending}
-                      className="px-3 py-1 text-sm rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-                    >
-                      Confirm
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDeleteConfirm(null)}
-                      className="px-3 py-1 text-sm rounded border border-gray-300 dark:border-gray-600"
-                    >
-                      Cancel
-                    </button>
+      <Card flush className="mb-4">
+        <CardHeader
+          title="Transforms"
+          icon={Sparkles}
+          description="Rewrite copied messages before they are sent: replace text, regex, or emoji; apply a template; or swap media for an uploaded asset. Rules run by priority, lowest first."
+          actions={
+            <Button size="sm" icon={Plus} onClick={() => setTransformModalOpen('add')}>
+              Add transform
+            </Button>
+          }
+          inset
+        />
+        {transformsLoading ? (
+          <div className="px-5 py-6">
+            <CardSkeleton lines={3} className="border-0 p-0 shadow-none" />
+          </div>
+        ) : (transforms ?? []).length === 0 ? (
+          <EmptyState
+            icon={Sparkles}
+            title="No transforms"
+            description="Messages are copied as they arrived. Add a rule to rewrite text, emoji, or media."
+            action={
+              <Button size="sm" icon={Plus} onClick={() => setTransformModalOpen('add')}>
+                Add your first transform
+              </Button>
+            }
+          />
+        ) : (
+          <ul className="divide-y divide-line">
+            {(transforms ?? []).map((t) => (
+              <li key={t.id} className="flex items-start justify-between gap-4 px-5 py-3.5">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={t.enabled ? 'info' : 'neutral'}>{t.rule_type}</Badge>
+                    <span className="text-xs tabular-nums text-ink-subtle">priority {t.priority}</span>
                   </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setDeleteConfirm(f.id)}
-                    className="px-3 py-1 text-sm rounded border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 dark:border-red-800"
+                  <p className="mt-1 text-sm text-ink">{describeTransform(t)}</p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => setTransformModalOpen(t.id)}>
+                    Edit
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setTransformDeleteConfirm(t.id)}
                   >
                     Delete
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-        {(filters ?? []).length === 0 && (
-          <div className="p-8 text-center text-gray-500">
-            No filters. All messages pass through.
-            <button
-              type="button"
-              onClick={() => setFilterModalOpen('add')}
-              className="ml-2 inline-flex items-center gap-1 text-blue-600 hover:underline"
-            >
-              <Plus className="h-4 w-4" /> Add your first filter
-            </button>
-          </div>
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
-      </div>
+      </Card>
+
+      {transformModalOpen !== null && (
+        <Modal
+          title={transformModalOpen === 'add' ? 'Add transform' : 'Edit transform'}
+          icon={<Sparkles className="h-5 w-5" />}
+          onClose={() => setTransformModalOpen(null)}
+          size="lg"
+        >
+          <TransformForm
+            key={transformModalOpen === 'add' ? 'new' : transformModalOpen}
+            initialValues={editingTransform ?? undefined}
+            mediaAssets={mediaAssets ?? []}
+            onSubmit={handleTransformSubmit}
+            onCancel={() => setTransformModalOpen(null)}
+            submitLabel={transformModalOpen === 'add' ? 'Add' : 'Save'}
+            isSubmitting={transformCreateMutation.isPending || transformUpdateMutation.isPending}
+          />
+        </Modal>
+      )}
+
+      <Card flush>
+        <CardHeader
+          title="Filters"
+          icon={Filter}
+          description="Filters decide which messages are copied. Every rule in a filter must pass (AND). With several filters, a message is copied only if it passes every one of them."
+          actions={
+            <Button size="sm" icon={Plus} onClick={() => setFilterModalOpen('add')}>
+              Add filter
+            </Button>
+          }
+          inset
+        />
+        {(filters ?? []).length === 0 ? (
+          <EmptyState
+            icon={Filter}
+            title="No filters"
+            description="All messages pass through. Add a filter to include or exclude by text, media type, or regex."
+            action={
+              <Button size="sm" icon={Plus} onClick={() => setFilterModalOpen('add')}>
+                Add your first filter
+              </Button>
+            }
+          />
+        ) : (
+          <ul className="divide-y divide-line">
+            {(filters ?? []).map((f) => {
+              const lines = describeFilter(f);
+              return (
+                <li key={f.id} className="flex items-start justify-between gap-4 px-5 py-3.5">
+                  <div className="min-w-0 flex-1">
+                    {lines.length > 0 ? (
+                      <ul className="space-y-0.5 text-sm text-ink">
+                        {lines.map((line) => (
+                          <li key={line}>{line}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className="text-sm text-ink-subtle">No rules (all messages pass)</span>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <Button variant="secondary" size="sm" onClick={() => setFilterModalOpen(f.id)}>
+                      Edit
+                    </Button>
+                    <Button variant="secondary" size="sm" onClick={() => setDeleteConfirm(f.id)}>
+                      Delete
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Card>
 
       {filterModalOpen !== null && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="filter-dialog-title"
-          onClick={() => setFilterModalOpen(null)}
-          onKeyDown={(e) => e.key === 'Escape' && setFilterModalOpen(null)}
+        <Modal
+          title={filterModalOpen === 'add' ? 'Add filter' : 'Edit filter'}
+          icon={<Filter className="h-5 w-5" />}
+          onClose={() => setFilterModalOpen(null)}
+          size="sm"
         >
-          <div
-            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2 mb-4">
-              <Filter className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-              <h2 id="filter-dialog-title" className="text-xl font-bold">
-                {filterModalOpen === 'add' ? 'Add filter' : 'Edit filter'}
-              </h2>
-            </div>
-            <FilterForm
-              key={filterModalOpen === 'add' ? 'new' : filterModalOpen}
-              isSubmitting={createMutation.isPending || updateMutation.isPending}
-              initialValues={
-                editingFilter
-                  ? {
-                      include_text: editingFilter.include_text ?? '',
-                      exclude_text: editingFilter.exclude_text ?? '',
-                      media_types: stringToMediaArray(editingFilter.media_types),
-                      regex_pattern: editingFilter.regex_pattern ?? '',
-                    }
-                  : undefined
-              }
-              onSubmit={handleFilterSubmit}
-              onCancel={() => setFilterModalOpen(null)}
-              submitLabel={filterModalOpen === 'add' ? 'Add' : 'Save'}
-            />
-          </div>
-        </div>
+          <FilterForm
+            key={filterModalOpen === 'add' ? 'new' : filterModalOpen}
+            isSubmitting={createMutation.isPending || updateMutation.isPending}
+            initialValues={
+              editingFilter
+                ? {
+                    include_text: editingFilter.include_text ?? '',
+                    exclude_text: editingFilter.exclude_text ?? '',
+                    media_types: stringToMediaArray(editingFilter.media_types),
+                    regex_pattern: editingFilter.regex_pattern ?? '',
+                  }
+                : undefined
+            }
+            onSubmit={handleFilterSubmit}
+            onCancel={() => setFilterModalOpen(null)}
+            submitLabel={filterModalOpen === 'add' ? 'Add' : 'Save'}
+          />
+        </Modal>
       )}
     </div>
   );

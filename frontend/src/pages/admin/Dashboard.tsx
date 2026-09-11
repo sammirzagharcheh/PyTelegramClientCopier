@@ -1,9 +1,20 @@
 import { Suspense, lazy } from 'react';
-import { Users, Layers, Activity, MessageSquare, Smartphone, RefreshCw } from 'lucide-react';
+import {
+  Users,
+  Layers,
+  Activity,
+  MessageSquare,
+  Smartphone,
+  RefreshCw,
+  LayoutDashboard,
+} from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { PageHeader } from '../../components/PageHeader';
 import { StatCard } from '../../components/StatCard';
 import { StatCardSkeleton, ChartSkeleton } from '../../components/Skeleton';
+import { Button } from '../../components/ui/Button';
+import { ErrorState } from '../../components/ui/States';
 import { computeTrend } from '../../lib/statsUtils';
 
 const AreaChartCard = lazy(() => import('../../components/dashboard/AreaChartCard').then((m) => ({ default: m.AreaChartCard })));
@@ -24,8 +35,16 @@ type AdminDashboardStats = {
   worker_log_levels: { level: string; count: number }[];
 };
 
+function ChartFallback() {
+  return (
+    <div className="rounded-surface border border-line bg-surface-raised p-5 shadow-surface">
+      <ChartSkeleton />
+    </div>
+  );
+}
+
 export function AdminDashboard() {
-  const { data: stats, isLoading, refetch, isFetching } = useQuery({
+  const { data: stats, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['admin', 'stats', 'dashboard'],
     queryFn: async () =>
       (await api.get<AdminDashboardStats>('/admin/stats/dashboard')).data,
@@ -48,108 +67,99 @@ export function AdminDashboard() {
 
   return (
     <div>
-      <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            Admin Dashboard
-          </h1>
-          <p className="mt-1 text-gray-600 dark:text-gray-400">
-            Overview of your Telegram Copier instance
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => refetch()}
-          disabled={isFetching}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 text-sm font-medium transition-colors"
-        >
-          <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
-      </div>
+      <PageHeader
+        title="Admin Dashboard"
+        icon={LayoutDashboard}
+        subtitle="Overview of your Telegram Copier instance"
+        actions={
+          <Button
+            variant="secondary"
+            icon={RefreshCw}
+            iconClassName={isFetching ? 'animate-spin' : undefined}
+            onClick={() => refetch()}
+            disabled={isFetching}
+          >
+            Refresh
+          </Button>
+        }
+      />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
-        {isLoading ? (
-          <>
-            <StatCardSkeleton />
-            <StatCardSkeleton />
-            <StatCardSkeleton />
-            <StatCardSkeleton />
-            <StatCardSkeleton />
-          </>
-        ) : (
-          <>
-            <StatCard
-              title="Users"
-              value={stats?.users_total ?? 0}
-              icon={Users}
-              colorVariant="violet"
-            />
-            <StatCard
-              title="Total Mappings"
-              value={stats?.mappings_total ?? 0}
-              icon={Layers}
-              colorVariant="emerald"
-            />
-            <StatCard
-              title="Workers"
-              value={stats?.workers_count ?? 0}
-              icon={Activity}
-              colorVariant="amber"
-            />
-            <StatCard
-              title="Messages (7 days)"
-              value={stats?.messages_last_7d ?? 0}
-              icon={MessageSquare}
-              colorVariant="blue"
-              trend={
-                messagesTrend != null
-                  ? { value: messagesTrend, label: 'prev 7d' }
-                  : undefined
-              }
-            />
-            <StatCard
-              title="Active Accounts"
-              value={stats?.active_accounts ?? 0}
-              icon={Smartphone}
-              colorVariant="emerald"
-            />
-          </>
-        )}
-      </div>
+      {isError ? (
+        <ErrorState
+          title="We couldn't load the instance overview"
+          error={error}
+          onRetry={() => refetch()}
+        />
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            {isLoading ? (
+              <>
+                <StatCardSkeleton />
+                <StatCardSkeleton />
+                <StatCardSkeleton />
+                <StatCardSkeleton />
+                <StatCardSkeleton />
+              </>
+            ) : (
+              <>
+                <StatCard title="Users" value={stats?.users_total ?? 0} icon={Users} />
+                <StatCard
+                  title="Total Mappings"
+                  value={stats?.mappings_total ?? 0}
+                  icon={Layers}
+                />
+                <StatCard title="Workers" value={stats?.workers_count ?? 0} icon={Activity} />
+                <StatCard
+                  title="Messages (7 days)"
+                  value={stats?.messages_last_7d ?? 0}
+                  icon={MessageSquare}
+                  trend={
+                    messagesTrend != null
+                      ? { value: messagesTrend, label: 'prev 7d' }
+                      : undefined
+                  }
+                />
+                <StatCard
+                  title="Active Accounts"
+                  value={stats?.active_accounts ?? 0}
+                  icon={Smartphone}
+                />
+              </>
+            )}
+          </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-        <Suspense fallback={<div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-6"><ChartSkeleton /></div>}>
-          <AreaChartCard
-            title="Messages over time (last 7 days)"
-            data={stats?.messages_by_day ?? []}
-            isLoading={isLoading}
-          />
-          <PieChartCard
-            title="Message status"
-            data={statusChartData}
-            isLoading={isLoading}
-            nameKey="name"
-            valueKey="value"
-          />
-          <BarChartCard
-            title="Worker log levels (7 days)"
-            data={workerLevelData}
-            isLoading={isLoading}
-            dataKey="value"
-            color="#f59e0b"
-          />
-          <BarChartCard
-            title="Top mappings by volume"
-            data={topMappingsData}
-            isLoading={isLoading}
-            dataKey="count"
-            color="#10b981"
-            tooltipLabelKey="mapping_name"
-          />
-        </Suspense>
-      </div>
-
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Suspense fallback={<ChartFallback />}>
+              <AreaChartCard
+                title="Messages over time (last 7 days)"
+                data={stats?.messages_by_day ?? []}
+                isLoading={isLoading}
+              />
+              <PieChartCard
+                title="Message status"
+                data={statusChartData}
+                isLoading={isLoading}
+                nameKey="name"
+                valueKey="value"
+              />
+              <BarChartCard
+                title="Worker log levels (7 days)"
+                data={workerLevelData}
+                isLoading={isLoading}
+                dataKey="value"
+              />
+              <BarChartCard
+                title="Top mappings by volume"
+                data={topMappingsData}
+                isLoading={isLoading}
+                dataKey="count"
+                tooltipLabelKey="mapping_name"
+              />
+            </Suspense>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -59,6 +59,8 @@ describe('MappingDetail', () => {
           },
         };
       if (url === '/users/me/schedule') return { data: {} };
+      if (url === '/mappings/1/transforms') return { data: [] };
+      if (url.startsWith('/media-assets')) return { data: [] };
       throw new Error(`Unexpected API call: ${url}`);
     });
   });
@@ -131,6 +133,8 @@ describe('MappingDetail', () => {
           },
         };
       if (url === '/users/me/schedule') return { data: {} };
+      if (url === '/mappings/1/transforms') return { data: [] };
+      if (url.startsWith('/media-assets')) return { data: [] };
       throw new Error(`Unexpected API call: ${url}`);
     });
     renderDetail();

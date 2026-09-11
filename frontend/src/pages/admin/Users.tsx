@@ -1,4 +1,4 @@
-import { Filter, Pencil, Plus, Users } from 'lucide-react';
+import { Pencil, Plus, Users } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
@@ -8,6 +8,11 @@ import { PageHeader } from '../../components/PageHeader';
 import { SortableTh } from '../../components/SortableTh';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Pagination } from '../../components/Pagination';
+import { TableSkeleton } from '../../components/Skeleton';
+import { Button } from '../../components/ui/Button';
+import { Field, Select } from '../../components/ui/Field';
+import { EmptyState, ErrorState } from '../../components/ui/States';
+import { TableShell, Tbody, Td, Th, Thead, Tr } from '../../components/ui/TableShell';
 
 type User = {
   id: number;
@@ -29,7 +34,7 @@ export function AdminUsers() {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [sortBy, setSortBy] = useState<string>('id');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['admin', 'users', page, pageSize, roleFilter, statusFilter, sortBy, sortOrder],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(page), page_size: String(pageSize), sort_by: sortBy, sort_order: sortOrder });
@@ -39,9 +44,16 @@ export function AdminUsers() {
     },
   });
 
-  if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
-
   const users = data?.items ?? [];
+  const isFiltered = roleFilter !== '' || statusFilter !== '';
+
+  const handleSort = (key: string, order: 'asc' | 'desc') => {
+    setSortBy(key);
+    setSortOrder(order);
+    setPage(1);
+  };
+
+  const sortProps = { currentSort: sortBy, currentOrder: sortOrder, onSort: handleSort };
 
   return (
     <div>
@@ -50,93 +62,129 @@ export function AdminUsers() {
         icon={Users}
         subtitle="Manage user accounts and permissions"
         actions={
-          <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">
-            <Plus className="h-4 w-4" />
+          <Button icon={Plus} onClick={() => setShowCreate(true)}>
             Create User
-          </button>
+          </Button>
         }
       />
-      <div className="mb-6 flex flex-wrap items-center gap-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 px-4 py-3">
-        <Filter className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-        <label htmlFor="admin-users-role" className="text-sm font-medium">Role</label>
-        <select
-          id="admin-users-role"
-          value={roleFilter}
-          onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}
-          className="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
-        >
-          <option value="">All</option>
-          <option value="user">User</option>
-          <option value="admin">Admin</option>
-        </select>
-        <label htmlFor="admin-users-status" className="text-sm font-medium">Status</label>
-        <select
-          id="admin-users-status"
-          value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-          className="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
-        >
-          <option value="">All</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-        </select>
+
+      <div className="mb-4 flex flex-wrap gap-4">
+        <Field label="Role" className="w-40">
+          {(fieldProps) => (
+            <Select
+              {...fieldProps}
+              value={roleFilter}
+              onChange={(e) => {
+                setRoleFilter(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">All roles</option>
+              <option value="user">User</option>
+              <option value="admin">Admin</option>
+            </Select>
+          )}
+        </Field>
+        <Field label="Status" className="w-40">
+          {(fieldProps) => (
+            <Select
+              {...fieldProps}
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">All statuses</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </Select>
+          )}
+        </Field>
       </div>
+
       {showCreate && <CreateUserDialog onClose={() => setShowCreate(false)} />}
       {editingUser && <EditUserDialog user={editingUser} onClose={() => setEditingUser(null)} />}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-          <thead className="bg-gray-50 dark:bg-gray-700">
+
+      {isError ? (
+        <ErrorState title="We couldn't load the user list" error={error} onRetry={() => refetch()} />
+      ) : isLoading ? (
+        <TableSkeleton columns={6} />
+      ) : (
+        <TableShell
+          caption="User accounts"
+          footer={
+            users.length === 0 ? (
+              <EmptyState
+                icon={Users}
+                title={isFiltered ? 'No users match these filters' : 'No users yet'}
+                description={
+                  isFiltered
+                    ? 'Clear the role or status filter to see the rest.'
+                    : 'Create the first account to give someone access.'
+                }
+                action={
+                  !isFiltered && (
+                    <Button icon={Plus} size="sm" onClick={() => setShowCreate(true)}>
+                      Create User
+                    </Button>
+                  )
+                }
+              />
+            ) : (
+              data && (
+                <Pagination
+                  page={data.page}
+                  pageSize={data.page_size}
+                  total={data.total}
+                  totalPages={data.total_pages}
+                  onPageChange={setPage}
+                  onPageSizeChange={(n) => {
+                    setPageSize(n);
+                    setPage(1);
+                  }}
+                />
+              )
+            )
+          }
+        >
+          <Thead>
             <tr>
-              <SortableTh label="ID" sortKey="id" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
-              <SortableTh label="Email" sortKey="email" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
-              <SortableTh label="Name" sortKey="name" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
-              <SortableTh label="Role" sortKey="role" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
-              <SortableTh label="Status" sortKey="status" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Actions</th>
+              <SortableTh label="ID" sortKey="id" {...sortProps} />
+              <SortableTh label="Email" sortKey="email" {...sortProps} />
+              <SortableTh label="Name" sortKey="name" {...sortProps} />
+              <SortableTh label="Role" sortKey="role" {...sortProps} />
+              <SortableTh label="Status" sortKey="status" {...sortProps} />
+              <Th className="w-28 text-right">Actions</Th>
             </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+          </Thead>
+          <Tbody>
             {users.map((u) => (
-              <tr key={u.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td className="px-6 py-4 text-sm">{u.id}</td>
-                <td className="px-6 py-4 text-sm">{u.email}</td>
-                <td className="px-6 py-4 text-sm">{u.name || '—'}</td>
-                <td className="px-6 py-4 text-sm">
+              <Tr key={u.id}>
+                <Td className="tabular-nums text-ink-subtle">{u.id}</Td>
+                <Td className="font-medium">{u.email}</Td>
+                <Td className="text-ink-muted">{u.name || 'Not set'}</Td>
+                <Td>
                   <StatusBadge status={u.role} variant="role" />
-                </td>
-                <td className="px-6 py-4 text-sm">
+                </Td>
+                <Td>
                   <StatusBadge status={u.status} variant="status" />
-                </td>
-                <td className="px-6 py-4 text-sm">
-                  <button
+                </Td>
+                <Td className="text-right">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={Pencil}
                     onClick={() => setEditingUser(u)}
-                    className="flex items-center gap-1 px-3 py-1 rounded bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-sm"
                   >
-                    <Pencil className="h-3 w-3" />
                     Edit
-                  </button>
-                </td>
-              </tr>
+                  </Button>
+                </Td>
+              </Tr>
             ))}
-          </tbody>
-        </table>
-        {users.length === 0 && (
-          <div className="p-8 text-center text-gray-500 flex flex-col items-center gap-2">
-            <Users className="h-12 w-12 text-gray-400" />
-            <p>No users yet.</p>
-          </div>
-        )}
-        {data && (
-          <Pagination
-            page={data.page}
-            pageSize={data.page_size}
-            total={data.total}
-            totalPages={data.total_pages}
-            onPageChange={setPage}
-            onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
-          />
-        )}
-      </div>
+          </Tbody>
+        </TableShell>
+      )}
     </div>
   );
 }

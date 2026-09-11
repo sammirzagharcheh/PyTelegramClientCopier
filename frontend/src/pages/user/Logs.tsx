@@ -1,4 +1,4 @@
-import { Inbox, MessageSquare } from 'lucide-react';
+import { MessageSquare } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
@@ -7,6 +7,10 @@ import { useAuth } from '../../store/AuthContext';
 import { PageHeader } from '../../components/PageHeader';
 import { Pagination } from '../../components/Pagination';
 import { StatusBadge } from '../../components/StatusBadge';
+import { TableSkeleton } from '../../components/Skeleton';
+import { MessageRef } from '../../components/MessageRef';
+import { EmptyState, ErrorState } from '../../components/ui/States';
+import { TableShell, Tbody, Td, Th, Thead, Tr } from '../../components/ui/TableShell';
 
 type Log = {
   user_id: number;
@@ -26,28 +30,11 @@ export function Logs() {
   const { user } = useAuth();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['message-logs', page, pageSize, user?.id],
     queryFn: async () => (await api.get<PaginatedLogs>(`/message-logs?page=${page}&page_size=${pageSize}`)).data,
     enabled: user != null,
   });
-
-  if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
-
-  if (isError) {
-    const msg =
-      (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-      'Failed to load message logs.';
-    return (
-      <div>
-        <PageHeader title="Message Logs" icon={MessageSquare} subtitle="Forwarded message history" />
-        <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800">
-          <p className="font-medium">Could not load logs</p>
-          <p className="mt-1 text-sm">{msg}</p>
-        </div>
-      </div>
-    );
-  }
 
   const rawItems = (data?.items ?? []) as Log[];
   const items =
@@ -58,58 +45,76 @@ export function Logs() {
   return (
     <div>
       <PageHeader title="Message Logs" icon={MessageSquare} subtitle="Forwarded message history" />
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-          <thead className="bg-gray-50 dark:bg-gray-700">
+
+      {isError ? (
+        <ErrorState title="We couldn't load your message logs" error={error} onRetry={() => refetch()} />
+      ) : isLoading ? (
+        <TableSkeleton columns={4} rows={8} />
+      ) : (
+        <TableShell
+          caption="Forwarded messages"
+          footer={
+            items.length === 0 ? (
+              <EmptyState
+                icon={MessageSquare}
+                title="No messages copied yet"
+                description="Once a worker is running and a mapping is enabled, forwarded messages appear here."
+              />
+            ) : (
+              data && (
+                <Pagination
+                  page={data.page}
+                  pageSize={data.page_size}
+                  total={data.total}
+                  totalPages={data.total_pages}
+                  onPageChange={setPage}
+                  onPageSizeChange={(n) => {
+                    setPageSize(n);
+                    setPage(1);
+                  }}
+                />
+              )
+            )
+          }
+        >
+          <Thead>
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Source</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Dest</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Time</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Status</th>
+              <Th>Source</Th>
+              <Th>Destination</Th>
+              <Th>Time</Th>
+              <Th>Status</Th>
             </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+          </Thead>
+          <Tbody>
             {items.map((log, i) => (
-              <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td className="px-6 py-4 text-sm">
-                  {log.source_chat_title ? (
-                    <span title={`ID: ${log.source_chat_id}`}>{log.source_chat_title} <span className="font-mono text-gray-500">({log.source_chat_id} / {log.source_msg_id})</span></span>
-                  ) : (
-                    <span className="font-mono">{log.source_chat_id} / {log.source_msg_id}</span>
-                  )}
-                </td>
-                <td className="px-6 py-4 text-sm">
-                  {log.dest_chat_title ? (
-                    <span title={`ID: ${log.dest_chat_id}`}>{log.dest_chat_title} <span className="font-mono text-gray-500">({log.dest_chat_id} / {log.dest_msg_id})</span></span>
-                  ) : (
-                    <span className="font-mono">{log.dest_chat_id} / {log.dest_msg_id}</span>
-                  )}
-                </td>
-                <td className="px-6 py-4 text-sm" title={log.timestamp}>{formatLocalDateTime(log.timestamp, user?.timezone ?? undefined)}</td>
-                <td className="px-6 py-4 text-sm">
+              <Tr key={`${log.source_chat_id}-${log.source_msg_id}-${i}`}>
+                <Td className="max-w-56">
+                  <MessageRef
+                    title={log.source_chat_title}
+                    chatId={log.source_chat_id}
+                    messageId={log.source_msg_id}
+                  />
+                </Td>
+                <Td className="max-w-56">
+                  <MessageRef
+                    title={log.dest_chat_title}
+                    chatId={log.dest_chat_id}
+                    messageId={log.dest_msg_id}
+                  />
+                </Td>
+                <Td className="whitespace-nowrap text-ink-muted">
+                  <time dateTime={log.timestamp}>
+                    {formatLocalDateTime(log.timestamp, user?.timezone ?? undefined)}
+                  </time>
+                </Td>
+                <Td>
                   <StatusBadge status={log.status ?? ''} variant="status" />
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
-          </tbody>
-        </table>
-        {items.length === 0 && (
-          <div className="p-8 text-center text-gray-500 flex flex-col items-center gap-2">
-            <Inbox className="h-12 w-12 text-gray-400" />
-            <p>No logs yet.</p>
-          </div>
-        )}
-        {data && (
-          <Pagination
-            page={data.page}
-            pageSize={data.page_size}
-            total={data.total}
-            totalPages={data.total_pages}
-            onPageChange={setPage}
-            onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
-          />
-        )}
-      </div>
+          </Tbody>
+        </TableShell>
+      )}
     </div>
   );
 }

@@ -1,5 +1,7 @@
 import { Loader2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import type { LinkProps } from 'react-router-dom';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 export type ButtonSize = 'sm' | 'md';
@@ -27,19 +29,40 @@ const iconOnlySizes: Record<ButtonSize, string> = {
   md: 'h-9.5 w-9.5 p-0',
 };
 
-type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+function classesFor(
+  variant: ButtonVariant,
+  size: ButtonSize,
+  iconOnly: boolean,
+  className: string
+) {
+  const sizing = iconOnly ? iconOnlySizes[size] : sizes[size];
+  return `${base} ${variants[variant]} ${sizing} ${className}`.trim();
+}
+
+function iconSizeFor(size: ButtonSize) {
+  return size === 'sm' ? 'h-3.5 w-3.5' : 'h-4 w-4';
+}
+
+type SharedProps = {
   variant?: ButtonVariant;
   size?: ButtonSize;
   icon?: LucideIcon;
+  /** Extra classes for the icon, e.g. `animate-spin` while refreshing. */
+  iconClassName?: string;
   /** Renders a square button. Pass `aria-label` when using this. */
   iconOnly?: boolean;
-  isLoading?: boolean;
 };
+
+type Props = React.ButtonHTMLAttributes<HTMLButtonElement> &
+  SharedProps & {
+    isLoading?: boolean;
+  };
 
 export function Button({
   variant = 'primary',
   size = 'md',
   icon: Icon,
+  iconClassName = '',
   iconOnly = false,
   isLoading = false,
   disabled,
@@ -48,23 +71,53 @@ export function Button({
   type = 'button',
   ...rest
 }: Props) {
-  const iconSize = size === 'sm' ? 'h-3.5 w-3.5' : 'h-4 w-4';
+  const iconSize = iconSizeFor(size);
   return (
     <button
       type={type}
       disabled={disabled || isLoading}
       aria-busy={isLoading || undefined}
-      className={`${base} ${variants[variant]} ${
-        iconOnly ? iconOnlySizes[size] : sizes[size]
-      } ${className}`.trim()}
+      className={classesFor(variant, size, iconOnly, className)}
       {...rest}
     >
       {isLoading ? (
         <Loader2 className={`${iconSize} shrink-0 animate-spin`} aria-hidden />
       ) : (
-        Icon && <Icon className={`${iconSize} shrink-0`} strokeWidth={2} aria-hidden />
+        Icon && (
+          <Icon
+            className={`${iconSize} shrink-0 ${iconClassName}`.trim()}
+            strokeWidth={2}
+            aria-hidden
+          />
+        )
       )}
       {children}
     </button>
+  );
+}
+
+/** A router link that carries button affordances. Use for navigation, not actions. */
+export function ButtonLink({
+  variant = 'secondary',
+  size = 'md',
+  icon: Icon,
+  iconClassName = '',
+  iconOnly = false,
+  className = '',
+  children,
+  ...rest
+}: LinkProps & SharedProps) {
+  const iconSize = iconSizeFor(size);
+  return (
+    <Link className={classesFor(variant, size, iconOnly, className)} {...rest}>
+      {Icon && (
+        <Icon
+          className={`${iconSize} shrink-0 ${iconClassName}`.trim()}
+          strokeWidth={2}
+          aria-hidden
+        />
+      )}
+      {children}
+    </Link>
   );
 }

@@ -1,4 +1,4 @@
-import { Inbox, Plus, Smartphone, Trash2 } from 'lucide-react';
+import { Plus, Smartphone, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
@@ -13,6 +13,11 @@ import { useToast } from '../../components/Toast';
 import { PageHeader } from '../../components/PageHeader';
 import { SortableTh } from '../../components/SortableTh';
 import { Pagination } from '../../components/Pagination';
+import { TableSkeleton } from '../../components/Skeleton';
+import { Button } from '../../components/ui/Button';
+import { EmptyState, ErrorState } from '../../components/ui/States';
+import { TableShell, Tbody, Td, Th, Thead, Tr } from '../../components/ui/TableShell';
+import { errorMessage } from '../../lib/apiError';
 
 type Account = {
   id: number;
@@ -37,7 +42,7 @@ export function Accounts() {
   const queryClient = useQueryClient();
   const { show: showToast } = useToast();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['accounts', page, pageSize, sortBy, sortOrder],
     queryFn: async () =>
       (await api.get<PaginatedAccounts>(`/accounts?page=${page}&page_size=${pageSize}&sort_by=${sortBy}&sort_order=${sortOrder}`)).data,
@@ -51,11 +56,17 @@ export function Accounts() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       setAccountToDelete(null);
-      showToast('Account deleted');
+      showToast('Account deleted', 'success');
     },
   });
 
-  if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
+  const handleSort = (key: string, order: 'asc' | 'desc') => {
+    setSortBy(key);
+    setSortOrder(order);
+    setPage(1);
+  };
+
+  const sortProps = { currentSort: sortBy, currentOrder: sortOrder, onSort: handleSort };
 
   return (
     <div>
@@ -64,10 +75,9 @@ export function Accounts() {
         icon={Smartphone}
         subtitle="Manage your connected Telegram accounts"
         actions={
-          <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">
-            <Plus className="h-4 w-4" />
+          <Button icon={Plus} onClick={() => setShowAdd(true)}>
             Add Account
-          </button>
+          </Button>
         }
       />
       {showAdd && <AddAccountDialog onClose={() => setShowAdd(false)} />}
@@ -82,78 +92,100 @@ export function Accounts() {
           title="Delete Telegram Account"
           message={
             <>
-              Are you sure you want to delete the account{' '}
-              <span className="font-semibold">{accountToDelete.name || accountToDelete.id}</span>? This
-              will remove this Telegram account from the copier, delete its session file, disable any
-              mappings that use it, and stop any running workers for this account. Existing message
-              logs are kept.
+              Deleting{' '}
+              <span className="font-medium text-ink">
+                {accountToDelete.name || accountToDelete.id}
+              </span>{' '}
+              removes it from the copier, deletes its session file, disables any mappings that use
+              it, and stops any running workers for it. Existing message logs are kept.
               {deleteMutation.isError && (
-                <p className="mt-3 text-sm text-red-600">
-                  Failed to delete account.{' '}
-                  {(deleteMutation.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-                    'Please try again.'}
-                </p>
+                <span className="mt-3 block text-sm text-red-700 dark:text-red-400" role="alert">
+                  {errorMessage(deleteMutation.error, 'Deleting the account failed. Try again.')}
+                </span>
               )}
             </>
           }
           confirmLabel="Delete account"
           variant="danger"
-          icon={<Trash2 className="h-5 w-5 text-red-600" />}
+          icon={<Trash2 className="h-5 w-5" />}
           onConfirm={() => deleteMutation.mutate(accountToDelete.id)}
           onCancel={() => setAccountToDelete(null)}
           isPending={deleteMutation.isPending}
         />
       )}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-          <thead className="bg-gray-50 dark:bg-gray-700">
+
+      {isError ? (
+        <ErrorState
+          title="We couldn't load your accounts"
+          error={error}
+          onRetry={() => refetch()}
+        />
+      ) : isLoading ? (
+        <TableSkeleton columns={5} />
+      ) : (
+        <TableShell
+          caption="Telegram accounts"
+          footer={
+            accounts.length === 0 ? (
+              <EmptyState
+                icon={Smartphone}
+                title="No Telegram accounts yet"
+                description="Connect an account so the copier can read your source channels."
+                action={
+                  <Button icon={Plus} size="sm" onClick={() => setShowAdd(true)}>
+                    Add Account
+                  </Button>
+                }
+              />
+            ) : (
+              data && (
+                <Pagination
+                  page={data.page}
+                  pageSize={data.page_size}
+                  total={data.total}
+                  totalPages={data.total_pages}
+                  onPageChange={setPage}
+                  onPageSizeChange={(n) => {
+                    setPageSize(n);
+                    setPage(1);
+                  }}
+                />
+              )
+            )
+          }
+        >
+          <Thead>
             <tr>
-              <SortableTh label="ID" sortKey="id" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
-              <SortableTh label="Name" sortKey="name" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
-              <SortableTh label="Type" sortKey="type" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
-              <SortableTh label="Status" sortKey="status" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase w-32 min-w-[120px]">Actions</th>
+              <SortableTh label="ID" sortKey="id" {...sortProps} />
+              <SortableTh label="Name" sortKey="name" {...sortProps} />
+              <SortableTh label="Type" sortKey="type" {...sortProps} />
+              <SortableTh label="Status" sortKey="status" {...sortProps} />
+              <Th className="w-32 text-right">Actions</Th>
             </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+          </Thead>
+          <Tbody>
             {accounts.map((acc) => (
-              <tr key={acc.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td className="px-6 py-4 text-sm">{acc.id}</td>
-                <td className="px-6 py-4 text-sm">{acc.name || '—'}</td>
-                <td className="px-6 py-4 text-sm">
+              <Tr key={acc.id}>
+                <Td className="tabular-nums text-ink-subtle">{acc.id}</Td>
+                <Td className="font-medium">{acc.name || `Account ${acc.id}`}</Td>
+                <Td>
                   <AccountTypeBadge type={acc.type} />
-                </td>
-                <td className="px-6 py-4 text-sm">
+                </Td>
+                <Td>
                   <AccountStatusBadge status={acc.status} />
-                </td>
-                <td className="px-6 py-4 text-sm text-right">
+                </Td>
+                <Td className="text-right">
                   <AccountTableActions
                     onEdit={() => setEditingAccount(acc)}
                     onView={() => setViewingAccountId(acc.id)}
                     onDelete={() => setAccountToDelete(acc)}
                   />
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
-          </tbody>
-        </table>
-        {accounts.length === 0 && (
-          <div className="p-8 text-center text-gray-500 flex flex-col items-center gap-2">
-            <Inbox className="h-12 w-12 text-gray-400" />
-            <p>No accounts yet. Add one from the mappings flow.</p>
-          </div>
-        )}
-        {data && (
-          <Pagination
-            page={data.page}
-            pageSize={data.page_size}
-            total={data.total}
-            totalPages={data.total_pages}
-            onPageChange={setPage}
-            onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
-          />
-        )}
-      </div>
+          </Tbody>
+        </TableShell>
+      )}
     </div>
   );
 }

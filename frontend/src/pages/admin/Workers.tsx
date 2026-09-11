@@ -4,6 +4,10 @@ import { api } from '../../lib/api';
 import { formatUptime } from '../../lib/formatUptime';
 import { useAuth } from '../../store/AuthContext';
 import { PageHeader } from '../../components/PageHeader';
+import { CardSkeleton } from '../../components/Skeleton';
+import { Button } from '../../components/ui/Button';
+import { Card, CardHeader } from '../../components/ui/Card';
+import { EmptyState, ErrorState } from '../../components/ui/States';
 
 type Worker = {
   id: string;
@@ -18,14 +22,19 @@ type Worker = {
 export function Workers() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const { data: workers, isLoading } = useQuery({
+  const { data: workers, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['workers'],
     queryFn: async () => (await api.get<Worker[]>('/workers')).data,
     refetchInterval: 60_000,
   });
   const { data: accountsData } = useQuery({
     queryKey: ['accounts', 'list'],
-    queryFn: async () => (await api.get<{ items: { id: number; name: string; user_id: number; type: string; session_path: string | null }[] }>('/accounts?page=1&page_size=100')).data,
+    queryFn: async () =>
+      (
+        await api.get<{
+          items: { id: number; name: string; user_id: number; type: string; session_path: string | null }[];
+        }>('/accounts?page=1&page_size=100')
+      ).data,
     staleTime: 5 * 60 * 1000,
   });
   const accounts = accountsData?.items ?? [];
@@ -54,11 +63,13 @@ export function Workers() {
   const isAccountRunning = (accountId: number) =>
     (workers ?? []).some((w) => w.account_id === accountId && w.running);
 
-  if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
-
   const userAccounts = accounts.filter((a: { user_id: number }) =>
     user?.role === 'admin' ? true : a.user_id === user?.id
   );
+  const startable = userAccounts.filter(
+    (a: { type: string; session_path: string | null }) => a.type === 'user' && a.session_path
+  );
+  const runningWorkers = workers ?? [];
 
   return (
     <div>
@@ -67,66 +78,117 @@ export function Workers() {
         icon={Activity}
         subtitle="Start and manage Telegram sync workers for all accounts"
       />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 transition-shadow hover:shadow-lg">
-          <div className="flex items-center gap-2 mb-4">
-            <Activity className="h-5 w-5 text-amber-500" />
-            <h2 className="text-lg font-semibold">Running Workers</h2>
-          </div>
-          <div className="space-y-2">
-            {(workers ?? []).map((w) => (
-              <div key={w.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded">
-                <div className="flex items-center gap-2 min-w-0">
-                  {w.running && <span className="h-2 w-2 shrink-0 rounded-full bg-green-500" title="Running" />}
-                  <span className="font-mono text-sm">User {w.user_id}</span>
-                  <span className="text-gray-500 text-sm truncate max-w-[200px]">{w.session_path}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {w.running && (
-                    <span className="text-green-600 text-sm">PID {w.pid} · {formatUptime(w.started_at)}</span>
-                  )}
-                  <button
-                    onClick={() => stopMutation.mutate(w.id)}
-                    disabled={!w.running}
-                    className="px-3 py-1 text-sm rounded bg-red-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Stop
-                  </button>
-                </div>
-              </div>
-            ))}
-            {(workers ?? []).length === 0 && (
-              <p className="text-gray-500 text-sm">No workers running.</p>
-            )}
-          </div>
+
+      {isError ? (
+        <ErrorState title="We couldn't load the workers" error={error} onRetry={() => refetch()} />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {isLoading ? (
+            <>
+              <CardSkeleton lines={3} />
+              <CardSkeleton lines={3} />
+            </>
+          ) : (
+            <>
+              <Card flush>
+                <CardHeader title="Running workers" icon={Activity} inset />
+                {runningWorkers.length === 0 ? (
+                  <EmptyState
+                    icon={Activity}
+                    title="No workers running"
+                    description="Start one from the list on the right to begin copying messages."
+                  />
+                ) : (
+                  <ul className="divide-y divide-line">
+                    {runningWorkers.map((w) => (
+                      <li
+                        key={w.id}
+                        className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
+                      >
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <span
+                            className={`h-2 w-2 shrink-0 rounded-full ${
+                              w.running ? 'bg-emerald-500' : 'bg-ink-subtle'
+                            }`}
+                            aria-hidden
+                          />
+                          <span className="shrink-0 text-xs tabular-nums text-ink-subtle">
+                            User {w.user_id}
+                          </span>
+                          <span className="truncate font-mono text-xs text-ink" title={w.session_path}>
+                            {w.session_path}
+                          </span>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-3">
+                          <span className="text-xs text-ink-subtle">
+                            {w.running
+                              ? `PID ${w.pid} · ${formatUptime(w.started_at)}`
+                              : 'Stopped'}
+                          </span>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => stopMutation.mutate(w.id)}
+                            disabled={!w.running}
+                            isLoading={stopMutation.isPending && stopMutation.variables === w.id}
+                          >
+                            Stop
+                          </Button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+
+              <Card flush>
+                <CardHeader
+                  title="Start a worker"
+                  icon={Zap}
+                  description="Select an account with a session file to start a worker."
+                  inset
+                />
+                {startable.length === 0 ? (
+                  <EmptyState
+                    icon={Zap}
+                    title="No account is ready to run"
+                    description="User accounts need an uploaded session file before a worker can start."
+                  />
+                ) : (
+                  <ul className="divide-y divide-line">
+                    {startable.map((a: { id: number; name: string; user_id: number }) => {
+                      const running = isAccountRunning(a.id);
+                      return (
+                        <li
+                          key={a.id}
+                          className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
+                        >
+                          <span className="min-w-0 truncate text-sm text-ink">
+                            {a.name || `Account ${a.id}`}
+                            <span className="ml-2 text-xs tabular-nums text-ink-subtle">
+                              user {a.user_id}
+                            </span>
+                          </span>
+                          <Button
+                            size="sm"
+                            onClick={() => handleStart(a.id, a.user_id)}
+                            disabled={running}
+                            isLoading={
+                              startMutation.isPending && startMutation.variables?.account_id === a.id
+                            }
+                          >
+                            {running ? 'Running' : 'Start'}
+                          </Button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </Card>
+            </>
+          )}
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 transition-shadow hover:shadow-lg">
-          <div className="flex items-center gap-2 mb-4">
-            <Zap className="h-5 w-5 text-blue-500" />
-            <h2 className="text-lg font-semibold">Start Worker</h2>
-          </div>
-          <p className="text-sm text-gray-500 mb-4">Select an account with a session file to start a worker.</p>
-          <div className="space-y-2">
-            {userAccounts
-              .filter((a: { type: string; session_path: string | null }) => a.type === 'user' && a.session_path)
-              .map((a: { id: number; name: string; user_id: number }) => (
-                <div key={a.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded">
-                  <span>{a.name || `Account ${a.id}`} (user {a.user_id})</span>
-                  <button
-                    onClick={() => handleStart(a.id, a.user_id)}
-                    disabled={startMutation.isPending || isAccountRunning(a.id)}
-                    className="px-3 py-1 text-sm rounded bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Start
-                  </button>
-                </div>
-              ))}
-            {userAccounts.filter((a: { type: string }) => a.type === 'user').length === 0 && (
-              <p className="text-gray-500 text-sm">No user accounts with sessions.</p>
-            )}
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
