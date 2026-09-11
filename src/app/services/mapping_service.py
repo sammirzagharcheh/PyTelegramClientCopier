@@ -12,6 +12,13 @@ class MappingFilter:
     exclude_text: str | None
     media_types: str | None
     regex_pattern: str | None
+    # Same or_group_id => OR within group; distinct groups => AND between groups.
+    or_group_id: int
+    allowed_sender_ids: str | None = None
+    denied_usernames: str | None = None
+    min_url_count: int | None = None
+    max_url_count: int | None = None
+    required_hashtags: str | None = None
 
 
 @dataclass(slots=True)
@@ -94,6 +101,81 @@ class ChannelMapping:
     dest_chat_title: str | None
     transforms: list[MappingTransform] = field(default_factory=list)
     schedule: Schedule | None = None
+    send_delay_ms: int = 0
+    sync_edits: bool = False
+    edit_strategy: str = "replace_text"
+    sync_deletes: bool = False
+    copy_webhook_url: str | None = None
+    copy_webhook_secret: str | None = None
+    copy_webhook_payload_template: str | None = None
+    copy_webhook_secret_header_name: str | None = None
+    copy_webhook_secret_header_value: str | None = None
+    copy_webhook_secret_mode: str = "hmac_sha256"
+
+
+async def load_mapping_by_id(
+    db: aiosqlite.Connection,
+    user_id: int,
+    mapping_id: int,
+) -> ChannelMapping | None:
+    """Load one mapping with filters, transforms, schedule (enabled or not). Admin callers
+    should pass the mapping owner's user_id."""
+    async with db.execute(
+        "SELECT id, user_id, source_chat_id, dest_chat_id, enabled, source_chat_title, dest_chat_title, "
+        "send_delay_ms, sync_edits, edit_strategy, sync_deletes, copy_webhook_url, copy_webhook_secret, "
+        "copy_webhook_payload_template, copy_webhook_secret_header_name, copy_webhook_secret_header_value, "
+        "copy_webhook_secret_mode "
+        "FROM channel_mappings WHERE id = ? AND user_id = ?",
+        (mapping_id, user_id),
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        return None
+    (
+        mid,
+        uid,
+        source_id,
+        dest_id,
+        enabled,
+        src_title,
+        dest_title,
+        send_delay_ms,
+        sync_edits,
+        edit_strategy,
+        sync_deletes,
+        copy_webhook_url,
+        copy_webhook_secret,
+        copy_webhook_payload_template,
+        copy_webhook_secret_header_name,
+        copy_webhook_secret_header_value,
+        copy_webhook_secret_mode,
+    ) = row
+    user_schedule = await _load_user_schedule(db, uid)
+    filters_by = await _list_filters_bulk(db, uid, [mid])
+    transforms_by = await _list_transforms_bulk(db, uid, [mid])
+    sched_by = await _load_mapping_schedules_bulk(db, [mid], user_schedule)
+    return ChannelMapping(
+        id=mid,
+        user_id=uid,
+        source_chat_id=source_id,
+        dest_chat_id=dest_id,
+        enabled=bool(enabled),
+        filters=filters_by.get(mid, []),
+        source_chat_title=src_title or None,
+        dest_chat_title=dest_title or None,
+        transforms=transforms_by.get(mid, []),
+        schedule=sched_by.get(mid),
+        send_delay_ms=int(send_delay_ms or 0),
+        sync_edits=bool(sync_edits),
+        edit_strategy=str(edit_strategy or "replace_text"),
+        sync_deletes=bool(sync_deletes),
+        copy_webhook_url=copy_webhook_url,
+        copy_webhook_secret=copy_webhook_secret,
+        copy_webhook_payload_template=copy_webhook_payload_template,
+        copy_webhook_secret_header_name=copy_webhook_secret_header_name,
+        copy_webhook_secret_header_value=copy_webhook_secret_header_value,
+        copy_webhook_secret_mode=str(copy_webhook_secret_mode or "hmac_sha256"),
+    )
 
 
 async def list_enabled_mappings(
@@ -104,9 +186,15 @@ async def list_enabled_mappings(
     """List enabled mappings for a user. If telegram_account_id is given, include only mappings
     that have no account or that account (telegram_account_id IS NULL OR telegram_account_id = ?).
     """
+    extra_cols = (
+        ", send_delay_ms, sync_edits, edit_strategy, sync_deletes, "
+        "copy_webhook_url, copy_webhook_secret, copy_webhook_payload_template, "
+        "copy_webhook_secret_header_name, copy_webhook_secret_header_value, copy_webhook_secret_mode"
+    )
     if telegram_account_id is not None:
         q = (
             "SELECT id, user_id, source_chat_id, dest_chat_id, enabled, source_chat_title, dest_chat_title "
+            f"{extra_cols} "
             "FROM channel_mappings WHERE user_id = ? AND enabled = 1 "
             "AND (telegram_account_id IS NULL OR telegram_account_id = ?)"
         )
@@ -114,6 +202,7 @@ async def list_enabled_mappings(
     else:
         q = (
             "SELECT id, user_id, source_chat_id, dest_chat_id, enabled, source_chat_title, dest_chat_title "
+            f"{extra_cols} "
             "FROM channel_mappings WHERE user_id = ? AND enabled = 1"
         )
         params = (user_id,)
@@ -129,21 +218,52 @@ async def list_enabled_mappings(
     transforms_by_mapping = await _list_transforms_bulk(db, user_id, mapping_ids)
     schedules_by_mapping = await _load_mapping_schedules_bulk(db, mapping_ids, user_schedule)
 
-    return [
-        ChannelMapping(
-            id=mapping_id,
-            user_id=u_id,
-            source_chat_id=source_id,
-            dest_chat_id=dest_id,
-            enabled=bool(enabled),
-            filters=filters_by_mapping.get(mapping_id, []),
-            source_chat_title=src_title or None,
-            dest_chat_title=dest_title or None,
-            transforms=transforms_by_mapping.get(mapping_id, []),
-            schedule=schedules_by_mapping.get(mapping_id),
+    out: list[ChannelMapping] = []
+    for row in rows:
+        (
+            mapping_id,
+            u_id,
+            source_id,
+            dest_id,
+            enabled,
+            src_title,
+            dest_title,
+            send_delay_ms,
+            sync_edits,
+            edit_strategy,
+            sync_deletes,
+            copy_webhook_url,
+            copy_webhook_secret,
+            copy_webhook_payload_template,
+            copy_webhook_secret_header_name,
+            copy_webhook_secret_header_value,
+            copy_webhook_secret_mode,
+        ) = row
+        out.append(
+            ChannelMapping(
+                id=mapping_id,
+                user_id=u_id,
+                source_chat_id=source_id,
+                dest_chat_id=dest_id,
+                enabled=bool(enabled),
+                filters=filters_by_mapping.get(mapping_id, []),
+                source_chat_title=src_title or None,
+                dest_chat_title=dest_title or None,
+                transforms=transforms_by_mapping.get(mapping_id, []),
+                schedule=schedules_by_mapping.get(mapping_id),
+                send_delay_ms=int(send_delay_ms or 0),
+                sync_edits=bool(sync_edits),
+                edit_strategy=str(edit_strategy or "replace_text"),
+                sync_deletes=bool(sync_deletes),
+                copy_webhook_url=copy_webhook_url,
+                copy_webhook_secret=copy_webhook_secret,
+                copy_webhook_payload_template=copy_webhook_payload_template,
+                copy_webhook_secret_header_name=copy_webhook_secret_header_name,
+                copy_webhook_secret_header_value=copy_webhook_secret_header_value,
+                copy_webhook_secret_mode=str(copy_webhook_secret_mode or "hmac_sha256"),
+            )
         )
-        for mapping_id, u_id, source_id, dest_id, enabled, src_title, dest_title in rows
-    ]
+    return out
 
 
 def _row_to_schedule(row: tuple) -> Schedule | None:
@@ -182,7 +302,9 @@ async def _list_filters_bulk(
         return {}
     placeholders = ",".join("?" * len(mapping_ids))
     async with db.execute(
-        f"SELECT mf.mapping_id, mf.include_text, mf.exclude_text, mf.media_types, mf.regex_pattern "
+        f"SELECT mf.mapping_id, mf.include_text, mf.exclude_text, mf.media_types, mf.regex_pattern, "
+        f"mf.or_group_id, mf.allowed_sender_ids, mf.denied_usernames, mf.min_url_count, "
+        f"mf.max_url_count, mf.required_hashtags "
         f"FROM mapping_filters mf "
         f"JOIN channel_mappings cm ON cm.id = mf.mapping_id "
         f"WHERE mf.mapping_id IN ({placeholders}) AND cm.user_id = ?",
@@ -192,12 +314,19 @@ async def _list_filters_bulk(
     result: dict[int, list[MappingFilter]] = {}
     for row in rows:
         mid = row[0]
+        ogid = row[5]
         result.setdefault(mid, []).append(
             MappingFilter(
                 include_text=row[1],
                 exclude_text=row[2],
                 media_types=row[3],
                 regex_pattern=row[4],
+                or_group_id=int(ogid) if ogid is not None else 0,
+                allowed_sender_ids=row[6],
+                denied_usernames=row[7],
+                min_url_count=row[8],
+                max_url_count=row[9],
+                required_hashtags=row[10],
             )
         )
     return result

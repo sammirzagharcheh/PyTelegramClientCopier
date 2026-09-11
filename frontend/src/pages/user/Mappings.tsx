@@ -2,6 +2,8 @@ import { GitBranch, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { coerceChannelMappingForEdit } from '../../lib/channelMappingDefaults';
+import { useActiveAccounts, formatAccountLabel } from '../../hooks/useActiveAccounts';
 import { AddMappingDialog } from '../../components/AddMappingDialog';
 import { EditMappingDialog } from '../../components/EditMappingDialog';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -26,7 +28,13 @@ type Mapping = {
   source_chat_title?: string | null;
   dest_chat_title?: string | null;
   enabled: boolean;
+  telegram_account_id?: number | null;
   schedule_summary?: string;
+  copy_webhook_payload_template?: string | null;
+  copy_webhook_secret_header_name?: string | null;
+  copy_webhook_secret_mode?: string | null;
+  webhook_secret_configured?: boolean;
+  webhook_secret_header_configured?: boolean;
 };
 
 type PaginatedMappings = { items: Mapping[]; total: number; page: number; page_size: number; total_pages: number };
@@ -41,6 +49,13 @@ export function Mappings() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const queryClient = useQueryClient();
   const { show: showToast } = useToast();
+  const { data: activeAccounts = [] } = useActiveAccounts();
+
+  const accountNameById = (id: number | null | undefined) => {
+    if (id == null) return 'Not set';
+    const acc = activeAccounts.find((a) => a.id === id);
+    return acc ? formatAccountLabel(acc) : `#${id}`;
+  };
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['mappings', page, pageSize, sortBy, sortOrder],
@@ -124,7 +139,10 @@ export function Mappings() {
       />
       {showAdd && <AddMappingDialog onClose={() => setShowAdd(false)} />}
       {editingMapping && (
-        <EditMappingDialog mapping={editingMapping} onClose={() => setEditingMapping(null)} />
+        <EditMappingDialog
+          mapping={coerceChannelMappingForEdit(editingMapping)}
+          onClose={() => setEditingMapping(null)}
+        />
       )}
       {mappingToDelete && (
         <ConfirmDialog
@@ -154,7 +172,7 @@ export function Mappings() {
           onRetry={() => refetch()}
         />
       ) : isLoading ? (
-        <TableSkeleton columns={6} />
+        <TableSkeleton columns={7} />
       ) : (
         <TableShell
           caption="Channel mappings"
@@ -190,6 +208,7 @@ export function Mappings() {
           <Thead>
             <tr>
               <SortableTh label="Name" sortKey="name" {...sortProps} />
+              <Th>Account</Th>
               <SortableTh label="Source" sortKey="source_chat_id" {...sortProps} />
               <SortableTh label="Destination" sortKey="dest_chat_id" {...sortProps} />
               <SortableTh label="Status" sortKey="enabled" {...sortProps} />
@@ -201,6 +220,7 @@ export function Mappings() {
             {mappings.map((m) => (
               <Tr key={m.id}>
                 <Td className="font-medium">{m.name || `Mapping ${m.id}`}</Td>
+                <Td className="text-ink-muted">{accountNameById(m.telegram_account_id)}</Td>
                 <Td className="max-w-56">
                   <ChannelCell title={m.source_chat_title} id={m.source_chat_id} />
                 </Td>

@@ -100,3 +100,70 @@ export type MediaAsset = {
   size_bytes: number;
   created_at: string;
 };
+
+/** Channel mapping as returned by GET/PATCH `/mappings/{id}`. */
+export type ChannelMapping = {
+  id: number;
+  user_id: number;
+  source_chat_id: number;
+  dest_chat_id: number;
+  name: string | null;
+  source_chat_title: string | null;
+  dest_chat_title: string | null;
+  enabled: boolean;
+  telegram_account_id: number | null;
+  created_at: string | null;
+  send_delay_ms: number;
+  sync_edits: boolean;
+  edit_strategy: string;
+  sync_deletes: boolean;
+  copy_webhook_url: string | null;
+  copy_webhook_secret: string | null;
+  copy_webhook_payload_template: string | null;
+  copy_webhook_secret_header_name: string | null;
+  copy_webhook_secret_mode: string | null;
+  /** List API only: true when a webhook secret exists (secret value is never returned in list). */
+  webhook_secret_configured?: boolean;
+  /** List/API only: true when secret header value is stored (value itself is never returned). */
+  webhook_secret_header_configured?: boolean;
+};
+
+export type TelegramAccount = {
+  id: number;
+  user_id: number;
+  name: string | null;
+  type: string;
+  session_path: string | null;
+  phone: string | null;
+  status: string;
+  created_at: string | null;
+};
+
+export type TelegramDialog = {
+  chat_id: number;
+  title: string;
+  username: string | null;
+  dialog_type: string;
+};
+
+export type ChannelMappingCreatePayload = {
+  source_chat_id: number;
+  dest_chat_id: number;
+  telegram_account_id: number;
+  name?: string;
+  source_chat_title?: string;
+  dest_chat_title?: string;
+};
+
+export type MappingPreviewRequest = {
+  sample_text?: string;
+  media_type?: string;
+  sender_id?: number | null;
+  sender_username?: string | null;
+};
+
+export type MappingPreviewResponse = {
+  passes_filters: boolean;
+  passes_schedule: boolean;
+  transformed_text: string;
+};

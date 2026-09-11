@@ -2,7 +2,6 @@ import { Loader2 } from 'lucide-react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './store/AuthContext';
-import { ThemeProvider } from './store/ThemeContext';
 import { AuthLayout } from './layouts/AuthLayout';
 import { MainLayout } from './layouts/MainLayout';
 import { Login } from './pages/Login';
@@ -23,9 +22,12 @@ import { UserWorkers } from './pages/user/Workers';
 import { Schedule } from './pages/user/Schedule';
 import { MediaAssets } from './pages/user/MediaAssets';
 import { WorkerLogs } from './pages/user/WorkerLogs';
+import { WebhookLogs } from './pages/user/WebhookLogs';
 import { AdminWorkerLogs } from './pages/admin/AdminWorkerLogs';
+import { AdminWebhookLogs } from './pages/admin/AdminWebhookLogs';
 import { ToastProvider } from './components/Toast';
 import { createQueryClient } from './lib/queryClient';
+import { ThemeProvider } from './theme/ThemeProvider';
 
 const queryClient = createQueryClient();
 
@@ -70,6 +72,7 @@ function AppRoutes() {
         <Route path="mappings/:id" element={<MappingDetail />} />
         <Route path="workers" element={<UserWorkers />} />
         <Route path="worker-logs" element={<WorkerLogs />} />
+        <Route path="webhook-logs" element={<WebhookLogs />} />
         <Route path="logs" element={<Logs />} />
         <Route path="message-index" element={<MessageIndex />} />
         <Route path="schedule" element={<Schedule />} />
@@ -84,6 +87,7 @@ function AppRoutes() {
         <Route path="message-index" element={<AdminMessageIndex />} />
         <Route path="workers" element={<Workers />} />
         <Route path="worker-logs" element={<AdminWorkerLogs />} />
+        <Route path="webhook-logs" element={<AdminWebhookLogs />} />
         <Route path="media-assets" element={<MediaAssets />} />
         <Route path="settings" element={<Settings />} />
       </Route>
@@ -94,16 +98,16 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
+    <ThemeProvider>
+      <BrowserRouter>
+        <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <ToastProvider>
               <AppRoutes />
             </ToastProvider>
           </AuthProvider>
-        </ThemeProvider>
-      </QueryClientProvider>
-    </BrowserRouter>
+        </QueryClientProvider>
+      </BrowserRouter>
+    </ThemeProvider>
   );
 }

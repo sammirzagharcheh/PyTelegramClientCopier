@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
+  ChevronRight,
   ChevronDown,
   Clock,
   Database,
@@ -12,22 +13,21 @@ import {
   LogOut,
   Menu,
   MessageSquare,
-  Monitor,
-  Moon,
   ScrollText,
   Settings,
   Smartphone,
-  Sun,
   Users,
+  Webhook,
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { ChangePasswordDialog } from '../components/ChangePasswordDialog';
+import { ThemeSwitcher } from '../components/ThemeSwitcher';
 import { TimezonePreferencesDialog } from '../components/TimezonePreferencesDialog';
+import { Badge } from '../components/ui/Badge';
+import { getBreadcrumbs } from '../lib/breadcrumbs';
 import { useAuth } from '../store/AuthContext';
-import { useTheme } from '../store/ThemeContext';
-import type { ThemePreference } from '../store/ThemeContext';
 
 type NavItem = { to: string; label: string; icon: LucideIcon };
 type NavGroup = { heading: string; items: NavItem[] };
@@ -51,6 +51,7 @@ const userNav: NavGroup[] = [
     items: [
       { to: '/workers', label: 'Workers', icon: Activity },
       { to: '/worker-logs', label: 'Worker Logs', icon: ScrollText },
+      { to: '/webhook-logs', label: 'Webhook Logs', icon: Webhook },
       { to: '/logs', label: 'Message Logs', icon: MessageSquare },
       { to: '/message-index', label: 'Message Index', icon: Database },
     ],
@@ -81,16 +82,11 @@ const adminNav: NavGroup[] = [
     items: [
       { to: '/admin/workers', label: 'Workers', icon: Activity },
       { to: '/admin/worker-logs', label: 'Worker Logs', icon: ScrollText },
+      { to: '/admin/webhook-logs', label: 'Webhook Logs', icon: Webhook },
       { to: '/admin/logs', label: 'Logs', icon: MessageSquare },
       { to: '/admin/message-index', label: 'Message Index', icon: Database },
     ],
   },
-];
-
-const themeOptions: { value: ThemePreference; label: string; icon: LucideIcon }[] = [
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'dark', label: 'Dark', icon: Moon },
-  { value: 'system', label: 'System', icon: Monitor },
 ];
 
 function SidebarNav({
@@ -164,8 +160,9 @@ function SidebarNav({
 
 export function MainLayout() {
   const { user, logout } = useAuth();
-  const { preference, setPreference } = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
+  const breadcrumbs = getBreadcrumbs(location.pathname);
   const isAdmin = user?.role === 'admin';
   const groups = isAdmin ? adminNav : userNav;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -264,94 +261,100 @@ export function MainLayout() {
             <Menu className="h-5 w-5" aria-hidden />
           </button>
 
-          <div className="flex-1" />
-
-          <div className="relative" ref={menuRef}>
-            <button
-              ref={menuButtonRef}
-              type="button"
-              onClick={() => setMenuOpen(!menuOpen)}
-              aria-expanded={menuOpen}
-              aria-haspopup="menu"
-              className="flex max-w-[14rem] items-center gap-2 rounded-control px-2.5 py-1.5 text-sm text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink sm:max-w-xs"
-            >
-              <span className="truncate">{user?.email}</span>
-              {isAdmin && (
-                <span className="hidden shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[11px] font-medium text-violet-800 sm:inline dark:bg-violet-500/15 dark:text-violet-300">
-                  admin
-                </span>
-              )}
-              <ChevronDown
-                className={`h-4 w-4 shrink-0 transition-transform ${menuOpen ? 'rotate-180' : ''}`}
-                aria-hidden
-              />
-            </button>
-            {menuOpen && (
-              <div
-                role="menu"
-                className="absolute right-0 mt-1.5 w-60 rounded-surface border border-line bg-surface-raised py-1.5 shadow-raised z-dropdown"
-              >
-                <div className="border-b border-line px-3 pt-1 pb-2.5">
-                  <p className="mb-1.5 text-[11px] font-semibold tracking-wider text-ink-subtle uppercase">
-                    Appearance
-                  </p>
-                  <div
-                    role="radiogroup"
-                    aria-label="Colour theme"
-                    className="flex gap-1 rounded-control bg-surface-sunken p-0.5"
-                  >
-                    {themeOptions.map((option) => {
-                      const OptionIcon = option.icon;
-                      const selected = preference === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          role="radio"
-                          aria-checked={selected}
-                          onClick={() => setPreference(option.value)}
-                          className={`flex flex-1 items-center justify-center gap-1.5 rounded-[0.3rem] px-2 py-1.5 text-xs font-medium transition-colors ${
-                            selected
-                              ? 'bg-surface-raised text-ink shadow-surface'
-                              : 'text-ink-subtle hover:text-ink'
-                          }`}
-                        >
-                          <OptionIcon className="h-3.5 w-3.5" aria-hidden />
-                          {option.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleTimezoneClick}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
-                >
-                  <Globe className="h-4 w-4 shrink-0" aria-hidden />
-                  Timezone
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleChangePasswordClick}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
-                >
-                  <KeyRound className="h-4 w-4 shrink-0" aria-hidden />
-                  Change password
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleLogout}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
-                >
-                  <LogOut className="h-4 w-4 shrink-0" aria-hidden />
-                  Log out
-                </button>
-              </div>
+          <div className="min-w-0 flex-1">
+            {breadcrumbs.length > 0 && (
+              <nav aria-label="Breadcrumb" className="min-w-0">
+                <ol className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-sm">
+                  {breadcrumbs.map((crumb, index) => {
+                    const isLast = index === breadcrumbs.length - 1;
+                    return (
+                      <li key={`${crumb.to}-${index}`} className="flex min-w-0 items-center gap-1">
+                        {index > 0 && (
+                          <ChevronRight
+                            className="h-3.5 w-3.5 shrink-0 text-ink-subtle"
+                            aria-hidden
+                          />
+                        )}
+                        {isLast ? (
+                          <span
+                            className="truncate font-medium text-ink"
+                            aria-current="page"
+                          >
+                            {crumb.label}
+                          </span>
+                        ) : (
+                          <Link
+                            to={crumb.to}
+                            className="truncate text-ink-muted transition-colors hover:text-accent-ink"
+                          >
+                            {crumb.label}
+                          </Link>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ol>
+              </nav>
             )}
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2">
+            <ThemeSwitcher />
+            <div className="relative" ref={menuRef}>
+              <button
+                ref={menuButtonRef}
+                type="button"
+                onClick={() => setMenuOpen(!menuOpen)}
+                aria-expanded={menuOpen}
+                aria-haspopup="menu"
+                className="flex max-w-[14rem] items-center gap-2 rounded-control px-2.5 py-1.5 text-sm text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink sm:max-w-xs"
+              >
+                <span className="truncate">{user?.email}</span>
+                {isAdmin && (
+                  <Badge tone="accent" className="hidden sm:inline-flex">
+                    admin
+                  </Badge>
+                )}
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 transition-transform ${menuOpen ? 'rotate-180' : ''}`}
+                  aria-hidden
+                />
+              </button>
+              {menuOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 z-dropdown mt-1.5 w-60 rounded-surface border border-line bg-surface-raised py-1.5 shadow-raised"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handleTimezoneClick}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
+                  >
+                    <Globe className="h-4 w-4 shrink-0" aria-hidden />
+                    Timezone
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handleChangePasswordClick}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
+                  >
+                    <KeyRound className="h-4 w-4 shrink-0" aria-hidden />
+                    Change password
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handleLogout}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
+                  >
+                    <LogOut className="h-4 w-4 shrink-0" aria-hidden />
+                    Log out
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 

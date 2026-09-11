@@ -2,6 +2,8 @@ import { Database } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { formatLocalDateTime } from '../../lib/formatDateTime';
+import { useAuth } from '../../store/AuthContext';
 import { PageHeader } from '../../components/PageHeader';
 import { Pagination } from '../../components/Pagination';
 import { TableSkeleton } from '../../components/Skeleton';
@@ -15,6 +17,7 @@ type IndexEntry = {
   source_msg_id: number;
   dest_chat_id: number;
   dest_msg_id: number;
+  updated_at?: string | null;
 };
 
 type User = { id: number; email: string; name: string | null };
@@ -22,6 +25,7 @@ type PaginatedIndex = { items: IndexEntry[]; total: number; page: number; page_s
 type PaginatedUsers = { items: User[]; total: number };
 
 export function AdminMessageIndex() {
+  const { user } = useAuth();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [userId, setUserId] = useState<number | null>(null);
@@ -65,7 +69,7 @@ export function AdminMessageIndex() {
       {isError ? (
         <ErrorState title="We couldn't load the message index" error={error} onRetry={() => refetch()} />
       ) : isLoading ? (
-        <TableSkeleton columns={3} rows={8} />
+        <TableSkeleton columns={4} rows={8} />
       ) : (
         <TableShell
           caption="Message index for all users"
@@ -102,6 +106,7 @@ export function AdminMessageIndex() {
               <Th>User</Th>
               <Th>Source</Th>
               <Th>Destination</Th>
+              <Th>Updated</Th>
             </tr>
           </Thead>
           <Tbody>
@@ -113,6 +118,9 @@ export function AdminMessageIndex() {
                 </Td>
                 <Td className="font-mono text-xs tabular-nums">
                   {e.dest_chat_id} / {e.dest_msg_id}
+                </Td>
+                <Td className="whitespace-nowrap text-ink-muted" title={e.updated_at ?? undefined}>
+                  {formatLocalDateTime(e.updated_at, user?.timezone ?? undefined)}
                 </Td>
               </Tr>
             ))}

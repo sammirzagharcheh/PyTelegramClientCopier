@@ -16,6 +16,7 @@ type Props = {
   isSaving?: boolean;
   saveLabel?: string;
   showDescription?: boolean;
+  readOnly?: boolean;
 };
 
 export function MappingScheduleForm({
@@ -25,6 +26,7 @@ export function MappingScheduleForm({
   isSaving = false,
   saveLabel = 'Save schedule',
   showDescription = true,
+  readOnly = false,
 }: Props) {
   const serverForm = useMemo<ScheduleData>(
     () => (initialSchedule ? fromUtcResponse(initialSchedule, timezone) : {}),
@@ -76,7 +78,13 @@ export function MappingScheduleForm({
         <legend className="mb-2 text-sm font-medium text-ink">Presets</legend>
         <div className="flex flex-wrap gap-2">
           {TEMPLATES.map((t) => (
-            <Button key={t.id} variant="secondary" size="sm" onClick={() => applyTemplate(t)}>
+            <Button
+              key={t.id}
+              variant="secondary"
+              size="sm"
+              disabled={readOnly}
+              onClick={() => applyTemplate(t)}
+            >
               {t.label}
             </Button>
           ))}
@@ -91,6 +99,7 @@ export function MappingScheduleForm({
               type="time"
               aria-label={`${WEEKDAY_LABELS[d]} start`}
               title={`${WEEKDAY_LABELS[d]} start`}
+              disabled={readOnly}
               value={form[d]?.start ?? ''}
               onChange={(e) => setDay(d, { start: e.target.value || null })}
               className={timeInputClass}
@@ -102,6 +111,7 @@ export function MappingScheduleForm({
               type="time"
               aria-label={`${WEEKDAY_LABELS[d]} end`}
               title={`${WEEKDAY_LABELS[d]} end`}
+              disabled={readOnly}
               value={form[d]?.end ?? ''}
               onChange={(e) => setDay(d, { end: e.target.value || null })}
               className={timeInputClass}
@@ -114,7 +124,7 @@ export function MappingScheduleForm({
       </div>
 
       <div className="mt-5">
-        <Button onClick={handleSave} isLoading={isSaving}>
+        <Button onClick={handleSave} isLoading={isSaving} disabled={readOnly}>
           {saveLabel}
         </Button>
       </div>

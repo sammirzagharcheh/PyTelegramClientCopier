@@ -93,10 +93,11 @@ export function CreateUserDialog({ onClose }: Props) {
             />
           )}
         </Field>
-        <Field label="Role" hint="Admins can manage every user, mapping, and worker.">
+        <Field label="Role" hint="Admins can manage every user, mapping, and worker. Viewers can look but not change.">
           {(fieldProps) => (
             <Select {...fieldProps} value={role} onChange={(e) => setRole(e.target.value)}>
               <option value="user">User</option>
+              <option value="viewer">Viewer</option>
               <option value="admin">Admin</option>
             </Select>
           )}

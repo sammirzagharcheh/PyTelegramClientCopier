@@ -1,0 +1,12 @@
+# Test (tst) overlay — isolated ports for QA / automated checks.
+services:
+  mongodb:
+    ports:
+      - "27019:27017"
+
+  backend:
+    env_file:
+      - ../env/docker.env.tst
+    ports:
+      - "8081:8000"
+      - "8002:8000"

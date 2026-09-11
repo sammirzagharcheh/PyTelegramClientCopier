@@ -1,0 +1,144 @@
+# Build and push the unified backend image (SPA + API) to GitHub Container Registry (GHCR)
+# after a successful CI run on main/master, or on version tags / manual dispatch.
+name: Publish images
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main, master]
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to publish (default: latest + short SHA)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-images-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  guard:
+    name: Gate publish
+    runs-on: ubuntu-latest
+    outputs:
+      should_publish: ${{ steps.check.outputs.should_publish }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+      extra_tags: ${{ steps.meta.outputs.extra_tags }}
+    steps:
+      - name: Decide whether to publish
+        id: check
+        run: |
+          set -euo pipefail
+          SHOULD=false
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SHOULD=true
+          elif [ "${{ github.event_name }}" = "push" ] && [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            SHOULD=true
+          elif [ "${{ github.event_name }}" = "workflow_run" ] \
+            && [ "${{ github.event.workflow_run.conclusion }}" = "success" ] \
+            && { [ "${{ github.event.workflow_run.head_branch }}" = "main" ] \
+              || [ "${{ github.event.workflow_run.head_branch }}" = "master" ]; }; then
+            SHOULD=true
+          fi
+          echo "should_publish=${SHOULD}" >> "$GITHUB_OUTPUT"
+          echo "should_publish=${SHOULD}"
+
+      - name: Resolve image tags
+        id: meta
+        if: steps.check.outputs.should_publish == 'true'
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.tag }}" ]; then
+            IMAGE_TAG="${{ inputs.tag }}"
+            EXTRA=""
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            IMAGE_TAG="${GITHUB_REF_NAME}"
+            EXTRA="latest"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            SHA="${{ github.event.workflow_run.head_sha }}"
+            SHORT="${SHA:0:7}"
+            IMAGE_TAG="sha-${SHORT}"
+            EXTRA="latest"
+          else
+            SHORT="$(echo '${{ github.sha }}' | cut -c1-7)"
+            IMAGE_TAG="sha-${SHORT}"
+            EXTRA="latest"
+          fi
+
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "extra_tags=${EXTRA}" >> "$GITHUB_OUTPUT"
+          echo "Resolved image_tag=${IMAGE_TAG} extra=${EXTRA}"
+
+  publish:
+    name: Push GHCR image
+    needs: guard
+    if: needs.guard.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image name prefix
+        id: names
+        run: |
+          REPO_LC="$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+          echo "prefix=${{ env.REGISTRY }}/${REPO_LC}" >> "$GITHUB_OUTPUT"
+
+      - name: Backend metadata
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.names.outputs.prefix }}/backend
+          tags: |
+            type=raw,value=${{ needs.guard.outputs.image_tag }}
+            type=raw,value=latest,enable=${{ needs.guard.outputs.extra_tags == 'latest' }}
+
+      - name: Build and push unified image (SPA + API)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.backend
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Summary
+        run: |
+          {
+            echo "## GHCR image published"
+            echo ""
+            echo "- Image: \`${{ steps.names.outputs.prefix }}/backend:${{ needs.guard.outputs.image_tag }}\` (SPA + API)"
+            if [ "${{ needs.guard.outputs.extra_tags }}" = "latest" ]; then
+              echo "- Also tagged: \`latest\`"
+            fi
+            echo ""
+            echo "Legacy \`frontend\` GHCR packages are obsolete (unified into \`backend\`)."
+            echo ""
+            echo "Deploy with: \`./deploy/scripts/deploy-env.sh <dev|tst|uat|prod>\`"
+          } >> "$GITHUB_STEP_SUMMARY"

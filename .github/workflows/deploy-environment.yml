@@ -1,0 +1,132 @@
+# Deploy a pre-built GHCR stack to a host for a chosen environment.
+# Requires GitHub Environment secrets (see docs/github-actions-ci-cd.md).
+name: Deploy environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options: [dev, tst, uat, prod]
+      image_tag:
+        description: Image tag to deploy (e.g. latest, sha-abc1234, v1.2.3)
+        required: true
+        default: latest
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DOCKER_ENV_FILE: ${{ secrets.DOCKER_ENV_FILE }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_PATH DOCKER_ENV_FILE; do
+            eval "val=\${$name}"
+            if [ -z "${val}" ]; then
+              echo "::error::Missing GitHub Environment secret: ${name}"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Configure secrets on GitHub Environment '${{ inputs.environment }}'."
+            echo "See docs/github-actions-ci-cd.md"
+            exit 1
+          fi
+
+      - name: Prepare SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Resolve image names
+        id: images
+        run: |
+          REPO_LC="$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+          PREFIX="ghcr.io/${REPO_LC}"
+          echo "backend=${PREFIX}/backend:${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+
+      - name: Sync deploy assets and env file
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DOCKER_ENV_FILE: ${{ secrets.DOCKER_ENV_FILE }}
+          ENV_NAME: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          TARGET="${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}"
+          ssh -i ~/.ssh/deploy_key "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "mkdir -p '${DEPLOY_PATH}/deploy/env' '${DEPLOY_PATH}/deploy/compose' '${DEPLOY_PATH}/deploy/scripts'"
+
+          rsync -az -e "ssh -i ~/.ssh/deploy_key" \
+            deploy/compose/ \
+            "${TARGET}/deploy/compose/"
+
+          rsync -az -e "ssh -i ~/.ssh/deploy_key" \
+            deploy/scripts/deploy-env.sh \
+            "${TARGET}/deploy/scripts/deploy-env.sh"
+
+          # Write environment file on the remote host (never commit real secrets).
+          printf '%s\n' "$DOCKER_ENV_FILE" | ssh -i ~/.ssh/deploy_key \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "cat > '${DEPLOY_PATH}/deploy/env/docker.env.${ENV_NAME}' && chmod 600 '${DEPLOY_PATH}/deploy/env/docker.env.${ENV_NAME}'"
+
+      - name: Pull and start stack
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+          ENV_NAME: ${{ inputs.environment }}
+          BACKEND_IMAGE: ${{ steps.images.outputs.backend }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy_key "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<EOF
+          set -euo pipefail
+          cd '${DEPLOY_PATH}'
+          echo '${GHCR_TOKEN}' | docker login ghcr.io -u '${ACTOR}' --password-stdin
+          export BACKEND_IMAGE='${BACKEND_IMAGE}'
+          export IMAGE_TAG='${IMAGE_TAG}'
+          chmod +x deploy/scripts/deploy-env.sh
+          ./deploy/scripts/deploy-env.sh '${ENV_NAME}'
+          EOF
+
+      - name: Summary
+        run: |
+          {
+            echo "## Deployed \`${{ inputs.environment }}\`"
+            echo ""
+            echo "- Image: \`${{ steps.images.outputs.backend }}\` (SPA + API)"
+            echo "- Host path: \`${{ secrets.DEPLOY_PATH }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

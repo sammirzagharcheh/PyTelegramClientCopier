@@ -32,19 +32,19 @@ async def test_list_enabled_mappings_with_filters(tmp_path):
         (2, 333, 444, 1),
     )
     await db.execute(
-        "INSERT INTO mapping_filters (mapping_id, include_text, exclude_text, media_types, regex_pattern) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (1, "hello", None, "text", None),
+        "INSERT INTO mapping_filters (mapping_id, include_text, exclude_text, media_types, regex_pattern, or_group_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (1, "hello", None, "text", None, 1),
     )
     await db.execute(
-        "INSERT INTO mapping_filters (mapping_id, include_text, exclude_text, media_types, regex_pattern) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (1, "world", None, "text", None),
+        "INSERT INTO mapping_filters (mapping_id, include_text, exclude_text, media_types, regex_pattern, or_group_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (1, "world", None, "text", None, 2),
     )
     await db.execute(
-        "INSERT INTO mapping_filters (mapping_id, include_text, exclude_text, media_types, regex_pattern) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (2, "other", None, "text", None),
+        "INSERT INTO mapping_filters (mapping_id, include_text, exclude_text, media_types, regex_pattern, or_group_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (2, "other", None, "text", None, 1),
     )
     await db.commit()
 
@@ -52,6 +52,7 @@ async def test_list_enabled_mappings_with_filters(tmp_path):
     assert len(mappings) == 1
     assert mappings[0].source_chat_id == 111
     assert {f.include_text for f in mappings[0].filters} == {"hello", "world"}
+    assert {(f.include_text, f.or_group_id) for f in mappings[0].filters} == {("hello", 1), ("world", 2)}
 
 
 @pytest.mark.asyncio
@@ -97,9 +98,9 @@ async def test_list_enabled_mappings_all_four_rule_types(tmp_path):
         (1, 100, 200, 1),
     )
     await db.execute(
-        "INSERT INTO mapping_filters (mapping_id, include_text, exclude_text, media_types, regex_pattern) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (1, "announce", "spam", "text,voice", r"#\d+"),
+        "INSERT INTO mapping_filters (mapping_id, include_text, exclude_text, media_types, regex_pattern, or_group_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (1, "announce", "spam", "text,voice", r"#\d+", 1),
     )
     await db.commit()
 
@@ -111,6 +112,7 @@ async def test_list_enabled_mappings_all_four_rule_types(tmp_path):
     assert f.exclude_text == "spam"
     assert f.media_types == "text,voice"
     assert f.regex_pattern == r"#\d+"
+    assert f.or_group_id == 1
 
 
 @pytest.mark.asyncio
@@ -131,9 +133,9 @@ async def test_list_enabled_mappings_disabled_excluded(tmp_path):
         (1, 100, 200, 0),
     )
     await db.execute(
-        "INSERT INTO mapping_filters (mapping_id, include_text, exclude_text, media_types, regex_pattern) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (1, "x", None, None, None),
+        "INSERT INTO mapping_filters (mapping_id, include_text, exclude_text, media_types, regex_pattern, or_group_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (1, "x", None, None, None, 1),
     )
     await db.commit()
 
@@ -161,14 +163,14 @@ async def test_list_enabled_mappings_multiple_no_crosstalk(tmp_path):
         (1, 30, 40, 1),
     )
     await db.execute(
-        "INSERT INTO mapping_filters (mapping_id, include_text, exclude_text, media_types, regex_pattern) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (1, "a", None, None, None),
+        "INSERT INTO mapping_filters (mapping_id, include_text, exclude_text, media_types, regex_pattern, or_group_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (1, "a", None, None, None, 1),
     )
     await db.execute(
-        "INSERT INTO mapping_filters (mapping_id, include_text, exclude_text, media_types, regex_pattern) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (2, "b", None, None, None),
+        "INSERT INTO mapping_filters (mapping_id, include_text, exclude_text, media_types, regex_pattern, or_group_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (2, "b", None, None, None, 1),
     )
     await db.commit()
 

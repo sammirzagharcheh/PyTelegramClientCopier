@@ -70,7 +70,7 @@ export function BarChartCard({
 
   const chartData = data.map((d) => {
     const base: Record<string, unknown> = {
-      name: String(d.name).length > 20 ? String(d.name).slice(0, 20) + '…' : d.name,
+      name: String(d.name).length > 20 ? String(d.name).slice(0, 20) + '...' : d.name,
       [dataKey]: d.value ?? d.count ?? 0,
     };
     if (tooltipLabelKey && d[tooltipLabelKey] != null) {

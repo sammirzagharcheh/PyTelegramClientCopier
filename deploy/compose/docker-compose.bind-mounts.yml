@@ -1,0 +1,31 @@
+# Optional overlay: store SQLite / sessions / media and Mongo files on the host
+# under HOST_DATA_ROOT/<env>/ instead of Docker named volumes.
+#
+# Used by: BIND_MOUNTS=1 ./deploy/scripts/deploy-env.sh <env>
+#
+# Defaults:
+#   HOST_DATA_ROOT=./data/docker-envs   (relative to repo root when using deploy-env.sh)
+#   COMPOSE_ENV=<dev|tst|uat|prod>     (set by deploy-env.sh)
+#
+# Resulting host layout (example for uat):
+#   data/docker-envs/uat/app/app.db
+#   data/docker-envs/uat/app/sessions/
+#   data/docker-envs/uat/app/media_assets/
+#   data/docker-envs/uat/mongo/          (MongoDB WiredTiger files)
+
+services:
+  mongodb:
+    volumes:
+      - type: bind
+        source: ${HOST_DATA_ROOT:-./data/docker-envs}/${COMPOSE_ENV:?COMPOSE_ENV required}/mongo
+        target: /data/db
+        bind:
+          create_host_path: true
+
+  backend:
+    volumes:
+      - type: bind
+        source: ${HOST_DATA_ROOT:-./data/docker-envs}/${COMPOSE_ENV:?COMPOSE_ENV required}/app
+        target: /app/data
+        bind:
+          create_host_path: true

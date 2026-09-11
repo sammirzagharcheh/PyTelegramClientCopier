@@ -17,6 +17,7 @@ def api_client(tmp_path):
 
     settings.sqlite_path = str(tmp_path / "test.db")
     settings.media_assets_dir = str(tmp_path / "media_assets")
+    settings.testing = True
     from app.web.app import create_app
 
     app = create_app()
@@ -39,12 +40,12 @@ def api_client(tmp_path):
                 ("other@test.com", "user", "active", hash_password("pass"), "Other"),
             )
             await db.execute(
-                "INSERT INTO channel_mappings (user_id, source_chat_id, dest_chat_id, enabled) VALUES (?, ?, ?, ?)",
-                (1, 10, 20, 1),
+                "INSERT INTO channel_mappings (user_id, source_chat_id, dest_chat_id, enabled, telegram_account_id) VALUES (?, ?, ?, ?, ?)",
+                (1, 10, 20, 1, 1),
             )
             await db.execute(
-                "INSERT INTO channel_mappings (user_id, source_chat_id, dest_chat_id, enabled) VALUES (?, ?, ?, ?)",
-                (3, 30, 40, 1),
+                "INSERT INTO channel_mappings (user_id, source_chat_id, dest_chat_id, enabled, telegram_account_id) VALUES (?, ?, ?, ?, ?)",
+                (3, 30, 40, 1, None),
             )
             session_path = str(tmp_path / "user1.session")
             await db.execute(

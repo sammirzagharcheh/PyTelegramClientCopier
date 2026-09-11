@@ -2,6 +2,7 @@ import { Database } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { formatLocalDateTime } from '../../lib/formatDateTime';
 import { useAuth } from '../../store/AuthContext';
 import { PageHeader } from '../../components/PageHeader';
 import { Pagination } from '../../components/Pagination';
@@ -15,6 +16,7 @@ type IndexEntry = {
   source_msg_id: number;
   dest_chat_id: number;
   dest_msg_id: number;
+  updated_at?: string | null;
 };
 
 type PaginatedIndex = { items: IndexEntry[]; total: number; page: number; page_size: number; total_pages: number };
@@ -46,7 +48,7 @@ export function MessageIndex() {
       {isError ? (
         <ErrorState title="We couldn't load the message index" error={error} onRetry={() => refetch()} />
       ) : isLoading ? (
-        <TableSkeleton columns={4} rows={8} />
+        <TableSkeleton columns={5} rows={8} />
       ) : (
         <TableShell
           caption="Source to destination message IDs"
@@ -80,6 +82,7 @@ export function MessageIndex() {
               <Th>Source message</Th>
               <Th>Destination chat</Th>
               <Th>Destination message</Th>
+              <Th>Updated</Th>
             </tr>
           </Thead>
           <Tbody>
@@ -89,6 +92,9 @@ export function MessageIndex() {
                 <Td className="font-mono text-xs tabular-nums">{e.source_msg_id}</Td>
                 <Td className="font-mono text-xs tabular-nums">{e.dest_chat_id}</Td>
                 <Td className="font-mono text-xs tabular-nums">{e.dest_msg_id}</Td>
+                <Td className="whitespace-nowrap text-ink-muted" title={e.updated_at ?? undefined}>
+                  {formatLocalDateTime(e.updated_at, user?.timezone ?? undefined)}
+                </Td>
               </Tr>
             ))}
           </Tbody>

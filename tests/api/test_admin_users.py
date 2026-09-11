@@ -1,4 +1,4 @@
-"""API tests for PATCH /admin/users/{user_id} (admin edit user, incl. password)."""
+"""API tests for admin user management endpoints."""
 
 import pytest
 
@@ -94,5 +94,72 @@ def test_patch_user_404(api_client, admin_token):
         "/api/admin/users/999",
         headers={"Authorization": f"Bearer {admin_token}"},
         json={"name": "X"},
+    )
+    assert r.status_code == 404
+
+
+def test_list_users_search_by_email_or_name(api_client, admin_token):
+    """Admin can search users by email or name."""
+    r = api_client.get(
+        "/api/admin/users?search=other",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] >= 1
+    assert any(item["email"] == "other@test.com" for item in data["items"])
+
+
+def test_patch_user_400_invalid_status(api_client, admin_token):
+    """Reject unknown status values on update."""
+    r = api_client.patch(
+        "/api/admin/users/1",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"status": "paused"},
+    )
+    assert r.status_code == 400
+    assert "status must be one of" in r.json()["detail"]
+
+
+def test_delete_user_200(api_client, admin_token):
+    """Admin can delete another user."""
+    r = api_client.delete(
+        "/api/admin/users/1",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "ok"
+
+    get_r = api_client.get(
+        "/api/admin/users/1",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert get_r.status_code == 404
+
+
+def test_delete_user_400_self_delete_forbidden(api_client, admin_token):
+    """Admin cannot delete own account."""
+    r = api_client.delete(
+        "/api/admin/users/2",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert r.status_code == 400
+    assert "cannot delete your own account" in r.json()["detail"].lower()
+
+
+def test_delete_user_403_non_admin(api_client, user_token):
+    """Regular user cannot delete users."""
+    r = api_client.delete(
+        "/api/admin/users/3",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert r.status_code == 403
+
+
+def test_delete_user_404(api_client, admin_token):
+    """Deleting unknown user returns 404."""
+    r = api_client.delete(
+        "/api/admin/users/999",
+        headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert r.status_code == 404

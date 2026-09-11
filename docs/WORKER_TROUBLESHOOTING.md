@@ -66,3 +66,16 @@ Workers also write to `data/worker.log` and per-worker stderr files:
 `data/worker_{account_id}_{worker_id}.log`
 
 Check these if MongoDB logs are empty (e.g. MongoDB down when the worker ran).
+
+---
+
+## Edit and delete sync (`sync_edits` / `sync_deletes`)
+
+When these mapping flags are enabled, the worker tries to mirror source message edits and deletions to the destination using the stored `dest_message_index` (source message id → destination message id).
+
+- **Permissions:** The Telegram account running the worker must be allowed to edit or delete messages in the destination chat (e.g. admin with “Edit messages of others” / “Delete messages of others” where applicable).
+- **`append_notice` edit strategy:** If in-place `edit_message` fails (common for media-only or non-editable posts), set **Edit strategy** to **Append notice** on the mapping so edits become a new text message instead of editing the original destination message.
+- **Albums / grouped media:** Telegram may deliver separate events per album item; behavior depends on how messages were indexed when copied. If deletes or edits miss some items, consider treating albums as a known limitation or adjust mapping usage.
+- **Logs:** Failed `edit_message` / `delete_messages` calls are logged at **WARNING** with `mapping_id` when sync is enabled so they appear in worker logs (e.g. Mongo `worker_logs` and file logs).
+
+If the source `chat_id` from Telegram does not match the configured `source_chat_id` (rare peer/channel id variants), the worker normalizes using both `event.chat_id` and `event.peer` where possible; if nothing matches your mapping, the edit/delete is skipped silently.

@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS dest_message_index (
   source_msg_id INTEGER NOT NULL,
   dest_chat_id INTEGER NOT NULL,
   dest_msg_id INTEGER NOT NULL,
+  updated_at TEXT,
   PRIMARY KEY (user_id, source_chat_id, source_msg_id, dest_chat_id)
 );
 """

@@ -1,0 +1,13 @@
+# Dev overlay — lower ports conflict with local tools; Mongo exposed for debugging.
+services:
+  mongodb:
+    ports:
+      - "27018:27017"
+
+  backend:
+    env_file:
+      - ../env/docker.env.dev
+    ports:
+      # Panel (SPA + /api) and direct API alias
+      - "8080:8000"
+      - "8001:8000"

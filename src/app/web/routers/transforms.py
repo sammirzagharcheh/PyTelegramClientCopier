@@ -7,7 +7,7 @@ import re
 from fastapi import APIRouter, HTTPException, status
 
 from app.utils.regex import regex_flags_from_string
-from app.web.deps import CurrentUser, Db
+from app.web.deps import CurrentUser, Db, WriterUser
 from app.web.mapping_access import get_mapping_scope
 from app.web.routers.workers import restart_workers_for_mapping
 from app.web.schemas.mappings import (
@@ -194,7 +194,7 @@ async def create_transform(
     mapping_id: int,
     data: MappingTransformCreate,
     db: Db,
-    user: CurrentUser,
+    user: WriterUser,
 ) -> dict:
     """Create a transformation rule for a mapping."""
     mapping_user_id, mapping_account_id = await get_mapping_scope(db, user, mapping_id)
@@ -265,7 +265,7 @@ async def update_transform(
     transform_id: int,
     data: MappingTransformUpdate,
     db: Db,
-    user: CurrentUser,
+    user: WriterUser,
 ) -> dict:
     """Update a transformation rule."""
     mapping_user_id, mapping_account_id = await get_mapping_scope(db, user, mapping_id)
@@ -364,7 +364,7 @@ async def update_transform(
 
 
 @router.delete("/{mapping_id}/transforms/{transform_id}")
-async def delete_transform(mapping_id: int, transform_id: int, db: Db, user: CurrentUser) -> dict:
+async def delete_transform(mapping_id: int, transform_id: int, db: Db, user: WriterUser) -> dict:
     """Delete a transformation rule."""
     mapping_user_id, mapping_account_id = await get_mapping_scope(db, user, mapping_id)
     result = await db.execute(

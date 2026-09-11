@@ -5,6 +5,9 @@ __pycache__/
 .venv/
 env/
 ENV/
+# Allow committed deploy env templates (real secrets stay ignored below)
+!deploy/env/
+!deploy/env/*.example
 *.egg-info/
 .pytest_cache/
 .mypy_cache/

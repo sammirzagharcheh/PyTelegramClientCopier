@@ -21,6 +21,14 @@ def test_stats_dashboard_200_schema(api_client, user_token):
     assert "mappings_total" in data
     assert "mappings_enabled" in data
     assert "accounts_total" in data
+    assert "webhook_attempts_last_7d" in data
+    assert "webhook_attempts_prev_7d" in data
+    assert "webhook_success_last_7d" in data
+    assert "webhook_failed_last_7d" in data
+    assert "webhook_success_rate" in data
+    assert "webhook_by_day" in data
+    assert "top_failing_mappings" in data
+    assert "webhook_failure_reasons" in data
     assert isinstance(data["messages_last_7d"], int)
     assert isinstance(data["messages_prev_7d"], int)
     assert isinstance(data["messages_by_day"], list)
@@ -31,6 +39,14 @@ def test_stats_dashboard_200_schema(api_client, user_token):
         assert isinstance(day["count"], int)
     assert isinstance(data["status_breakdown"], list)
     assert isinstance(data["account_status"], dict)
+    assert isinstance(data["webhook_attempts_last_7d"], int)
+    assert isinstance(data["webhook_attempts_prev_7d"], int)
+    assert isinstance(data["webhook_success_last_7d"], int)
+    assert isinstance(data["webhook_failed_last_7d"], int)
+    assert isinstance(data["webhook_success_rate"], float)
+    assert isinstance(data["webhook_by_day"], list)
+    assert isinstance(data["top_failing_mappings"], list)
+    assert isinstance(data["webhook_failure_reasons"], list)
     assert data["mappings_total"] == 1  # seeded: user 1 has 1 mapping
     assert data["mappings_enabled"] == 1
 
@@ -60,10 +76,26 @@ def test_admin_stats_dashboard_200_schema(api_client, admin_token):
     assert "status_breakdown" in data
     assert "top_mappings" in data
     assert "worker_log_levels" in data
+    assert "webhook_attempts_last_7d" in data
+    assert "webhook_attempts_prev_7d" in data
+    assert "webhook_success_last_7d" in data
+    assert "webhook_failed_last_7d" in data
+    assert "webhook_success_rate" in data
+    assert "webhook_by_day" in data
+    assert "top_failing_mappings" in data
+    assert "webhook_failure_reasons" in data
     assert isinstance(data["messages_by_day"], list)
     assert len(data["messages_by_day"]) == 7
     assert isinstance(data["top_mappings"], list)
     assert isinstance(data["worker_log_levels"], list)
+    assert isinstance(data["webhook_attempts_last_7d"], int)
+    assert isinstance(data["webhook_attempts_prev_7d"], int)
+    assert isinstance(data["webhook_success_last_7d"], int)
+    assert isinstance(data["webhook_failed_last_7d"], int)
+    assert isinstance(data["webhook_success_rate"], float)
+    assert isinstance(data["webhook_by_day"], list)
+    assert isinstance(data["top_failing_mappings"], list)
+    assert isinstance(data["webhook_failure_reasons"], list)
     assert data["users_total"] == 3  # seeded users
     assert data["mappings_total"] == 2  # seeded mappings
 

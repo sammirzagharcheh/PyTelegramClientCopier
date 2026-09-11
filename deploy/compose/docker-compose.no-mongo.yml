@@ -1,0 +1,17 @@
+# Optional: run GHCR stack without a Mongo container (external Mongo / Atlas).
+# Usage (example for uat):
+#   docker compose -p tgc-uat \
+#     -f deploy/compose/docker-compose.yml \
+#     -f deploy/compose/docker-compose.uat.yml \
+#     -f deploy/compose/docker-compose.no-mongo.yml \
+#     --env-file deploy/env/docker.env.uat \
+#     up -d
+
+services:
+  mongodb:
+    profiles: ["with-mongo"]
+
+  backend:
+    depends_on: !reset []
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

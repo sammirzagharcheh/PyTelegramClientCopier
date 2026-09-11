@@ -9,12 +9,32 @@ export type FilterFormValues = {
   exclude_text: string;
   media_types: string[];
   regex_pattern: string;
+  /** Same number = OR within that group; different numbers = AND between groups. Omit on create for a new unique group. */
+  or_group_id?: number;
+  /** Comma-separated numeric sender IDs (Telegram user ids). */
+  allowed_sender_ids: string;
+  /** Comma-separated usernames without @; server matches case-insensitively. */
+  denied_usernames: string;
+  min_url_count: string;
+  max_url_count: string;
+  /** Comma-separated hashtags (with or without leading #; server normalizes). */
+  required_hashtags: string;
+};
+
+export { formatMediaDisplay, mediaArrayToString, stringToMediaArray } from '../lib/mediaTypes';
+
+const emptyExtra = {
+  allowed_sender_ids: '',
+  denied_usernames: '',
+  min_url_count: '',
+  max_url_count: '',
+  required_hashtags: '',
 };
 
 const EXAMPLES: { label: string; values: FilterFormValues }[] = [
   {
     label: 'Text only',
-    values: { include_text: '', exclude_text: '', media_types: ['text'], regex_pattern: '' },
+    values: { include_text: '', exclude_text: '', media_types: ['text'], regex_pattern: '', ...emptyExtra },
   },
   {
     label: 'Voice and video only',
@@ -23,6 +43,7 @@ const EXAMPLES: { label: string; values: FilterFormValues }[] = [
       exclude_text: '',
       media_types: ['voice', 'video'],
       regex_pattern: '',
+      ...emptyExtra,
     },
   },
   {
@@ -32,6 +53,7 @@ const EXAMPLES: { label: string; values: FilterFormValues }[] = [
       exclude_text: 'spam',
       media_types: [],
       regex_pattern: '',
+      ...emptyExtra,
     },
   },
 ];
@@ -57,6 +79,25 @@ export function FilterForm({
     initialValues?.media_types?.length ? initialValues.media_types : []
   );
   const [regexPattern, setRegexPattern] = useState(initialValues?.regex_pattern ?? '');
+  const [allowedSenderIds, setAllowedSenderIds] = useState(initialValues?.allowed_sender_ids ?? '');
+  const [deniedUsernames, setDeniedUsernames] = useState(initialValues?.denied_usernames ?? '');
+  const [minUrlCount, setMinUrlCount] = useState(
+    initialValues?.min_url_count != null && initialValues.min_url_count !== ''
+      ? String(initialValues.min_url_count)
+      : ''
+  );
+  const [maxUrlCount, setMaxUrlCount] = useState(
+    initialValues?.max_url_count != null && initialValues.max_url_count !== ''
+      ? String(initialValues.max_url_count)
+      : ''
+  );
+  const [requiredHashtags, setRequiredHashtags] = useState(initialValues?.required_hashtags ?? '');
+  const [orGroupId, setOrGroupId] = useState(
+    () =>
+      initialValues?.or_group_id != null && initialValues.or_group_id !== undefined
+        ? String(initialValues.or_group_id)
+        : ''
+  );
   const [error, setError] = useState('');
 
   const toggleMedia = (value: string) => {
@@ -70,6 +111,12 @@ export function FilterForm({
     setExcludeText(preset.exclude_text);
     setMediaTypes(preset.media_types);
     setRegexPattern(preset.regex_pattern);
+    setAllowedSenderIds(preset.allowed_sender_ids ?? '');
+    setDeniedUsernames(preset.denied_usernames ?? '');
+    setMinUrlCount(preset.min_url_count ?? '');
+    setMaxUrlCount(preset.max_url_count ?? '');
+    setRequiredHashtags(preset.required_hashtags ?? '');
+    if (preset.or_group_id != null) setOrGroupId(String(preset.or_group_id));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -80,16 +127,80 @@ export function FilterForm({
     const hasExclude = excludeText.trim().length > 0;
     const hasMedia = mediaStr.length > 0;
     const hasRegex = regexPattern.trim().length > 0;
-    if (!hasInclude && !hasExclude && !hasMedia && !hasRegex) {
+    const hasSenders = allowedSenderIds.trim().length > 0;
+    const hasDenied = deniedUsernames.trim().length > 0;
+    const hasUrls = minUrlCount.trim().length > 0 || maxUrlCount.trim().length > 0;
+    const hasTags = requiredHashtags.trim().length > 0;
+    if (
+      !hasInclude &&
+      !hasExclude &&
+      !hasMedia &&
+      !hasRegex &&
+      !hasSenders &&
+      !hasDenied &&
+      !hasUrls &&
+      !hasTags
+    ) {
       setError('Set at least one rule, otherwise this filter would do nothing.');
       return;
     }
-    onSubmit({
+    let minU: number | undefined;
+    let maxU: number | undefined;
+    if (minUrlCount.trim() !== '') {
+      const n = parseInt(minUrlCount.trim(), 10);
+      if (Number.isNaN(n) || n < 0) {
+        setError('Min URL count must be a non-negative integer.');
+        return;
+      }
+      minU = n;
+    }
+    if (maxUrlCount.trim() !== '') {
+      const n = parseInt(maxUrlCount.trim(), 10);
+      if (Number.isNaN(n) || n < 0) {
+        setError('Max URL count must be a non-negative integer.');
+        return;
+      }
+      maxU = n;
+    }
+    if (minU !== undefined && maxU !== undefined && minU > maxU) {
+      setError('Min URL count cannot be greater than max URL count.');
+      return;
+    }
+    if (hasRegex) {
+      try {
+        new RegExp(regexPattern.trim());
+      } catch {
+        setError('Invalid regex pattern.');
+        return;
+      }
+    }
+    let parsedGroup: number | undefined;
+    const g = orGroupId.trim();
+    if (g !== '') {
+      const n = parseInt(g, 10);
+      if (Number.isNaN(n) || n < 0) {
+        setError('OR group must be a non-negative integer.');
+        return;
+      }
+      parsedGroup = n;
+    } else if (initialValues?.or_group_id != null) {
+      parsedGroup = initialValues.or_group_id;
+    }
+    const payload: FilterFormValues = {
       include_text: includeText.trim() || '',
       exclude_text: excludeText.trim() || '',
       media_types: mediaTypes,
       regex_pattern: regexPattern.trim() || '',
-    });
+      allowed_sender_ids: allowedSenderIds.trim(),
+      denied_usernames: deniedUsernames.trim(),
+      min_url_count: minUrlCount.trim(),
+      max_url_count: maxUrlCount.trim(),
+      required_hashtags: requiredHashtags.trim(),
+    };
+    if (parsedGroup !== undefined) {
+      payload.or_group_id = parsedGroup;
+    }
+    onSubmit(payload);
   };
 
   return (
@@ -141,6 +252,82 @@ export function FilterForm({
       </fieldset>
 
       <Field
+        label="Allowed sender IDs"
+        hint="Comma-separated numeric Telegram user IDs. The message must be from one of these senders."
+      >
+        {(fieldProps) => (
+          <Input
+            {...fieldProps}
+            type="text"
+            value={allowedSenderIds}
+            onChange={(e) => setAllowedSenderIds(e.target.value)}
+            className="font-mono"
+            placeholder="123456789, 987654321"
+          />
+        )}
+      </Field>
+
+      <Field
+        label="Denied usernames"
+        hint="Comma-separated usernames without @. Skip the message if the sender matches."
+      >
+        {(fieldProps) => (
+          <Input
+            {...fieldProps}
+            type="text"
+            value={deniedUsernames}
+            onChange={(e) => setDeniedUsernames(e.target.value)}
+            className="font-mono"
+            placeholder="spam_bot, bad_actor"
+          />
+        )}
+      </Field>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Min URL count">
+          {(fieldProps) => (
+            <Input
+              {...fieldProps}
+              type="number"
+              min={0}
+              value={minUrlCount}
+              onChange={(e) => setMinUrlCount(e.target.value)}
+              placeholder="optional"
+              className="tabular-nums"
+            />
+          )}
+        </Field>
+        <Field label="Max URL count">
+          {(fieldProps) => (
+            <Input
+              {...fieldProps}
+              type="number"
+              min={0}
+              value={maxUrlCount}
+              onChange={(e) => setMaxUrlCount(e.target.value)}
+              placeholder="optional"
+              className="tabular-nums"
+            />
+          )}
+        </Field>
+      </div>
+
+      <Field
+        label="Required hashtags"
+        hint="The message must contain all listed tags. A leading # is optional."
+      >
+        {(fieldProps) => (
+          <Input
+            {...fieldProps}
+            type="text"
+            value={requiredHashtags}
+            onChange={(e) => setRequiredHashtags(e.target.value)}
+            placeholder="news, breaking"
+          />
+        )}
+      </Field>
+
+      <Field
         label="Regex pattern"
         hint="Advanced. Message text must match this pattern. Leave empty to allow any."
       >
@@ -152,6 +339,23 @@ export function FilterForm({
             onChange={(e) => setRegexPattern(e.target.value)}
             className="font-mono"
             placeholder="#[0-9]+"
+          />
+        )}
+      </Field>
+
+      <Field
+        label="OR group"
+        hint="Filters with the same group number match as OR (any can match). Different group numbers are combined with AND. Leave empty when adding a filter to start a new group."
+      >
+        {(fieldProps) => (
+          <Input
+            {...fieldProps}
+            type="number"
+            min={0}
+            value={orGroupId}
+            onChange={(e) => setOrGroupId(e.target.value)}
+            className="max-w-[12rem] tabular-nums"
+            placeholder="1 (optional)"
           />
         )}
       </Field>

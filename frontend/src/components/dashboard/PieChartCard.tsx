@@ -10,6 +10,7 @@ type Props = {
   isLoading?: boolean;
   nameKey?: string;
   valueKey?: string;
+  onSliceClick?: (point: DataPoint) => void;
 };
 
 export function PieChartCard({
@@ -18,13 +19,14 @@ export function PieChartCard({
   isLoading = false,
   nameKey = 'name',
   valueKey = 'value',
+  onSliceClick,
 }: Props) {
   const theme = useChartTheme();
   const isEmpty = !data || data.length === 0;
 
   const chartData = data.map((d) => ({
-    name: d[nameKey as keyof DataPoint] ?? d.name,
-    value: d[valueKey as keyof DataPoint] ?? d.value,
+    name: String(d[nameKey as keyof DataPoint] ?? d.name),
+    value: Number(d[valueKey as keyof DataPoint] ?? d.value),
   }));
 
   return (
@@ -44,6 +46,12 @@ export function PieChartCard({
                 nameKey="name"
                 stroke={theme.tooltipBg}
                 strokeWidth={2}
+                onClick={(_, idx) => {
+                  if (onSliceClick && typeof idx === 'number' && idx >= 0 && idx < chartData.length) {
+                    onSliceClick(chartData[idx]);
+                  }
+                }}
+                style={{ cursor: onSliceClick ? 'pointer' : 'default' }}
               >
                 {chartData.map((entry, index) => (
                   <Cell key={String(entry.name)} fill={theme.series[index % theme.series.length]} />

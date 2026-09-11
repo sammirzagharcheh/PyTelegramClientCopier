@@ -2,6 +2,7 @@ import { Layers, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { coerceChannelMappingForEdit } from '../../lib/channelMappingDefaults';
 import { EditMappingDialog } from '../../components/EditMappingDialog';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { MappingEnableToggle } from '../../components/MappingEnableToggle';
@@ -26,6 +27,11 @@ type Mapping = {
   dest_chat_title?: string | null;
   enabled: boolean;
   schedule_summary?: string;
+  copy_webhook_payload_template?: string | null;
+  copy_webhook_secret_header_name?: string | null;
+  copy_webhook_secret_mode?: string | null;
+  webhook_secret_configured?: boolean;
+  webhook_secret_header_configured?: boolean;
 };
 
 type User = { id: number; email: string; name: string | null };
@@ -144,7 +150,10 @@ export function AdminMappings() {
       />
 
       {editingMapping && (
-        <EditMappingDialog mapping={editingMapping} onClose={() => setEditingMapping(null)} />
+        <EditMappingDialog
+          mapping={coerceChannelMappingForEdit(editingMapping)}
+          onClose={() => setEditingMapping(null)}
+        />
       )}
       {mappingToDelete && (
         <ConfirmDialog

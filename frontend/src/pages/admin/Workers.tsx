@@ -1,6 +1,7 @@
 import { Activity, Zap } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { formatLocalDateTime } from '../../lib/formatDateTime';
 import { formatUptime } from '../../lib/formatUptime';
 import { useAuth } from '../../store/AuthContext';
 import { PageHeader } from '../../components/PageHeader';
@@ -17,6 +18,7 @@ type Worker = {
   pid: number | null;
   running: boolean;
   started_at?: string | null;
+  last_heartbeat_at?: string | null;
 };
 
 export function Workers() {
@@ -120,10 +122,21 @@ export function Workers() {
                           </span>
                         </div>
                         <div className="flex shrink-0 items-center gap-3">
-                          <span className="text-xs text-ink-subtle">
-                            {w.running
-                              ? `PID ${w.pid} · ${formatUptime(w.started_at)}`
-                              : 'Stopped'}
+                          <span className="text-right text-xs text-ink-subtle">
+                            {w.running ? (
+                              <>
+                                <span className="block">
+                                  PID {w.pid} · {formatUptime(w.started_at)}
+                                </span>
+                                {w.last_heartbeat_at && (
+                                  <span className="block">
+                                    HB {formatLocalDateTime(w.last_heartbeat_at, user?.timezone ?? undefined)}
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              'Stopped'
+                            )}
                           </span>
                           <Button
                             variant="secondary"

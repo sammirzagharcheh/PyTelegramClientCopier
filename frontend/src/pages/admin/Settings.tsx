@@ -74,7 +74,12 @@ export function Settings() {
     setError('');
     const updates: { mongo_uri?: string; mongo_db?: string } = {};
     if (mongoUri.trim()) updates.mongo_uri = mongoUri.trim();
-    if (mongoDb.trim()) updates.mongo_db = mongoDb.trim();
+    // Include mongo_db: empty string clears override so MONGO_DB from the environment is used.
+    if (mongoDb.trim()) {
+      updates.mongo_db = mongoDb.trim();
+    } else if (settings?.mongo_db_set) {
+      updates.mongo_db = '';
+    }
     if (Object.keys(updates).length === 0) {
       setError('Enter a MongoDB URI or a database name before saving.');
       return;
@@ -127,7 +132,7 @@ export function Settings() {
 
             <Field
               label="Database name"
-              hint={`Currently ${settings.mongo_db} (${sourceLabel(settings.mongo_db_set)}).`}
+              hint={`Currently ${settings.mongo_db} (${sourceLabel(settings.mongo_db_set)}). Leave blank to keep the current value. If a stored override is set, save with an empty name to fall back to MONGO_DB from the environment.`}
             >
               {(fieldProps) => (
                 <Input

@@ -1,8 +1,11 @@
-import { ArrowLeft, Clock, Filter, GitBranch, Pencil, Plus, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowLeft, Clock, Eye, Filter, GitBranch, Pencil, Plus, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../lib/api';
+import type { ChannelMapping, MappingPreviewResponse, Transform, TransformCreate } from '../../lib/api';
+import { coerceChannelMappingForEdit } from '../../lib/channelMappingDefaults';
+import { PII_TRANSFORM_PRESETS } from '../../lib/piiTransformPresets';
 import type { FilterFormValues } from '../../components/FilterForm';
 import { EditMappingDialog } from '../../components/EditMappingDialog';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -19,11 +22,12 @@ import {
 } from '../../lib/mediaTypes';
 import { TransformForm } from '../../components/TransformForm';
 import { formatScheduleSummary } from '../../lib/formatDateTime';
-import type { Transform, TransformCreate } from '../../lib/api';
 import { CardSkeleton } from '../../components/Skeleton';
 import { Button, ButtonLink } from '../../components/ui/Button';
 import { Card, CardHeader } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
+import { Field, Input, Select, Textarea } from '../../components/ui/Field';
+import { FormError } from '../../components/ui/FormError';
 import { Modal } from '../../components/ui/Modal';
 import { EmptyState, ErrorState } from '../../components/ui/States';
 import { errorMessage } from '../../lib/apiError';
@@ -35,14 +39,47 @@ type Filter = {
   exclude_text: string | null;
   media_types: string | null;
   regex_pattern: string | null;
+  or_group_id: number;
+  allowed_sender_ids?: string | null;
+  denied_usernames?: string | null;
+  min_url_count?: number | null;
+  max_url_count?: number | null;
+  required_hashtags?: string | null;
 };
+
+function filterValuesToApiBody(values: FilterFormValues): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    include_text: values.include_text || null,
+    exclude_text: values.exclude_text || null,
+    media_types: mediaArrayToString(values.media_types) || null,
+    regex_pattern: values.regex_pattern || null,
+    allowed_sender_ids: values.allowed_sender_ids?.trim() || null,
+    denied_usernames: values.denied_usernames?.trim() || null,
+    required_hashtags: values.required_hashtags?.trim() || null,
+  };
+  const minS = values.min_url_count?.trim();
+  const maxS = values.max_url_count?.trim();
+  body.min_url_count = minS ? parseInt(minS, 10) : null;
+  body.max_url_count = maxS ? parseInt(maxS, 10) : null;
+  if (values.or_group_id !== undefined) {
+    body.or_group_id = values.or_group_id;
+  }
+  return body;
+}
 
 function describeFilter(f: Filter): string[] {
   const parts: string[] = [];
+  parts.push(`OR group ${f.or_group_id}`);
   if (f.include_text) parts.push(`Must contain "${f.include_text}"`);
   if (f.exclude_text) parts.push(`Must NOT contain "${f.exclude_text}"`);
   if (f.media_types) parts.push(`Media: ${formatMediaDisplay(f.media_types)}`);
   if (f.regex_pattern) parts.push(`Match regex: ${f.regex_pattern}`);
+  if (f.allowed_sender_ids?.trim()) parts.push(`Allowed senders (IDs): ${f.allowed_sender_ids.trim()}`);
+  if (f.denied_usernames?.trim()) parts.push(`Denied usernames: ${f.denied_usernames.trim()}`);
+  if (f.min_url_count != null || f.max_url_count != null) {
+    parts.push(`URL count: min ${f.min_url_count ?? 'none'} to max ${f.max_url_count ?? 'none'}`);
+  }
+  if (f.required_hashtags?.trim()) parts.push(`Required hashtags: ${f.required_hashtags.trim()}`);
   return parts;
 }
 
@@ -56,16 +93,17 @@ function describeTransform(t: Transform): string {
   };
   const label = typeLabels[t.rule_type] ?? t.rule_type;
   if (t.rule_type === 'text' || t.rule_type === 'emoji') {
-    return `${label}: "${t.find_text ?? ''}" → "${t.replace_text ?? ''}"`;
+    return `${label}: "${t.find_text ?? ''}" to "${t.replace_text ?? ''}"`;
   }
   if (t.rule_type === 'regex') {
-    return `${label}: /${t.regex_pattern ?? ''}/ → "${t.replace_text ?? ''}"`;
+    return `${label}: /${t.regex_pattern ?? ''}/ to "${t.replace_text ?? ''}"`;
   }
   if (t.rule_type === 'media') {
     return `${label}: asset #${t.replacement_media_asset_id} (${t.apply_to_media_types ?? 'all'})`;
   }
   if (t.rule_type === 'template') {
-    return `${label}: "${(t.replace_text ?? '').slice(0, 40)}${(t.replace_text ?? '').length > 40 ? '…' : ''}"`;
+    const text = t.replace_text ?? '';
+    return `${label}: "${text.slice(0, 40)}${text.length > 40 ? '...' : ''}"`;
   }
   return label;
 }
@@ -85,6 +123,17 @@ export function MappingDetail() {
   const [transformDeleteConfirm, setTransformDeleteConfirm] = useState<number | null>(null);
   const [editingMapping, setEditingMapping] = useState<boolean>(false);
   const [mappingToDelete, setMappingToDelete] = useState<boolean>(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewSampleText, setPreviewSampleText] = useState('');
+  const [previewMediaType, setPreviewMediaType] = useState('text');
+  const [previewSenderId, setPreviewSenderId] = useState('');
+  const [previewSenderUsername, setPreviewSenderUsername] = useState('');
+  const [previewResult, setPreviewResult] = useState<MappingPreviewResponse | null>(null);
+  const [previewError, setPreviewError] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [transformCreateSeed, setTransformCreateSeed] = useState<TransformCreate | null>(null);
+
+  const canWrite = Boolean(user && user.role !== 'viewer');
 
   const {
     data: mapping,
@@ -94,7 +143,7 @@ export function MappingDetail() {
     refetch: refetchMapping,
   } = useQuery({
     queryKey: ['mapping', id],
-    queryFn: async () => (await api.get(`/mappings/${id}`)).data,
+    queryFn: async () => (await api.get<ChannelMapping>(`/mappings/${id}`)).data,
     enabled: !!id,
   });
   const { data: filters } = useQuery({
@@ -133,14 +182,8 @@ export function MappingDetail() {
 
   const createMutation = useMutation({
     mutationFn: async (values: FilterFormValues) => {
-      return (
-        await api.post(`/mappings/${id}/filters`, {
-          include_text: values.include_text || null,
-          exclude_text: values.exclude_text || null,
-          media_types: mediaArrayToString(values.media_types) || null,
-          regex_pattern: values.regex_pattern || null,
-        })
-      ).data;
+      const body = filterValuesToApiBody(values);
+      return (await api.post(`/mappings/${id}/filters`, body)).data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mapping', id, 'filters'] });
@@ -159,14 +202,8 @@ export function MappingDetail() {
       filterId: number;
       values: FilterFormValues;
     }) => {
-      return (
-        await api.patch(`/mappings/${id}/filters/${filterId}`, {
-          include_text: values.include_text || null,
-          exclude_text: values.exclude_text || null,
-          media_types: mediaArrayToString(values.media_types) || null,
-          regex_pattern: values.regex_pattern || null,
-        })
-      ).data;
+      const body = filterValuesToApiBody(values);
+      return (await api.patch(`/mappings/${id}/filters/${filterId}`, body)).data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mapping', id, 'filters'] });
@@ -198,12 +235,15 @@ export function MappingDetail() {
 
   const enableMutation = useMutation({
     mutationFn: async (enabled: boolean) => {
-      return (await api.patch(`/mappings/${id}`, { enabled })).data;
+      return (await api.patch<ChannelMapping>(`/mappings/${id}`, { enabled })).data;
     },
-    onSuccess: (enabled) => {
+    onSuccess: (data, enabledFlag) => {
+      if (data) {
+        queryClient.setQueryData<ChannelMapping>(['mapping', id], data);
+      }
       queryClient.invalidateQueries({ queryKey: ['mapping', id] });
       showToast(
-        (enabled ? 'Mapping enabled' : 'Mapping disabled') +
+        (enabledFlag ? 'Mapping enabled' : 'Mapping disabled') +
           '. Workers are restarting to apply it.',
         'success'
       );
@@ -240,6 +280,7 @@ export function MappingDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mapping', id, 'transforms'] });
+      setTransformCreateSeed(null);
       setTransformModalOpen(null);
       showToast('Transform added. Workers are restarting to apply it.', 'success');
     },
@@ -254,6 +295,7 @@ export function MappingDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mapping', id, 'transforms'] });
+      setTransformCreateSeed(null);
       setTransformModalOpen(null);
       showToast('Transform updated. Workers are restarting to apply it.', 'success');
     },
@@ -292,21 +334,41 @@ export function MappingDetail() {
     }
   };
 
+  const closeTransformModal = () => {
+    setTransformCreateSeed(null);
+    setTransformModalOpen(null);
+  };
+
   const editingFilter = typeof filterModalOpen === 'number' ? filters?.find((f) => f.id === filterModalOpen) : null;
   const editingTransform = typeof transformModalOpen === 'number' ? transforms?.find((t) => t.id === transformModalOpen) : null;
 
-  const mappingForEdit = mapping
-    ? {
-        id: mapping.id,
-        user_id: mapping.user_id,
-        source_chat_id: mapping.source_chat_id,
-        dest_chat_id: mapping.dest_chat_id,
-        name: mapping.name,
-        source_chat_title: mapping.source_chat_title,
-        dest_chat_title: mapping.dest_chat_title,
-        enabled: mapping.enabled,
+  const mappingForEdit = mapping ? coerceChannelMappingForEdit(mapping) : null;
+
+  const runPreview = async () => {
+    if (!id) return;
+    setPreviewError('');
+    setPreviewLoading(true);
+    setPreviewResult(null);
+    try {
+      const payload: Record<string, unknown> = {
+        sample_text: previewSampleText,
+        media_type: previewMediaType || 'text',
+      };
+      const sid = previewSenderId.trim();
+      if (sid !== '') {
+        const n = parseInt(sid, 10);
+        if (!Number.isNaN(n)) payload.sender_id = n;
       }
-    : null;
+      const su = previewSenderUsername.trim();
+      if (su !== '') payload.sender_username = su;
+      const { data } = await api.post<MappingPreviewResponse>(`/mappings/${id}/preview`, payload);
+      setPreviewResult(data);
+    } catch (e: unknown) {
+      setPreviewError(errorMessage(e, 'Preview failed'));
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
 
   if (mappingError) {
     return (
@@ -339,6 +401,9 @@ export function MappingDetail() {
     mappingSchedule && Object.values(mappingSchedule).some((v) => v != null && v !== '');
   const ownsMapping = Boolean(user && mapping.user_id === user.id);
   const listPath = isAdminView ? '/admin/mappings' : '/mappings';
+  const webhookSecretStored = Boolean(
+    mapping.copy_webhook_secret?.trim() || mapping.webhook_secret_configured
+  );
 
   const switchToCustom = async () => {
     const hasUserSchedule =
@@ -375,12 +440,16 @@ export function MappingDetail() {
         subtitle={`Source: ${sourceLabel} to dest: ${destLabel}`}
         actions={
           <>
-            <Button variant="secondary" size="sm" icon={Pencil} onClick={() => setEditingMapping(true)}>
-              Edit
-            </Button>
-            <Button variant="secondary" size="sm" icon={Trash2} onClick={() => setMappingToDelete(true)}>
-              Delete
-            </Button>
+            {canWrite ? (
+              <Button variant="secondary" size="sm" icon={Pencil} onClick={() => setEditingMapping(true)}>
+                Edit
+              </Button>
+            ) : null}
+            {canWrite ? (
+              <Button variant="secondary" size="sm" icon={Trash2} onClick={() => setMappingToDelete(true)}>
+                Delete
+              </Button>
+            ) : null}
             <ButtonLink to={listPath} size="sm" icon={ArrowLeft}>
               Back to mappings
             </ButtonLink>
@@ -451,10 +520,47 @@ export function MappingDetail() {
                 enabled={mapping.enabled}
                 onToggle={() => enableMutation.mutate(!mapping.enabled)}
                 isPending={enableMutation.isPending}
+                disabled={!canWrite}
               />
             </dd>
           </div>
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Send delay</dt>
+            <dd className="mt-1 font-mono text-sm text-ink">{mapping.send_delay_ms ?? 0} ms</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Sync edits / deletes</dt>
+            <dd className="mt-1 text-sm text-ink">
+              {mapping.sync_edits ? 'Edits on' : 'Edits off'} · {mapping.sync_deletes ? 'Deletes on' : 'Deletes off'}{' '}
+              · strategy: {mapping.edit_strategy || 'replace_text'}
+            </dd>
+          </div>
+          <div className="sm:col-span-3">
+            <dt className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Copy webhook</dt>
+            <dd className="mt-1 break-all font-mono text-sm text-ink">
+              {mapping.copy_webhook_url?.trim() ? mapping.copy_webhook_url : 'Not set'}
+              {webhookSecretStored ? ' · secret stored' : ''}
+            </dd>
+          </div>
         </dl>
+        <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line pt-4">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            icon={Eye}
+            onClick={() => {
+              setPreviewOpen(true);
+              setPreviewResult(null);
+              setPreviewError('');
+            }}
+          >
+            Preview pipeline
+          </Button>
+          {!canWrite ? (
+            <span className="text-xs text-ink-subtle">Viewer: mapping details are read-only.</span>
+          ) : null}
+        </div>
       </Card>
 
       <Card className="mb-4">
@@ -472,7 +578,7 @@ export function MappingDetail() {
                 size="sm"
                 icon={RotateCcw}
                 onClick={() => scheduleDeleteMutation.mutate()}
-                disabled={scheduleDeleteMutation.isPending}
+                disabled={scheduleDeleteMutation.isPending || !canWrite}
                 isLoading={scheduleDeleteMutation.isPending}
               >
                 Switch to default
@@ -485,6 +591,7 @@ export function MappingDetail() {
               isSaving={scheduleSaveMutation.isPending}
               saveLabel="Save schedule"
               showDescription={false}
+              readOnly={!canWrite}
             />
           </div>
         ) : (
@@ -501,7 +608,12 @@ export function MappingDetail() {
                   Configure global schedule
                 </ButtonLink>
               )}
-              <Button variant="secondary" size="sm" onClick={() => void switchToCustom()}>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={!canWrite}
+                onClick={() => void switchToCustom()}
+              >
                 Switch to custom
               </Button>
             </div>
@@ -520,9 +632,36 @@ export function MappingDetail() {
           icon={Sparkles}
           description="Rewrite copied messages before they are sent: replace text, regex, or emoji; apply a template; or swap media for an uploaded asset. Rules run by priority, lowest first."
           actions={
-            <Button size="sm" icon={Plus} onClick={() => setTransformModalOpen('add')}>
-              Add transform
-            </Button>
+            canWrite ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  icon={Plus}
+                  onClick={() => {
+                    setTransformCreateSeed(null);
+                    setTransformModalOpen('add');
+                  }}
+                >
+                  Add transform
+                </Button>
+                <span className="text-xs text-ink-subtle">PII presets (regex):</span>
+                {PII_TRANSFORM_PRESETS.map((p) => (
+                  <Button
+                    key={p.id}
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    title={p.description}
+                    onClick={() => {
+                      setTransformCreateSeed(p.payload);
+                      setTransformModalOpen('add');
+                    }}
+                  >
+                    {p.label}
+                  </Button>
+                ))}
+              </div>
+            ) : undefined
           }
           inset
         />
@@ -536,9 +675,18 @@ export function MappingDetail() {
             title="No transforms"
             description="Messages are copied as they arrived. Add a rule to rewrite text, emoji, or media."
             action={
-              <Button size="sm" icon={Plus} onClick={() => setTransformModalOpen('add')}>
-                Add your first transform
-              </Button>
+              canWrite ? (
+                <Button
+                  size="sm"
+                  icon={Plus}
+                  onClick={() => {
+                    setTransformCreateSeed(null);
+                    setTransformModalOpen('add');
+                  }}
+                >
+                  Add your first transform
+                </Button>
+              ) : undefined
             }
           />
         ) : (
@@ -552,18 +700,27 @@ export function MappingDetail() {
                   </div>
                   <p className="mt-1 text-sm text-ink">{describeTransform(t)}</p>
                 </div>
-                <div className="flex shrink-0 gap-2">
-                  <Button variant="secondary" size="sm" onClick={() => setTransformModalOpen(t.id)}>
-                    Edit
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setTransformDeleteConfirm(t.id)}
-                  >
-                    Delete
-                  </Button>
-                </div>
+                {canWrite ? (
+                  <div className="flex shrink-0 gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setTransformCreateSeed(null);
+                        setTransformModalOpen(t.id);
+                      }}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setTransformDeleteConfirm(t.id)}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -574,15 +731,20 @@ export function MappingDetail() {
         <Modal
           title={transformModalOpen === 'add' ? 'Add transform' : 'Edit transform'}
           icon={<Sparkles className="h-5 w-5" />}
-          onClose={() => setTransformModalOpen(null)}
+          onClose={closeTransformModal}
           size="lg"
         >
           <TransformForm
-            key={transformModalOpen === 'add' ? 'new' : transformModalOpen}
+            key={
+              transformModalOpen === 'add'
+                ? `new-${transformCreateSeed?.regex_pattern ?? 'plain'}`
+                : transformModalOpen
+            }
             initialValues={editingTransform ?? undefined}
+            createSeed={transformModalOpen === 'add' ? transformCreateSeed : null}
             mediaAssets={mediaAssets ?? []}
             onSubmit={handleTransformSubmit}
-            onCancel={() => setTransformModalOpen(null)}
+            onCancel={closeTransformModal}
             submitLabel={transformModalOpen === 'add' ? 'Add' : 'Save'}
             isSubmitting={transformCreateMutation.isPending || transformUpdateMutation.isPending}
           />
@@ -593,11 +755,13 @@ export function MappingDetail() {
         <CardHeader
           title="Filters"
           icon={Filter}
-          description="Filters decide which messages are copied. Every rule in a filter must pass (AND). With several filters, a message is copied only if it passes every one of them."
+          description="Filters decide which messages are copied. Within one filter, every rule must pass (AND). Filters that share the same OR group number match as OR. Different OR group numbers are combined with AND."
           actions={
-            <Button size="sm" icon={Plus} onClick={() => setFilterModalOpen('add')}>
-              Add filter
-            </Button>
+            canWrite ? (
+              <Button size="sm" icon={Plus} onClick={() => setFilterModalOpen('add')}>
+                Add filter
+              </Button>
+            ) : undefined
           }
           inset
         />
@@ -607,9 +771,11 @@ export function MappingDetail() {
             title="No filters"
             description="All messages pass through. Add a filter to include or exclude by text, media type, or regex."
             action={
-              <Button size="sm" icon={Plus} onClick={() => setFilterModalOpen('add')}>
-                Add your first filter
-              </Button>
+              canWrite ? (
+                <Button size="sm" icon={Plus} onClick={() => setFilterModalOpen('add')}>
+                  Add your first filter
+                </Button>
+              ) : undefined
             }
           />
         ) : (
@@ -629,14 +795,16 @@ export function MappingDetail() {
                       <span className="text-sm text-ink-subtle">No rules (all messages pass)</span>
                     )}
                   </div>
-                  <div className="flex shrink-0 gap-2">
-                    <Button variant="secondary" size="sm" onClick={() => setFilterModalOpen(f.id)}>
-                      Edit
-                    </Button>
-                    <Button variant="secondary" size="sm" onClick={() => setDeleteConfirm(f.id)}>
-                      Delete
-                    </Button>
-                  </div>
+                  {canWrite ? (
+                    <div className="flex shrink-0 gap-2">
+                      <Button variant="secondary" size="sm" onClick={() => setFilterModalOpen(f.id)}>
+                        Edit
+                      </Button>
+                      <Button variant="secondary" size="sm" onClick={() => setDeleteConfirm(f.id)}>
+                        Delete
+                      </Button>
+                    </div>
+                  ) : null}
                 </li>
               );
             })}
@@ -661,6 +829,14 @@ export function MappingDetail() {
                     exclude_text: editingFilter.exclude_text ?? '',
                     media_types: stringToMediaArray(editingFilter.media_types),
                     regex_pattern: editingFilter.regex_pattern ?? '',
+                    or_group_id: editingFilter.or_group_id,
+                    allowed_sender_ids: editingFilter.allowed_sender_ids ?? '',
+                    denied_usernames: editingFilter.denied_usernames ?? '',
+                    min_url_count:
+                      editingFilter.min_url_count != null ? String(editingFilter.min_url_count) : '',
+                    max_url_count:
+                      editingFilter.max_url_count != null ? String(editingFilter.max_url_count) : '',
+                    required_hashtags: editingFilter.required_hashtags ?? '',
                   }
                 : undefined
             }
@@ -668,6 +844,99 @@ export function MappingDetail() {
             onCancel={() => setFilterModalOpen(null)}
             submitLabel={filterModalOpen === 'add' ? 'Add' : 'Save'}
           />
+        </Modal>
+      )}
+
+      {previewOpen && (
+        <Modal
+          title="Preview pipeline"
+          icon={<Eye className="h-5 w-5" />}
+          description="Simulate one message through this mapping's filters, schedule check, and transforms (no Telegram send)."
+          onClose={() => setPreviewOpen(false)}
+          size="md"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setPreviewOpen(false)}>
+                Close
+              </Button>
+              <Button onClick={() => void runPreview()} isLoading={previewLoading}>
+                Run preview
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <Field label="Sample text">
+              {(fieldProps) => (
+                <Textarea
+                  {...fieldProps}
+                  aria-label="Sample message text for preview"
+                  value={previewSampleText}
+                  onChange={(e) => setPreviewSampleText(e.target.value)}
+                  rows={3}
+                />
+              )}
+            </Field>
+            <Field label="Media type">
+              {(fieldProps) => (
+                <Select
+                  {...fieldProps}
+                  value={previewMediaType}
+                  onChange={(e) => setPreviewMediaType(e.target.value)}
+                >
+                  {['text', 'photo', 'video', 'voice', 'other'].map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Sender ID (optional)">
+                {(fieldProps) => (
+                  <Input
+                    {...fieldProps}
+                    type="text"
+                    value={previewSenderId}
+                    onChange={(e) => setPreviewSenderId(e.target.value)}
+                    placeholder="numeric"
+                    className="font-mono"
+                  />
+                )}
+              </Field>
+              <Field label="Sender username (optional)">
+                {(fieldProps) => (
+                  <Input
+                    {...fieldProps}
+                    type="text"
+                    value={previewSenderUsername}
+                    onChange={(e) => setPreviewSenderUsername(e.target.value)}
+                    placeholder="without @"
+                  />
+                )}
+              </Field>
+            </div>
+            <FormError message={previewError} />
+            {previewResult ? (
+              <dl className="space-y-2 rounded-control border border-line bg-surface-sunken p-3 text-sm">
+                <div className="flex justify-between gap-2">
+                  <dt className="text-ink-subtle">Passes filters</dt>
+                  <dd className="font-medium text-ink">{previewResult.passes_filters ? 'Yes' : 'No'}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-ink-subtle">Passes schedule</dt>
+                  <dd className="font-medium text-ink">{previewResult.passes_schedule ? 'Yes' : 'No'}</dd>
+                </div>
+                <div>
+                  <dt className="mb-1 text-ink-subtle">Transformed text</dt>
+                  <dd className="whitespace-pre-wrap break-words rounded-control bg-surface-raised p-2 font-mono text-xs text-ink">
+                    {previewResult.transformed_text || '(empty)'}
+                  </dd>
+                </div>
+              </dl>
+            ) : null}
+          </div>
         </Modal>
       )}
     </div>
