@@ -1,0 +1,6 @@
+# Ops retention for VPS update backups (non-secret).
+# Copy to /opt/telegram-copier/backup.conf and adjust.
+# Precedence: env BACKUP_KEEP / BACKUP_DIR > this file > .env > defaults.
+
+BACKUP_KEEP=10
+# BACKUP_DIR=/opt/telegram-copier/backups

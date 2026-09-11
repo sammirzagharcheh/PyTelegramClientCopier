@@ -10,36 +10,30 @@
 #   SKIP_BACKUP=1 bash scripts/backup-vps-data.sh   # no-op success
 #   BACKUP_MONGO=1 ...                              # optional mongodump
 #
+# Keep count (default 10): env BACKUP_KEEP > backup.conf > .env > 10
 # Env:
 #   INSTALL_DIR   default /opt/telegram-copier
-#   BACKUP_DIR    default $INSTALL_DIR/backups
-#   BACKUP_KEEP   default 5 (number of pre-update-* dirs to retain)
+#   BACKUP_DIR    default $INSTALL_DIR/backups (or backup.conf)
+#   BACKUP_CONF   default $INSTALL_DIR/backup.conf
+#   BACKUP_KEEP   override keep count
 #   SKIP_BACKUP   set to 1 to skip
 #   BACKUP_MONGO  set to 1 to attempt mongodump when mongo tools exist
 # =============================================================================
 
 set -euo pipefail
 
-tgc_env_get() {
-  # Read KEY=value from .env without sourcing (no export side effects).
-  local env_file="$1" key="$2"
-  [[ -f "$env_file" ]] || return 0
-  local line
-  line="$(grep -E "^[[:space:]]*${key}=" "$env_file" | tail -n1 || true)"
-  [[ -n "$line" ]] || return 0
-  line="${line#*=}"
-  line="${line%%$'\r'}"
-  line="${line#\"}"
-  line="${line%\"}"
-  line="${line#\'}"
-  line="${line%\'}"
-  printf '%s' "$line"
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=vps-backup-lib.sh
+source "$SCRIPT_DIR/vps-backup-lib.sh"
 
 tgc_backup_vps_data() {
   local install_dir="${INSTALL_DIR:-/opt/telegram-copier}"
-  local backup_root="${BACKUP_DIR:-$install_dir/backups}"
-  local keep="${BACKUP_KEEP:-5}"
+  local backup_root
+  backup_root="$(tgc_resolve_backup_dir "$install_dir")"
+  local keep
+  keep="$(tgc_resolve_backup_keep "$install_dir")"
+  tgc_validate_backup_keep "$keep" || return 1
+
   local env_file="$install_dir/.env"
 
   if [[ "${SKIP_BACKUP:-0}" == "1" ]]; then
@@ -70,13 +64,12 @@ tgc_backup_vps_data() {
     return 1
   fi
 
-  echo "==> Backing up durable data to $dest ..."
+  echo "==> Backing up durable data to $dest (keep=$keep) ..."
   mkdir -p "$dest"
 
   if [[ -f "$sqlite_path" ]]; then
     mkdir -p "$dest/sqlite"
     cp -a "$sqlite_path" "$dest/sqlite/$(basename "$sqlite_path")"
-    # SQLite sidecars when present
     [[ -f "${sqlite_path}-wal" ]] && cp -a "${sqlite_path}-wal" "$dest/sqlite/" || true
     [[ -f "${sqlite_path}-shm" ]] && cp -a "${sqlite_path}-shm" "$dest/sqlite/" || true
   else
@@ -104,7 +97,6 @@ tgc_backup_vps_data() {
     echo "    (no .env at $env_file)"
   fi
 
-  # Also snapshot whole data/ when it exists (covers worker logs under data/, etc.)
   if [[ -d "$install_dir/data" ]]; then
     mkdir -p "$dest/data_tree"
     cp -a "$install_dir/data/." "$dest/data_tree/" 2>/dev/null || true
@@ -132,27 +124,9 @@ tgc_backup_vps_data() {
   chmod -R go-rwx "$dest" 2>/dev/null || true
   echo "==> Backup complete: $dest"
 
-  tgc_prune_backups "$backup_root" "$keep"
+  tgc_prune_backups "$backup_root" "$keep" 0
 }
 
-tgc_prune_backups() {
-  local backup_root="$1"
-  local keep="$2"
-  [[ -d "$backup_root" ]] || return 0
-  local i=0
-  local dir
-  # Newest first; delete after the first $keep entries.
-  while IFS= read -r dir; do
-    [[ -n "$dir" ]] || continue
-    i=$((i + 1))
-    if (( i > keep )); then
-      echo "==> Pruning old backup: $dir"
-      rm -rf "$dir"
-    fi
-  done < <(ls -1dt "$backup_root"/pre-update-* 2>/dev/null || true)
-}
-
-# Run when executed (not when sourced for tests).
 if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
   tgc_backup_vps_data
 fi

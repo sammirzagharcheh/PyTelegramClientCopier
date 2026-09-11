@@ -11,7 +11,7 @@
 #   sudo bash /opt/telegram-copier/scripts/update-vps.sh
 #
 # Env vars: INSTALL_DIR (default /opt/telegram-copier), APP_USER (default tgcopier)
-# Backup: SKIP_BACKUP=1, BACKUP_DIR, BACKUP_KEEP (default 5), BACKUP_MONGO=1
+# Backup: SKIP_BACKUP=1, BACKUP_DIR, BACKUP_KEEP / backup.conf (default keep 10), BACKUP_MONGO=1
 # =============================================================================
 
 set -euo pipefail
@@ -50,12 +50,13 @@ if [[ ! -f "$BACKUP_HELPER" && "${SKIP_BACKUP:-0}" != "1" ]]; then
 fi
 if [[ -f "$BACKUP_HELPER" ]]; then
   # Run as root so we can copy files owned by APP_USER; chown backups after.
-  INSTALL_DIR="$INSTALL_DIR" \
-    BACKUP_DIR="${BACKUP_DIR:-$INSTALL_DIR/backups}" \
-    BACKUP_KEEP="${BACKUP_KEEP:-5}" \
-    SKIP_BACKUP="${SKIP_BACKUP:-0}" \
-    BACKUP_MONGO="${BACKUP_MONGO:-0}" \
-    bash "$BACKUP_HELPER"
+  # Do not default BACKUP_KEEP here — backup script resolves backup.conf / .env / 10.
+  export INSTALL_DIR
+  export BACKUP_DIR="${BACKUP_DIR:-$INSTALL_DIR/backups}"
+  export SKIP_BACKUP="${SKIP_BACKUP:-0}"
+  export BACKUP_MONGO="${BACKUP_MONGO:-0}"
+  # Pass through BACKUP_KEEP / BACKUP_CONF only when the operator set them.
+  bash "$BACKUP_HELPER"
   $SUDO chown -R "$APP_USER:" "${BACKUP_DIR:-$INSTALL_DIR/backups}" 2>/dev/null || true
 else
   echo "WARNING: backup-vps-data.sh not found; continuing without backup." >&2

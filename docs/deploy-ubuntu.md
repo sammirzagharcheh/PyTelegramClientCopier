@@ -359,14 +359,39 @@ On the VPS:
 sudo bash /opt/telegram-copier/scripts/update-vps.sh
 ```
 
-`update-vps.sh` **backs up first** (via `scripts/backup-vps-data.sh`) into `/opt/telegram-copier/backups/pre-update-…`, then pulls `origin/main`, rebuilds, and restarts. It copies SQLite, sessions, media assets, `.env`, and a full `data/` tree. Keeps the last **5** snapshots (`BACKUP_KEEP`).
+`update-vps.sh` **backs up first** (via `scripts/backup-vps-data.sh`) into `/opt/telegram-copier/backups/pre-update-…`, then pulls `origin/main`, rebuilds, and restarts. It copies SQLite, sessions, media assets, `.env`, and a full `data/` tree. Keeps the newest **N** snapshots (default **10**).
 
-| Variable | Default | Meaning |
-|----------|---------|---------|
+| Variable / file | Default | Meaning |
+|-----------------|---------|---------|
 | `SKIP_BACKUP` | `0` | Set `1` to skip backup (emergency only) |
 | `BACKUP_DIR` | `$INSTALL_DIR/backups` | Snapshot root (gitignored) |
-| `BACKUP_KEEP` | `5` | How many `pre-update-*` dirs to retain |
+| `BACKUP_KEEP` | from config / **10** | How many `pre-update-*` dirs to retain |
+| `backup.conf` | `$INSTALL_DIR/backup.conf` | Preferred non-secret config (`BACKUP_KEEP`, optional `BACKUP_DIR`) |
 | `BACKUP_MONGO` | `0` | Set `1` to also run `mongodump` when available |
+
+**Keep resolution:** env `BACKUP_KEEP` → `backup.conf` → `.env` → **10**.
+
+Copy the example config:
+
+```bash
+sudo cp /opt/telegram-copier/backup.conf.example /opt/telegram-copier/backup.conf
+sudo chown tgcopier:tgcopier /opt/telegram-copier/backup.conf
+```
+
+### Prune old backups (standalone)
+
+Without updating the app (cron-friendly):
+
+```bash
+sudo bash /opt/telegram-copier/scripts/prune-vps-backups.sh
+DRY_RUN=1 sudo bash /opt/telegram-copier/scripts/prune-vps-backups.sh
+```
+
+Example weekly cron (opt-in; not installed by deploy):
+
+```cron
+0 3 * * 0 root /opt/telegram-copier/scripts/prune-vps-backups.sh >> /var/log/tgc-backup-prune.log 2>&1
+```
 
 **First update after this feature lands:** if the VPS still has an old `update-vps.sh` without the backup call, either manually copy `data/` once, or refresh the scripts then update:
 
@@ -406,6 +431,7 @@ UPDATE_ONLY=true curl -fsSL "https://raw.githubusercontent.com/sammirzagharcheh/
 | API logs | `sudo journalctl -u telegram-copier -f` |
 | Restart API | `sudo systemctl restart telegram-copier` |
 | Manual backup only | `sudo bash /opt/telegram-copier/scripts/backup-vps-data.sh` |
+| Prune old backups | `sudo bash /opt/telegram-copier/scripts/prune-vps-backups.sh` |
 | Show config | `sudo -u tgcopier bash -c "cd /opt/telegram-copier && .venv/bin/tg-copier db show-config"` |
 | Test Mongo | `sudo -u tgcopier bash -c "cd /opt/telegram-copier && .venv/bin/tg-copier db test-mongo"` |
 | nginx reload | `sudo nginx -t && sudo systemctl reload nginx` |
