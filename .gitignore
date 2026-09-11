@@ -21,3 +21,8 @@ sessions/
 *.log
 frontend/node_modules/
 frontend/dist/
+docker.env
+deploy/env/docker.env.dev
+deploy/env/docker.env.tst
+deploy/env/docker.env.uat
+deploy/env/docker.env.prod
