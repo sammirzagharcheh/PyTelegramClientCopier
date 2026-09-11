@@ -7,16 +7,16 @@ import {
 } from './formatDateTime'
 
 describe('formatLocalDateTime', () => {
-  it('returns em dash for null', () => {
-    expect(formatLocalDateTime(null)).toBe('—')
+  it('returns Not set for null', () => {
+    expect(formatLocalDateTime(null)).toBe('Not set')
   })
 
-  it('returns em dash for undefined', () => {
-    expect(formatLocalDateTime(undefined)).toBe('—')
+  it('returns Not set for undefined', () => {
+    expect(formatLocalDateTime(undefined)).toBe('Not set')
   })
 
-  it('returns em dash for empty string', () => {
-    expect(formatLocalDateTime('')).toBe('—')
+  it('returns Not set for empty string', () => {
+    expect(formatLocalDateTime('')).toBe('Not set')
   })
 
   it('formats valid ISO 8601 string to locale string', () => {
@@ -52,8 +52,8 @@ describe('formatLocalDateTime', () => {
     expect(result).not.toBe(iso)
   })
 
-  it('returns em dash for null when timezone provided', () => {
-    expect(formatLocalDateTime(null, 'UTC')).toBe('—')
+  it('returns Not set for null when timezone provided', () => {
+    expect(formatLocalDateTime(null, 'UTC')).toBe('Not set')
   })
 
   it('behaves like default when timezone is undefined', () => {
@@ -98,7 +98,7 @@ describe('formatScheduleSummary', () => {
     expect(formatScheduleSummary({})).toBe('Default')
   })
 
-  it('returns Mon–Fri 9:00–17:00 for business hours', () => {
+  it('returns Mon to Fri, 9:00 to 17:00 for business hours', () => {
     const sched: Record<string, string | null> = {}
     ;['mon', 'tue', 'wed', 'thu', 'fri'].forEach((d) => {
       sched[`${d}_start_utc`] = '09:00'
@@ -108,7 +108,7 @@ describe('formatScheduleSummary', () => {
       sched[`${d}_start_utc`] = null
       sched[`${d}_end_utc`] = null
     })
-    expect(formatScheduleSummary(sched)).toBe('Mon–Fri 9:00–17:00')
+    expect(formatScheduleSummary(sched)).toBe('Mon to Fri, 9:00 to 17:00')
   })
 
   it('returns Custom for other schedules', () => {

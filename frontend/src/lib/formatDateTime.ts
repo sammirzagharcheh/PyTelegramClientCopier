@@ -1,5 +1,5 @@
 export function formatLocalDateTime(value: string | null | undefined, timezone?: string): string {
-  if (value == null || value === '') return '—';
+  if (value == null || value === '') return 'Not set';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
   try {
@@ -89,6 +89,6 @@ export function formatScheduleSummary(schedule: Record<string, string | null> | 
         (schedule[`${d}_start_utc`] == null || schedule[`${d}_start_utc`] === '') &&
         (schedule[`${d}_end_utc`] == null || schedule[`${d}_end_utc`] === '')
     );
-  if (isBiz) return 'Mon–Fri 9:00–17:00';
+  if (isBiz) return 'Mon to Fri, 9:00 to 17:00';
   return 'Custom';
 }

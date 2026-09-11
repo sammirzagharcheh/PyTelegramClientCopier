@@ -18,6 +18,11 @@ export function errorMessage(error: unknown, fallback = 'Please try again.'): st
       if (typeof message === 'string' && message.trim()) return message;
     }
   }
-  if (error instanceof Error && error.message) return error.message;
+  if (error instanceof Error && error.message) {
+    // Axios's generic "Request failed with status code 500" is not useful to operators.
+    if (!/^Request failed with status code \d+$/.test(error.message)) {
+      return error.message;
+    }
+  }
   return fallback;
 }

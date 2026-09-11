@@ -33,7 +33,7 @@ export function Login() {
       <h1 className="text-lg font-semibold text-ink">Sign in</h1>
       <p className="mt-1 text-sm text-ink-subtle">Use your operator account to continue.</p>
 
-      <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
+      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
         {error && (
           <div
             role="alert"
