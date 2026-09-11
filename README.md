@@ -2,6 +2,8 @@
 
 Multi-tenant Telegram copier with admin controls, filtering, and media forwarding.
 
+**Architecture (source of truth):** [docs/architecture.md](docs/architecture.md) — system overview, components, copy pipeline, deployment topologies, and change protocol.
+
 ## Quick start
 
 1. Clone the repo (private GitHub: see [docs/git-clone-and-private-repo.md](docs/git-clone-and-private-repo.md)):
@@ -66,7 +68,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 ## Filters
 
-Filters control which messages are copied from a source channel to a destination channel. Each mapping can have one or more filters. **All filters must pass** (AND logic): a message is copied only if it satisfies every filter rule.
+Filters control which messages are copied from a source channel to a destination channel. Each mapping can have one or more filters. Filters with the same `or_group_id` are combined with **OR**; distinct groups are combined with **AND** (a message must satisfy every group). See [docs/architecture.md](docs/architecture.md) for the full pipeline.
 
 ### Filter rule types
 

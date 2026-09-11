@@ -2,6 +2,12 @@
 
 Simple guides for installing and running **Telegram Client Copier**.
 
+## Architecture
+
+| Guide | When to use |
+|-------|-------------|
+| [System architecture](architecture.md) | **Single source of truth** for components, data flow, tenancy, deployment shapes, failure modes, and change protocol. Read before design or code changes. |
+
 ## Deploy / install
 
 | Guide | When to use |
@@ -19,7 +25,7 @@ Simple guides for installing and running **Telegram Client Copier**.
 | Guide | When to use |
 |-------|-------------|
 | [Worker troubleshooting](WORKER_TROUBLESHOOTING.md) | Workers won’t start, session locks, Mongo worker logs. |
-| [Developer cheat sheet](dev-cheatsheet.md) | Feature → files → tests map for day-to-day coding. |
+| [Developer cheat sheet](dev-cheatsheet.md) | Feature → files → tests map for day-to-day coding (defers to [architecture.md](architecture.md) for design). |
 
 ## What you need before any install
 

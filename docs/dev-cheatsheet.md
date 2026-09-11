@@ -2,6 +2,8 @@
 
 Feature-to-files and test-command map for day-to-day work in this project.
 
+Architecture boundaries and invariants: [architecture.md](architecture.md) (read before structural changes).
+
 ## Feature -> files -> tests
 
 | Feature change | Edit files | Run tests |
