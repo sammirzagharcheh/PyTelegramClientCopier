@@ -109,7 +109,7 @@ flowchart TB
 | Store | Module(s) | Owns |
 |-------|-----------|------|
 | SQLite | `sqlite.py`, `migrations.py` | Schema bootstrap + incremental `_migrations`; users, accounts, mappings, filters, schedules, transforms, media metadata, worker registry, dest message index, refresh tokens, API keys, invites, app settings |
-| Mongo | `mongo.py`, `mongo_indexes.py` | `message_logs`, `worker_logs`, `webhook_logs` (+ indexes / TTL where configured) |
+| Mongo | `mongo.py`, `mongo_indexes.py` | `message_logs`, `worker_logs`, `webhook_logs` with query indexes plus **30-day TTL** on `timestamp` (`ix_ttl_30d`) |
 | Cleanup | `cleanup.py`, `message_index_cleanup.py` | Login-session retention; orphan dest-index purge |
 
 Note: an `alembic/` tree may exist on disk; **live SQLite evolution is `db/migrations.py`**, not Alembic.
@@ -323,14 +323,14 @@ Durable paths in containers typically map under `/app/data` (`SQLITE_PATH`, `SES
 
 - Throughput scales with number of worker processes and Telegram rate limits, not with API replicas alone.
 - SQLite is a single-writer store for config and reply index; high concurrent write pressure on `dest_message_index` is the primary DB bottleneck to watch.
-- Mongo absorbs high-volume append logs and can be sized / TTL’d independently of SQLite.
+- Mongo absorbs high-volume append logs and can be sized / TTL’d independently of SQLite. All three log collections (`message_logs`, `worker_logs`, `webhook_logs`) use a **30-day** TTL index on `timestamp` (`ix_ttl_30d`); API boot recreates legacy non-TTL timestamp indexes when needed.
 - API horizontal scale is limited by: (a) worker spawn affinity to the host that holds session files, (b) SQLite file locking, (c) in-process worker bookkeeping. Multi-host active-active API is **not** an assumed topology today.
 
 **Intentional growth paths** (not yet productized; record here so changes stay intentional):
 
 1. Keep workers pinned to session storage locality (sticky host or shared network volume with clear lock strategy).
 2. If reply-index write volume dominates, consider sharding index by `user_id` or moving hot index paths to a write-friendly store—only with migration notes and dual-read plan.
-3. Treat Mongo as the unbounded log stream; enforce TTLs and indexes before growing retention.
+3. Treat Mongo as the unbounded log stream; **30-day TTL is productized** on message/worker/webhook logs. Prefer adjusting `LOG_TTL_SECONDS` / index catalog intentionally (with migration notes) over ad-hoc retention scripts.
 4. Preserve the pure pipeline module boundary so rule evaluation can move to sidecars without rewriting Telethon I/O.
 
 ---

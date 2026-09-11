@@ -19,6 +19,8 @@ When a worker process stops, its row in `worker_registry` (SQLite) can remain. O
 
 The `worker_logs` collection stores: `user_id`, `account_id`, `level`, `message`, `timestamp`.
 
+**Retention:** Mongo TTL deletes documents older than **30 days** (`ix_ttl_30d` on `timestamp`). The same policy applies to `message_logs` and `webhook_logs`. Restart the API after upgrade so `ensure_mongo_indexes` can replace a legacy non-TTL `ix_timestamp` if present.
+
 ### Useful MongoDB queries
 
 **Last 100 worker log entries (all accounts):**
