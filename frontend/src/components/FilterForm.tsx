@@ -1,12 +1,8 @@
 import { useState } from 'react';
-
-const MEDIA_OPTIONS = [
-  { value: 'text', label: 'Text' },
-  { value: 'voice', label: 'Voice' },
-  { value: 'video', label: 'Video' },
-  { value: 'photo', label: 'Photo' },
-  { value: 'other', label: 'Other' },
-];
+import { MEDIA_OPTIONS, mediaArrayToString } from '../lib/mediaTypes';
+import { Button } from './ui/Button';
+import { Field, Input } from './ui/Field';
+import { FormError } from './ui/FormError';
 
 export type FilterFormValues = {
   include_text: string;
@@ -15,21 +11,30 @@ export type FilterFormValues = {
   regex_pattern: string;
 };
 
-function mediaArrayToString(arr: string[]): string {
-  return arr.filter(Boolean).join(',');
-}
-
-function stringToMediaArray(s: string | null): string[] {
-  if (!s) return [];
-  return s.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
-}
-
-function formatMediaDisplay(s: string | null): string {
-  if (!s) return '—';
-  return stringToMediaArray(s)
-    .map((v) => MEDIA_OPTIONS.find((o) => o.value === v)?.label ?? v)
-    .join(', ');
-}
+const EXAMPLES: { label: string; values: FilterFormValues }[] = [
+  {
+    label: 'Text only',
+    values: { include_text: '', exclude_text: '', media_types: ['text'], regex_pattern: '' },
+  },
+  {
+    label: 'Voice and video only',
+    values: {
+      include_text: '',
+      exclude_text: '',
+      media_types: ['voice', 'video'],
+      regex_pattern: '',
+    },
+  },
+  {
+    label: 'Must contain "announcement", exclude "spam"',
+    values: {
+      include_text: 'announcement',
+      exclude_text: 'spam',
+      media_types: [],
+      regex_pattern: '',
+    },
+  },
+];
 
 type Props = {
   initialValues?: Partial<FilterFormValues>;
@@ -53,6 +58,7 @@ export function FilterForm({
   );
   const [regexPattern, setRegexPattern] = useState(initialValues?.regex_pattern ?? '');
   const [error, setError] = useState('');
+
   const toggleMedia = (value: string) => {
     setMediaTypes((prev) =>
       prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
@@ -66,36 +72,6 @@ export function FilterForm({
     setRegexPattern(preset.regex_pattern);
   };
 
-  const EXAMPLES: { label: string; values: FilterFormValues }[] = [
-    {
-      label: 'Text only',
-      values: {
-        include_text: '',
-        exclude_text: '',
-        media_types: ['text'],
-        regex_pattern: '',
-      },
-    },
-    {
-      label: 'Voice and video only',
-      values: {
-        include_text: '',
-        exclude_text: '',
-        media_types: ['voice', 'video'],
-        regex_pattern: '',
-      },
-    },
-    {
-      label: 'Must contain "announcement", exclude "spam"',
-      values: {
-        include_text: 'announcement',
-        exclude_text: 'spam',
-        media_types: [],
-        regex_pattern: '',
-      },
-    },
-  ];
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -105,7 +81,7 @@ export function FilterForm({
     const hasMedia = mediaStr.length > 0;
     const hasRegex = regexPattern.trim().length > 0;
     if (!hasInclude && !hasExclude && !hasMedia && !hasRegex) {
-      setError('At least one filter rule is required.');
+      setError('Set at least one rule, otherwise this filter would do nothing.');
       return;
     }
     onSubmit({
@@ -118,103 +94,79 @@ export function FilterForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {error && (
-        <div className="p-3 rounded bg-red-50 dark:bg-red-900/20 text-red-600 text-sm">{error}</div>
-      )}
+      <FormError message={error} />
 
-      <div>
-        <label className="flex items-center gap-2 text-sm font-medium mb-1">
-          Message must contain
-          <span
-            title="Only copy messages that contain this text"
-            className="text-gray-400 hover:text-gray-600 cursor-help"
-          >
-            (?)
-          </span>
-        </label>
-        <input
-          type="text"
-          value={includeText}
-          onChange={(e) => setIncludeText(e.target.value)}
-          className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
-          placeholder="e.g. announcement"
-        />
-      </div>
+      <Field label="Message must contain" hint="Only copy messages containing this text.">
+        {(fieldProps) => (
+          <Input
+            {...fieldProps}
+            type="text"
+            value={includeText}
+            onChange={(e) => setIncludeText(e.target.value)}
+            placeholder="announcement"
+          />
+        )}
+      </Field>
 
-      <div>
-        <label className="flex items-center gap-2 text-sm font-medium mb-1">
-          Message must NOT contain
-          <span
-            title="Skip messages containing this text"
-            className="text-gray-400 hover:text-gray-600 cursor-help"
-          >
-            (?)
-          </span>
-        </label>
-        <input
-          type="text"
-          value={excludeText}
-          onChange={(e) => setExcludeText(e.target.value)}
-          className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
-          placeholder="e.g. spam"
-        />
-      </div>
+      <Field label="Message must not contain" hint="Skip messages containing this text.">
+        {(fieldProps) => (
+          <Input
+            {...fieldProps}
+            type="text"
+            value={excludeText}
+            onChange={(e) => setExcludeText(e.target.value)}
+            placeholder="spam"
+          />
+        )}
+      </Field>
 
-      <div>
-        <label className="flex items-center gap-2 text-sm font-medium mb-1">
-          Allowed media types
-          <span
-            title="Only copy messages of these types; leave all unchecked to allow any"
-            className="text-gray-400 hover:text-gray-600 cursor-help"
-          >
-            (?)
-          </span>
-        </label>
-        <div className="flex flex-wrap gap-2">
+      <fieldset>
+        <legend className="text-sm font-medium text-ink">Allowed media types</legend>
+        <p className="mt-1 mb-2 text-xs text-ink-subtle">
+          Leave every box clear to allow any type.
+        </p>
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
           {MEDIA_OPTIONS.map((opt) => (
-            <label key={opt.value} className="flex items-center gap-1 cursor-pointer">
+            <label key={opt.value} className="flex cursor-pointer items-center gap-2 text-sm text-ink">
               <input
                 type="checkbox"
                 checked={mediaTypes.includes(opt.value)}
                 onChange={() => toggleMedia(opt.value)}
-                className="rounded border-gray-300"
+                className="h-4 w-4 rounded border-line-strong accent-[var(--accent)]"
               />
-              <span className="text-sm">{opt.label}</span>
+              {opt.label}
             </label>
           ))}
         </div>
-      </div>
+      </fieldset>
 
-      <div>
-        <label className="flex items-center gap-2 text-sm font-medium mb-1">
-          Regex pattern (advanced)
-          <span
-            title="Message text must match this regex; leave empty to allow any"
-            className="text-gray-400 hover:text-gray-600 cursor-help"
-          >
-            (?)
-          </span>
-        </label>
-        <input
-          type="text"
-          value={regexPattern}
-          onChange={(e) => setRegexPattern(e.target.value)}
-          className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-mono text-sm"
-          placeholder="e.g. #[0-9]+"
-        />
-      </div>
+      <Field
+        label="Regex pattern"
+        hint="Advanced. Message text must match this pattern. Leave empty to allow any."
+      >
+        {(fieldProps) => (
+          <Input
+            {...fieldProps}
+            type="text"
+            value={regexPattern}
+            onChange={(e) => setRegexPattern(e.target.value)}
+            className="font-mono"
+            placeholder="#[0-9]+"
+          />
+        )}
+      </Field>
 
-      <details className="border border-gray-200 dark:border-gray-600 rounded p-2">
-        <summary className="cursor-pointer text-sm text-gray-600 dark:text-gray-400">
-          Examples
+      <details className="rounded-control border border-line">
+        <summary className="cursor-pointer px-3 py-2 text-sm text-ink-muted">
+          Start from an example
         </summary>
-        <div className="mt-2 space-y-1">
+        <div className="border-t border-line p-1.5">
           {EXAMPLES.map((ex) => (
             <button
               key={ex.label}
               type="button"
               onClick={() => applyPreset(ex.values)}
-              className="block w-full text-left px-2 py-1.5 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="block w-full rounded-control px-2.5 py-1.5 text-left text-sm text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
             >
               {ex.label}
             </button>
@@ -222,22 +174,16 @@ export function FilterForm({
         </div>
       </details>
 
-      <div className="flex gap-2 justify-end pt-2">
+      <div className="flex justify-end gap-2 pt-1">
         {onCancel && (
-          <button type="button" onClick={onCancel} className="px-4 py-2 rounded border border-gray-300 dark:border-gray-600">
+          <Button variant="secondary" onClick={onCancel}>
             Cancel
-          </button>
+          </Button>
         )}
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-        >
+        <Button type="submit" isLoading={isSubmitting}>
           {submitLabel}
-        </button>
+        </Button>
       </div>
     </form>
   );
 }
-
-export { formatMediaDisplay, mediaArrayToString, stringToMediaArray };

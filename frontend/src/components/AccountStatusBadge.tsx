@@ -1,35 +1,37 @@
 import { AlertCircle, CheckCircle, CircleSlash, Pause, XCircle } from 'lucide-react';
+import { Badge } from './ui/Badge';
+import type { BadgeTone } from './ui/Badge';
 
 type Props = {
   status: string;
 };
 
-function getStatusConfig(status: string) {
+function getStatusConfig(status: string): {
+  icon: typeof CheckCircle;
+  label: string;
+  tone: BadgeTone;
+} {
   const s = String(status).toLowerCase();
   if (s === 'active' || s === 'enabled' || s === 'ok' || s === 'success') {
-    return { icon: CheckCircle, label: 'Active', className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400' };
+    return { icon: CheckCircle, label: 'Active', tone: 'success' };
   }
   if (s === 'inactive') {
-    return { icon: Pause, label: 'Inactive', className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' };
+    return { icon: Pause, label: 'Inactive', tone: 'warning' };
   }
   if (s === 'failed' || s === 'error') {
-    return { icon: XCircle, label: 'Failed', className: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' };
+    return { icon: XCircle, label: 'Failed', tone: 'danger' };
   }
   if (s === 'disabled' || s === 'skipped') {
-    return { icon: CircleSlash, label: 'Disabled', className: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-400' };
+    return { icon: CircleSlash, label: 'Disabled', tone: 'neutral' };
   }
-  return { icon: AlertCircle, label: status || '—', className: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-400' };
+  return { icon: AlertCircle, label: status || 'Unknown', tone: 'neutral' };
 }
 
 export function AccountStatusBadge({ status }: Props) {
-  const { icon: Icon, label, className } = getStatusConfig(status);
+  const { icon, label, tone } = getStatusConfig(status);
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium ${className}`}
-      title={label}
-    >
-      <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+    <Badge tone={tone} icon={icon}>
       {label}
-    </span>
+    </Badge>
   );
 }

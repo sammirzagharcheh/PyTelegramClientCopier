@@ -11,12 +11,12 @@ import { MappingScheduleForm } from '../../components/MappingScheduleForm';
 import { useToast } from '../../components/Toast';
 import { PageHeader } from '../../components/PageHeader';
 import { useAuth } from '../../store/AuthContext';
+import { FilterForm } from '../../components/FilterForm';
 import {
-  FilterForm,
   formatMediaDisplay,
   mediaArrayToString,
   stringToMediaArray,
-} from '../../components/FilterForm';
+} from '../../lib/mediaTypes';
 import { TransformForm } from '../../components/TransformForm';
 import { formatScheduleSummary } from '../../lib/formatDateTime';
 import type { Transform, TransformCreate } from '../../lib/api';

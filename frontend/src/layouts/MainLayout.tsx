@@ -22,7 +22,7 @@ import {
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { ChangePasswordDialog } from '../components/ChangePasswordDialog';
 import { TimezonePreferencesDialog } from '../components/TimezonePreferencesDialog';
 import { useAuth } from '../store/AuthContext';
@@ -166,7 +166,6 @@ export function MainLayout() {
   const { user, logout } = useAuth();
   const { preference, setPreference } = useTheme();
   const navigate = useNavigate();
-  const location = useLocation();
   const isAdmin = user?.role === 'admin';
   const groups = isAdmin ? adminNav : userNav;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -196,12 +195,6 @@ export function MainLayout() {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [menuOpen]);
-
-  // The drawer is a navigation overlay: leaving it open across a route change
-  // would hide the page the user just asked for.
-  useEffect(() => {
-    setSidebarOpen(false);
-  }, [location.pathname]);
 
   const handleLogout = async () => {
     setMenuOpen(false);

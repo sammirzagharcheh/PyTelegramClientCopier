@@ -1,10 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Globe } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import { errorMessage } from '../lib/apiError';
+import { DEVICE_TZ_VALUE } from '../lib/timezones';
 import { useAuth } from '../store/AuthContext';
 import { useToast } from './Toast';
-import { SearchableTimezoneSelect, DEVICE_TZ_VALUE } from './SearchableTimezoneSelect';
+import { SearchableTimezoneSelect } from './SearchableTimezoneSelect';
+import { Button } from './ui/Button';
+import { Field } from './ui/Field';
+import { FormError } from './ui/FormError';
+import { Modal } from './ui/Modal';
 
 type Props = {
   onClose: () => void;
@@ -13,7 +19,10 @@ type Props = {
 export function TimezonePreferencesDialog({ onClose }: Props) {
   const { user, refreshUser } = useAuth();
   const { show: showToast } = useToast();
-  const [value, setValue] = useState(DEVICE_TZ_VALUE);
+  const savedTimezone = user?.timezone ?? DEVICE_TZ_VALUE;
+  // Reset the draft whenever the saved preference changes, without an effect.
+  const [draft, setDraft] = useState<{ base: string; value: string } | null>(null);
+  const value = draft?.base === savedTimezone ? draft.value : savedTimezone;
   const [error, setError] = useState('');
 
   const timezones = useMemo(() => {
@@ -23,10 +32,6 @@ export function TimezonePreferencesDialog({ onClose }: Props) {
       return ['UTC', 'America/New_York', 'Europe/London', 'Asia/Tokyo'];
     }
   }, []);
-
-  useEffect(() => {
-    setValue(user?.timezone ?? DEVICE_TZ_VALUE);
-  }, [user?.timezone]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -41,19 +46,7 @@ export function TimezonePreferencesDialog({ onClose }: Props) {
       onClose();
     },
     onError: (err: unknown) => {
-      setError(
-        err &&
-          typeof err === 'object' &&
-          'response' in err &&
-          err.response &&
-          typeof err.response === 'object' &&
-          'data' in err.response &&
-          err.response.data &&
-          typeof err.response.data === 'object' &&
-          'detail' in err.response.data
-          ? String((err.response.data as { detail: unknown }).detail)
-          : 'Failed to save timezone'
-      );
+      setError(errorMessage(err, 'We could not save your timezone.'));
     },
   });
 
@@ -64,54 +57,38 @@ export function TimezonePreferencesDialog({ onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div
-        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 mb-4">
-          <Globe className="h-5 w-5 text-blue-600 dark:text-blue-400" strokeWidth={2} />
-          <h2 className="text-xl font-bold">Timezone</h2>
-        </div>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-          Times throughout the app will be displayed in your selected timezone.
-        </p>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="p-3 rounded bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm">
-              {error}
-            </div>
-          )}
-          <div>
-            <label htmlFor="tz-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Timezone
-            </label>
+    <Modal
+      title="Timezone"
+      description="Every time in the app is shown in this timezone. Schedules are still stored in UTC."
+      icon={<Globe className="h-5 w-5 text-ink-subtle" strokeWidth={2} aria-hidden />}
+      size="sm"
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" form="timezone-form" isLoading={mutation.isPending}>
+            Save
+          </Button>
+        </>
+      }
+    >
+      <form id="timezone-form" onSubmit={handleSubmit} className="space-y-4">
+        <FormError message={error} />
+        <Field label="Timezone">
+          {(fieldProps) => (
             <SearchableTimezoneSelect
-              id="tz-select"
+              id={fieldProps.id}
+              aria-describedby={fieldProps['aria-describedby']}
               value={value}
-              onChange={setValue}
+              onChange={(next) => setDraft({ base: savedTimezone, value: next })}
               timezones={timezones}
               aria-label="Timezone"
             />
-          </div>
-          <div className="flex gap-2 justify-end pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={mutation.isPending}
-              className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {mutation.isPending ? 'Saving…' : 'Save'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+          )}
+        </Field>
+      </form>
+    </Modal>
   );
 }

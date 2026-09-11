@@ -22,6 +22,8 @@ const variantIcons: Record<ToastVariant, typeof Info> = {
   info: Info,
 };
 
+// The hook stays next to its provider so callers have one import to remember.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useToast() {
   const show = useContext(ToastContext);
   if (!show) {

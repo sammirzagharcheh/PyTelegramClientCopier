@@ -1,13 +1,36 @@
-import { Smartphone } from 'lucide-react';
+import { KeyRound, Smartphone, Upload } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import { Button } from './ui/Button';
+import { Field, Input, Select } from './ui/Field';
+import { FormError } from './ui/FormError';
+import { Modal } from './ui/Modal';
+import { errorMessage } from '../lib/apiError';
 
 type Props = {
   onClose: () => void;
 };
 
 type Mode = 'phone' | 'upload';
+
+/** Reads the structured `detail` object FastAPI returns for the 2FA challenge. */
+function readDetail(err: unknown): { code?: string; message?: string } | string | undefined {
+  if (
+    err &&
+    typeof err === 'object' &&
+    'response' in err &&
+    err.response &&
+    typeof err.response === 'object' &&
+    'data' in err.response &&
+    err.response.data &&
+    typeof err.response.data === 'object' &&
+    'detail' in err.response.data
+  ) {
+    return (err.response.data as { detail: { code?: string; message?: string } | string }).detail;
+  }
+  return undefined;
+}
 
 export function AddAccountDialog({ onClose }: Props) {
   const [name, setName] = useState('');
@@ -24,7 +47,6 @@ export function AddAccountDialog({ onClose }: Props) {
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
 
-  // Existing upload/bot flow
   const uploadMutation = useMutation({
     mutationFn: async () => {
       const formData = new FormData();
@@ -46,11 +68,7 @@ export function AddAccountDialog({ onClose }: Props) {
       onClose();
     },
     onError: (err: unknown) => {
-      setError(
-        err && typeof err === 'object' && 'response' in err && (err as any).response && typeof (err as any).response === 'object' && 'data' in (err as any).response && (err as any).response.data && typeof (err as any).response.data === 'object' && 'detail' in (err as any).response.data
-          ? String(((err as any).response.data as { detail: unknown }).detail)
-          : 'Failed to add account',
-      );
+      setError(errorMessage(err, 'We could not add this account.'));
     },
   });
 
@@ -67,11 +85,7 @@ export function AddAccountDialog({ onClose }: Props) {
       setError('');
     },
     onError: (err: unknown) => {
-      setError(
-        err && typeof err === 'object' && 'response' in err && (err as any).response && typeof (err as any).response === 'object' && 'data' in (err as any).response && (err as any).response.data && typeof (err as any).response.data === 'object' && 'detail' in (err as any).response.data
-          ? String(((err as any).response.data as { detail: unknown }).detail)
-          : 'Failed to send code',
-      );
+      setError(errorMessage(err, 'We could not send a login code to that number.'));
     },
   });
 
@@ -90,20 +104,20 @@ export function AddAccountDialog({ onClose }: Props) {
       onClose();
     },
     onError: (err: unknown) => {
-      const anyErr = err as any;
-      const detail = anyErr?.response?.data?.detail;
+      const detail = readDetail(err);
 
-      if (detail && typeof detail === 'object' && (detail as any).code === '2FA_REQUIRED') {
+      if (detail && typeof detail === 'object' && detail.code === '2FA_REQUIRED') {
         setNeedsPassword(true);
-        setError((detail as any).message || '2FA password required');
+        setError(detail.message || 'This account needs its two-factor password.');
         return;
       }
 
-      setError(
-        detail && typeof detail === 'object' && 'message' in detail
-          ? String((detail as { message: unknown }).message)
-          : anyErr?.response?.data?.detail ?? 'Login failed',
-      );
+      if (detail && typeof detail === 'object' && detail.message) {
+        setError(detail.message);
+        return;
+      }
+
+      setError(errorMessage(err, 'Login failed.'));
     },
   });
 
@@ -127,92 +141,99 @@ export function AddAccountDialog({ onClose }: Props) {
     e.preventDefault();
     setError('');
     if (type === 'user' && !sessionFile) {
-      setError('Please upload a session file');
+      setError('Choose a .session file to upload.');
       return;
     }
     if (type === 'bot' && !botToken) {
-      setError('Please enter bot token');
+      setError('Enter the bot token.');
       return;
     }
     uploadMutation.mutate();
   };
 
+  const showUploadForm =
+    type === 'bot' || (type === 'user' && (mode === 'upload' || (step !== 'phone' && step !== 'code')));
+
   const renderUserPhoneFlow = () => {
     if (step === 'method') {
       return (
-        <div className="space-y-4">
-          <p className="text-sm text-gray-600 dark:text-gray-300">
-            How would you like to add a user account?
-          </p>
+        <fieldset className="space-y-2">
+          <legend className="mb-2 text-sm font-medium text-ink">
+            How do you want to connect this account?
+          </legend>
           <button
             type="button"
             onClick={() => {
               setMode('phone');
               setStep('phone');
             }}
-            className="w-full px-4 py-2 rounded border border-gray-300 dark:border-gray-600 text-left hover:bg-gray-50 dark:hover:bg-gray-700"
+            className="flex w-full items-start gap-3 rounded-control border border-line-strong px-3 py-3 text-left transition-colors hover:border-accent hover:bg-accent-soft/50"
           >
-            Login with phone &amp; code (recommended)
+            <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-accent-ink" aria-hidden />
+            <span>
+              <span className="block text-sm font-medium text-ink">Phone and login code</span>
+              <span className="block text-xs text-ink-subtle">
+                Recommended. Telegram sends a code to the number.
+              </span>
+            </span>
           </button>
           <button
             type="button"
             onClick={() => {
               setMode('upload');
-              setStep('method'); // keep method but switch mode; upload is handled by main form
+              setStep('method');
             }}
-            className="w-full px-4 py-2 rounded border border-gray-300 dark:border-gray-600 text-left hover:bg-gray-50 dark:hover:bg-gray-700 text-sm"
+            className="flex w-full items-start gap-3 rounded-control border border-line-strong px-3 py-3 text-left transition-colors hover:border-accent hover:bg-accent-soft/50"
           >
-            Upload existing .session file (advanced)
+            <Upload className="mt-0.5 h-4 w-4 shrink-0 text-ink-subtle" aria-hidden />
+            <span>
+              <span className="block text-sm font-medium text-ink">Upload a .session file</span>
+              <span className="block text-xs text-ink-subtle">
+                Advanced. For sessions created outside this app.
+              </span>
+            </span>
           </button>
-        </div>
+        </fieldset>
       );
     }
 
     if (step === 'phone') {
       return (
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Phone number</label>
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="+14155551234"
-              className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
-              required
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              We will send a Telegram login code to this number.
-            </p>
-          </div>
-          <div className="flex gap-2 justify-end">
-            <button
-              type="button"
-              onClick={() => setStep('method')}
-              className="px-4 py-2 rounded border border-gray-300"
-            >
+          <Field label="Phone number" hint="Include the country code." required>
+            {(fieldProps) => (
+              <Input
+                {...fieldProps}
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+14155551234"
+                required
+              />
+            )}
+          </Field>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="ghost" onClick={() => setStep('method')}>
               Back
-            </button>
+            </Button>
             {loginSessionId && (
-              <button
-                type="button"
+              <Button
+                variant="secondary"
                 onClick={() => cancelLoginMutation.mutate()}
-                className="px-4 py-2 rounded border border-gray-300 text-sm"
+                isLoading={cancelLoginMutation.isPending}
               >
                 Cancel login
-              </button>
+              </Button>
             )}
-            <button
-              type="button"
+            <Button
               onClick={() => {
                 setError('');
                 beginLoginMutation.mutate();
               }}
-              disabled={beginLoginMutation.isPending}
-              className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
+              isLoading={beginLoginMutation.isPending}
             >
               Send code
-            </button>
+            </Button>
           </div>
         </div>
       );
@@ -221,63 +242,63 @@ export function AddAccountDialog({ onClose }: Props) {
     if (step === 'code') {
       return (
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Login code</label>
-            <input
-              type="text"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="12345"
-              className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
-              required
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Enter the code you received in Telegram. If you have 2FA password enabled, we&apos;ll
-              add support for it in a later step.
-            </p>
-          </div>
-          {needsPassword && (
-            <div>
-              <label className="block text-sm font-medium mb-1">2FA password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+          <Field
+            label="Login code"
+            hint="Telegram sent this to the account you are connecting."
+            required
+          >
+            {(fieldProps) => (
+              <Input
+                {...fieldProps}
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="12345"
+                required
               />
-              <p className="text-xs text-gray-500 mt-1">
-                Enter your Telegram 2FA password.
-              </p>
-            </div>
-          )}
-          <div className="flex gap-2 justify-end">
-            <button
-              type="button"
-              onClick={() => setStep('phone')}
-              className="px-4 py-2 rounded border border-gray-300"
+            )}
+          </Field>
+          {needsPassword && (
+            <Field
+              label="Two-factor password"
+              hint="This account has two-step verification enabled."
+              required
             >
+              {(fieldProps) => (
+                <Input
+                  {...fieldProps}
+                  type="password"
+                  autoComplete="off"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              )}
+            </Field>
+          )}
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="ghost" onClick={() => setStep('phone')}>
               Back
-            </button>
+            </Button>
             {loginSessionId && (
-              <button
-                type="button"
+              <Button
+                variant="secondary"
                 onClick={() => cancelLoginMutation.mutate()}
-                className="px-4 py-2 rounded border border-gray-300 text-sm"
+                isLoading={cancelLoginMutation.isPending}
               >
                 Cancel login
-              </button>
+              </Button>
             )}
-            <button
-              type="button"
+            <Button
               onClick={() => {
                 setError('');
                 completeLoginMutation.mutate();
               }}
-              disabled={completeLoginMutation.isPending}
-              className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
+              isLoading={completeLoginMutation.isPending}
             >
               Complete login
-            </button>
+            </Button>
           </div>
         </div>
       );
@@ -286,36 +307,48 @@ export function AddAccountDialog({ onClose }: Props) {
     return null;
   };
 
-  const showUploadForm = type === 'bot' || (type === 'user' && (mode === 'upload' || step !== 'phone' && step !== 'code'));
-
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div
-        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 mb-4">
-          <Smartphone className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-          <h2 className="text-xl font-bold">Add Telegram Account</h2>
-        </div>
-        {error && (
-          <div className="p-3 mb-4 rounded bg-red-50 dark:bg-red-900/20 text-red-600 text-sm">{error}</div>
-        )}
+    <Modal
+      title="Add Telegram account"
+      icon={<Smartphone className="h-5 w-5 text-ink-subtle" strokeWidth={2} aria-hidden />}
+      size="sm"
+      onClose={onClose}
+      footer={
+        showUploadForm ? (
+          <>
+            <Button variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" form="add-account-form" isLoading={uploadMutation.isPending}>
+              Add account
+            </Button>
+          </>
+        ) : (
+          <Button variant="secondary" onClick={onClose}>
+            Close
+          </Button>
+        )
+      }
+    >
+      <div className="space-y-4">
+        <FormError message={error} />
 
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Name</label>
-            <input
+        <Field label="Name" hint="Optional. Defaults to Account.">
+          {(fieldProps) => (
+            <Input
+              {...fieldProps}
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
               placeholder="My account"
             />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Type</label>
-            <select
+          )}
+        </Field>
+
+        <Field label="Type">
+          {(fieldProps) => (
+            <Select
+              {...fieldProps}
               value={type}
               onChange={(e) => {
                 const next = e.target.value as 'user' | 'bot';
@@ -325,67 +358,51 @@ export function AddAccountDialog({ onClose }: Props) {
                   setMode('phone');
                 }
               }}
-              className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
             >
               <option value="user">User (phone login or session file)</option>
               <option value="bot">Bot (token)</option>
-            </select>
-          </div>
+            </Select>
+          )}
+        </Field>
 
-          {type === 'user' && mode === 'phone' && renderUserPhoneFlow()}
+        {type === 'user' && mode === 'phone' && renderUserPhoneFlow()}
 
-          {showUploadForm && (
-            <form onSubmit={handleUploadSubmit} className="space-y-4 mt-2">
-              {type === 'bot' && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">Bot Token</label>
-                  <input
+        {showUploadForm && (
+          <form id="add-account-form" onSubmit={handleUploadSubmit} className="space-y-4">
+            {type === 'bot' && (
+              <Field label="Bot token" required>
+                {(fieldProps) => (
+                  <Input
+                    {...fieldProps}
                     type="password"
+                    autoComplete="off"
                     value={botToken}
                     onChange={(e) => setBotToken(e.target.value)}
-                    className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
                     placeholder="123456:ABC..."
                   />
-                </div>
-              )}
-              {type === 'user' && mode === 'upload' && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">Session File (.session)</label>
+                )}
+              </Field>
+            )}
+            {type === 'user' && mode === 'upload' && (
+              <Field
+                label="Session file"
+                hint="A .session file generated by Telethon outside this app."
+                required
+              >
+                {(fieldProps) => (
                   <input
+                    {...fieldProps}
                     type="file"
                     accept=".session"
                     onChange={(e) => setSessionFile(e.target.files?.[0] ?? null)}
-                    className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600"
+                    className="w-full rounded-control border border-line-strong bg-surface-raised px-3 py-2 text-sm text-ink file:mr-3 file:rounded file:border-0 file:bg-surface-sunken file:px-2.5 file:py-1 file:text-sm file:font-medium file:text-ink"
                   />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Advanced: generate .session with a separate script and upload it here.
-                  </p>
-                </div>
-              )}
-              <div className="flex gap-2 justify-end">
-                <button type="button" onClick={onClose} className="px-4 py-2 rounded border border-gray-300">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={uploadMutation.isPending}
-                  className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
-                >
-                  Add
-                </button>
-              </div>
-            </form>
-          )}
-
-          {!showUploadForm && (
-            <div className="flex gap-2 justify-end mt-4">
-              <button type="button" onClick={onClose} className="px-4 py-2 rounded border border-gray-300">
-                Close
-              </button>
-            </div>
-          )}
-        </div>
+                )}
+              </Field>
+            )}
+          </form>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 }

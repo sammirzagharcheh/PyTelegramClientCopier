@@ -1,81 +1,13 @@
-import { useEffect, useState } from 'react';
-import { utcTimeToLocal, localTimeToUtc } from '../lib/formatDateTime';
-
-export const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
-export const WEEKDAY_LABELS: Record<string, string> = {
-  mon: 'Monday',
-  tue: 'Tuesday',
-  wed: 'Wednesday',
-  thu: 'Thursday',
-  fri: 'Friday',
-  sat: 'Saturday',
-  sun: 'Sunday',
-};
-
-export const TEMPLATES: {
-  id: string;
-  label: string;
-  schedule: Record<string, { start: string; end: string } | null>;
-}[] = [
-  {
-    id: '247',
-    label: '24/7 (no restrictions)',
-    schedule: Object.fromEntries(WEEKDAYS.map((d) => [d, null])),
-  },
-  {
-    id: 'business',
-    label: 'Business hours (Mon–Fri 9:00–17:00)',
-    schedule: Object.fromEntries([
-      ...['mon', 'tue', 'wed', 'thu', 'fri'].map((d) => [d, { start: '09:00', end: '17:00' }]),
-      ...['sat', 'sun'].map((d) => [d, null]),
-    ]),
-  },
-  {
-    id: 'weekends',
-    label: 'Weekends only',
-    schedule: Object.fromEntries([
-      ...['mon', 'tue', 'wed', 'thu', 'fri'].map((d) => [d, null]),
-      ...['sat', 'sun'].map((d) => [d, { start: '00:00', end: '23:59' }]),
-    ]),
-  },
-];
-
-export type ScheduleData = Record<string, { start: string | null; end: string | null }>;
-
-export function toUtcPayload(form: ScheduleData, tz?: string): Record<string, string | null> {
-  const out: Record<string, string | null> = {};
-  for (const d of WEEKDAYS) {
-    const s = form[d]?.start;
-    const e = form[d]?.end;
-    if (s) {
-      out[`${d}_start_utc`] = localTimeToUtc(s, tz);
-    } else {
-      out[`${d}_start_utc`] = null;
-    }
-    if (e) {
-      out[`${d}_end_utc`] = localTimeToUtc(e, tz);
-    } else {
-      out[`${d}_end_utc`] = null;
-    }
-  }
-  return out;
-}
-
-export function fromUtcResponse(
-  data: Record<string, string | null>,
-  tz?: string
-): ScheduleData {
-  const form: ScheduleData = {};
-  for (const d of WEEKDAYS) {
-    const start = data[`${d}_start_utc`];
-    const end = data[`${d}_end_utc`];
-    form[d] = {
-      start: start ? utcTimeToLocal(start, tz) : null,
-      end: end ? utcTimeToLocal(end, tz) : null,
-    };
-  }
-  return form;
-}
+import { useMemo, useState } from 'react';
+import {
+  TEMPLATES,
+  WEEKDAYS,
+  WEEKDAY_LABELS,
+  fromUtcResponse,
+  toUtcPayload,
+} from '../lib/scheduleUtils';
+import type { ScheduleData } from '../lib/scheduleUtils';
+import { Button } from './ui/Button';
 
 type Props = {
   initialSchedule: Record<string, string | null> | null | undefined;
@@ -94,13 +26,26 @@ export function MappingScheduleForm({
   saveLabel = 'Save schedule',
   showDescription = true,
 }: Props) {
-  const [form, setForm] = useState<ScheduleData>({});
+  const serverForm = useMemo<ScheduleData>(
+    () => (initialSchedule ? fromUtcResponse(initialSchedule, timezone) : {}),
+    [initialSchedule, timezone]
+  );
+  // Local edits shadow the server value until the server value itself changes,
+  // which is how a fresh fetch discards a stale draft without an effect.
+  const [edits, setEdits] = useState<{ base: ScheduleData; value: ScheduleData } | null>(null);
+  const form = edits?.base === serverForm ? edits.value : serverForm;
 
-  useEffect(() => {
-    if (initialSchedule) {
-      setForm(fromUtcResponse(initialSchedule, timezone));
-    }
-  }, [initialSchedule, timezone]);
+  const updateForm = (next: ScheduleData) => setEdits({ base: serverForm, value: next });
+
+  const setDay = (day: string, patch: { start?: string | null; end?: string | null }) => {
+    updateForm({
+      ...form,
+      [day]: {
+        start: patch.start !== undefined ? patch.start : (form[day]?.start ?? null),
+        end: patch.end !== undefined ? patch.end : (form[day]?.end ?? null),
+      },
+    });
+  };
 
   const applyTemplate = (t: (typeof TEMPLATES)[0]) => {
     const next: ScheduleData = {};
@@ -108,80 +53,70 @@ export function MappingScheduleForm({
       const slot = t.schedule[d];
       next[d] = slot ? { start: slot.start, end: slot.end } : { start: null, end: null };
     }
-    setForm(next);
+    updateForm(next);
   };
 
   const handleSave = () => {
-    const payload = toUtcPayload(form, timezone);
-    onSave(payload);
+    onSave(toUtcPayload(form, timezone));
   };
+
+  const timeInputClass =
+    'rounded-control border border-line-strong bg-surface-raised px-2 py-1 text-sm text-ink tabular-nums transition-colors hover:border-ink-subtle';
 
   return (
     <div>
       {showDescription && (
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-          All times shown in your timezone ({timezone}). Messages outside this schedule are not copied.
+        <p className="mb-4 text-sm text-ink-subtle">
+          All times shown in your timezone ({timezone}). Messages outside this schedule are not
+          copied.
         </p>
       )}
-      <div className="mb-4">
-        <label className="block text-sm font-medium mb-2">Presets</label>
+
+      <fieldset className="mb-5">
+        <legend className="mb-2 text-sm font-medium text-ink">Presets</legend>
         <div className="flex flex-wrap gap-2">
           {TEMPLATES.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => applyTemplate(t)}
-              className="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
-            >
+            <Button key={t.id} variant="secondary" size="sm" onClick={() => applyTemplate(t)}>
               {t.label}
-            </button>
+            </Button>
           ))}
         </div>
-      </div>
-      <div className="space-y-3">
+      </fieldset>
+
+      <div className="divide-y divide-line rounded-surface border border-line">
         {WEEKDAYS.map((d) => (
-          <div key={d} className="flex items-center gap-4">
-            <span className="w-24 text-sm">{WEEKDAY_LABELS[d]}</span>
+          <div key={d} className="flex flex-wrap items-center gap-3 px-3 py-2.5">
+            <span className="w-24 shrink-0 text-sm font-medium text-ink">{WEEKDAY_LABELS[d]}</span>
             <input
               type="time"
               aria-label={`${WEEKDAY_LABELS[d]} start`}
               title={`${WEEKDAY_LABELS[d]} start`}
               value={form[d]?.start ?? ''}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  [d]: { ...prev[d], start: e.target.value || null, end: prev[d]?.end ?? null },
-                }))
-              }
-              className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm"
+              onChange={(e) => setDay(d, { start: e.target.value || null })}
+              className={timeInputClass}
             />
-            <span className="text-gray-400">–</span>
+            <span className="text-ink-subtle" aria-hidden>
+              to
+            </span>
             <input
               type="time"
               aria-label={`${WEEKDAY_LABELS[d]} end`}
               title={`${WEEKDAY_LABELS[d]} end`}
               value={form[d]?.end ?? ''}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  [d]: { ...prev[d], start: prev[d]?.start ?? null, end: e.target.value || null },
-                }))
-              }
-              className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm"
+              onChange={(e) => setDay(d, { end: e.target.value || null })}
+              className={timeInputClass}
             />
-            <span className="text-gray-500 text-xs">(local)</span>
+            {!form[d]?.start && !form[d]?.end && (
+              <span className="text-xs text-ink-subtle">No limit, copies all day</span>
+            )}
           </div>
         ))}
       </div>
-      <div className="mt-6">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={isSaving}
-          className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-        >
+
+      <div className="mt-5">
+        <Button onClick={handleSave} isLoading={isSaving}>
           {saveLabel}
-        </button>
+        </Button>
       </div>
     </div>
   );

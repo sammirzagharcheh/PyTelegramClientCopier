@@ -1,5 +1,6 @@
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { errorMessage } from '../../lib/apiError';
 import { Button } from './Button';
 
 type EmptyStateProps = {
@@ -32,26 +33,6 @@ type ErrorStateProps = {
   error?: unknown;
   onRetry?: () => void;
 };
-
-/** Pulls the FastAPI `detail` string out of an axios error when there is one. */
-export function errorMessage(error: unknown, fallback = 'Please try again.'): string {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'response' in error &&
-    error.response &&
-    typeof error.response === 'object' &&
-    'data' in error.response &&
-    error.response.data &&
-    typeof error.response.data === 'object' &&
-    'detail' in error.response.data
-  ) {
-    const detail = (error.response.data as { detail: unknown }).detail;
-    if (typeof detail === 'string' && detail.trim()) return detail;
-  }
-  if (error instanceof Error && error.message) return error.message;
-  return fallback;
-}
 
 export function ErrorState({ title = "We couldn't load this", error, onRetry }: ErrorStateProps) {
   return (

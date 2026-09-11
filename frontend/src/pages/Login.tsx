@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Field, Input } from '../components/ui/Field';
-import { errorMessage } from '../components/ui/States';
+import { errorMessage } from '../lib/apiError';
 import { useAuth } from '../store/AuthContext';
 
 export function Login() {

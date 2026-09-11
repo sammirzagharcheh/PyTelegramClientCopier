@@ -1,20 +1,22 @@
 import { useState } from 'react';
-import { KeyRound } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, KeyRound } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import { Button } from './ui/Button';
+import { Field, Input } from './ui/Field';
+import { Modal } from './ui/Modal';
+import { errorMessage } from '../lib/apiError';
 
 type Props = {
   onClose: () => void;
 };
-
-const inputClass =
-  'w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700';
 
 export function ChangePasswordDialog({ onClose }: Props) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [mismatch, setMismatch] = useState(false);
   const [success, setSuccess] = useState(false);
 
   const mutation = useMutation({
@@ -34,6 +36,7 @@ export function ChangePasswordDialog({ onClose }: Props) {
       setNewPassword('');
       setConfirmPassword('');
       setError('');
+      setMismatch(false);
       setSuccess(true);
       setTimeout(() => {
         setSuccess(false);
@@ -42,30 +45,16 @@ export function ChangePasswordDialog({ onClose }: Props) {
     },
     onError: (err: unknown) => {
       setSuccess(false);
-      if (err instanceof Error) {
-        setError(err.message);
-      } else if (
-        err &&
-        typeof err === 'object' &&
-        'response' in err &&
-        err.response &&
-        typeof err.response === 'object' &&
-        'data' in err.response &&
-        err.response.data &&
-        typeof err.response.data === 'object' &&
-        'detail' in err.response.data
-      ) {
-        setError(String((err.response.data as { detail: unknown }).detail));
-      } else {
-        setError('Failed to change password');
-      }
+      setError(errorMessage(err, 'We could not change your password.'));
     },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setMismatch(false);
     if (newPassword !== confirmPassword) {
+      setMismatch(true);
       setError('New password and confirmation do not match');
       return;
     }
@@ -77,91 +66,90 @@ export function ChangePasswordDialog({ onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div
-        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 mb-4">
-          <KeyRound className="h-5 w-5 text-blue-600 dark:text-blue-400" strokeWidth={2} />
-          <h2 className="text-xl font-bold">Change password</h2>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="p-3 rounded bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm">
-              {error}
-            </div>
-          )}
-          {success && (
-            <div className="p-3 rounded bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 text-sm">
-              Password changed successfully.
-            </div>
-          )}
-          <div>
-            <label htmlFor="change-pwd-current" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Current password
-            </label>
-            <input
-              id="change-pwd-current"
+    <Modal
+      title="Change password"
+      icon={<KeyRound className="h-5 w-5 text-ink-subtle" strokeWidth={2} aria-hidden />}
+      size="sm"
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form="change-password-form"
+            isLoading={mutation.isPending}
+          >
+            Change password
+          </Button>
+        </>
+      }
+    >
+      <form id="change-password-form" onSubmit={handleSubmit} className="space-y-4" noValidate>
+        {error && (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-control border border-red-300 bg-red-50 px-3 py-2.5 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/50 dark:text-red-200"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <span>{error}</span>
+          </div>
+        )}
+        {success && (
+          <div
+            role="status"
+            className="flex items-start gap-2 rounded-control border border-emerald-300 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200"
+          >
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <span>Password changed.</span>
+          </div>
+        )}
+        <Field label="Current password" required>
+          {(fieldProps) => (
+            <Input
+              {...fieldProps}
               type="password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
-              className={inputClass}
               required
               autoComplete="current-password"
-              aria-label="Current password"
             />
-          </div>
-          <div>
-            <label htmlFor="change-pwd-new" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              New password
-            </label>
-            <input
-              id="change-pwd-new"
+          )}
+        </Field>
+        <Field label="New password" required>
+          {(fieldProps) => (
+            <Input
+              {...fieldProps}
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              className={inputClass}
               required
               minLength={1}
               autoComplete="new-password"
-              aria-label="New password"
+              invalid={mismatch}
             />
-          </div>
-          <div>
-            <label htmlFor="change-pwd-confirm" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Confirm new password
-            </label>
-            <input
-              id="change-pwd-confirm"
+          )}
+        </Field>
+        <Field
+          label="Confirm new password"
+          required
+          error={mismatch ? 'This does not match the new password.' : undefined}
+        >
+          {(fieldProps) => (
+            <Input
+              {...fieldProps}
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className={inputClass}
               required
               minLength={1}
               autoComplete="new-password"
-              aria-label="Confirm new password"
+              invalid={mismatch}
             />
-          </div>
-          <div className="flex gap-2 justify-end pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={mutation.isPending}
-              className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {mutation.isPending ? 'Changing…' : 'Change password'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+          )}
+        </Field>
+      </form>
+    </Modal>
   );
 }

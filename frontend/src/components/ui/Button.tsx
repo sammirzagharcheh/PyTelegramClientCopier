@@ -27,20 +27,6 @@ const iconOnlySizes: Record<ButtonSize, string> = {
   md: 'h-9.5 w-9.5 p-0',
 };
 
-export function buttonClasses({
-  variant = 'primary',
-  size = 'md',
-  iconOnly = false,
-  className = '',
-}: {
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  iconOnly?: boolean;
-  className?: string;
-} = {}) {
-  return `${base} ${variants[variant]} ${iconOnly ? iconOnlySizes[size] : sizes[size]} ${className}`.trim();
-}
-
 type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
   size?: ButtonSize;
@@ -68,7 +54,9 @@ export function Button({
       type={type}
       disabled={disabled || isLoading}
       aria-busy={isLoading || undefined}
-      className={buttonClasses({ variant, size, iconOnly, className })}
+      className={`${base} ${variants[variant]} ${
+        iconOnly ? iconOnlySizes[size] : sizes[size]
+      } ${className}`.trim()}
       {...rest}
     >
       {isLoading ? (
