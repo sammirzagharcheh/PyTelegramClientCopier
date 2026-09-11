@@ -6,36 +6,42 @@ type Props = {
   currentSort: string;
   currentOrder: 'asc' | 'desc';
   onSort: (key: string, order: 'asc' | 'desc') => void;
+  className?: string;
 };
 
-export function SortableTh({ label, sortKey, currentSort, currentOrder, onSort }: Props) {
+export function SortableTh({
+  label,
+  sortKey,
+  currentSort,
+  currentOrder,
+  onSort,
+  className = '',
+}: Props) {
   const isActive = currentSort === sortKey;
   const handleClick = () => {
-    if (isActive) {
-      onSort(sortKey, currentOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      onSort(sortKey, 'asc');
-    }
+    onSort(sortKey, isActive && currentOrder === 'asc' ? 'desc' : 'asc');
   };
+
+  const SortIcon = isActive ? (currentOrder === 'asc' ? ChevronUp : ChevronDown) : ChevronsUpDown;
 
   return (
     <th
-      role="columnheader"
-      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-600"
-      onClick={handleClick}
+      scope="col"
+      aria-sort={isActive ? (currentOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
+      className={`p-0 text-xs font-semibold tracking-wide text-ink-subtle uppercase ${className}`.trim()}
     >
-      <div className="flex items-center gap-1">
+      {/* A real button, so the column is reachable and operable by keyboard. */}
+      <button
+        type="button"
+        onClick={handleClick}
+        className="flex w-full items-center gap-1.5 px-4 py-2.5 text-left uppercase transition-colors hover:bg-surface-hover hover:text-ink"
+      >
         {label}
-        {isActive ? (
-          currentOrder === 'asc' ? (
-            <ChevronUp className="h-4 w-4" />
-          ) : (
-            <ChevronDown className="h-4 w-4" />
-          )
-        ) : (
-          <ChevronsUpDown className="h-4 w-4 opacity-50" />
-        )}
-      </div>
+        <SortIcon
+          className={`h-3.5 w-3.5 shrink-0 ${isActive ? 'text-accent-ink' : 'opacity-50'}`}
+          aria-hidden
+        />
+      </button>
     </th>
   );
 }

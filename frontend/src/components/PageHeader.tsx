@@ -9,19 +9,17 @@ type Props = {
 
 export function PageHeader({ title, icon: Icon, subtitle, actions }: Props) {
   return (
-    <div className="mb-8 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-      <div>
-        <div className="flex items-center gap-3">
-          <div className="rounded-lg bg-blue-100 dark:bg-blue-900/40 p-2.5 text-blue-600 dark:text-blue-400">
-            <Icon className="h-6 w-6" strokeWidth={2} />
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{title}</h1>
+    <header className="mb-6 flex flex-col gap-3 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="mt-0.5 shrink-0 rounded-control bg-accent-soft p-2 text-accent-ink">
+          <Icon className="h-5 w-5" strokeWidth={2} aria-hidden />
+        </span>
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold text-ink sm:text-2xl">{title}</h1>
+          {subtitle && <p className="mt-1 max-w-prose text-sm text-ink-subtle">{subtitle}</p>}
         </div>
-        {subtitle && (
-          <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">{subtitle}</p>
-        )}
       </div>
-      {actions && <div className="shrink-0">{actions}</div>}
-    </div>
+      {actions && <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>}
+    </header>
   );
 }

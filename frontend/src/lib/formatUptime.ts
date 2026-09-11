@@ -3,12 +3,12 @@
  * Returns human-readable string like "2h 15m" or "45m".
  */
 export function formatUptime(iso: string | null | undefined): string {
-  if (iso == null || iso === '') return '—';
+  if (iso == null || iso === '') return 'Unknown';
   const started = new Date(iso);
-  if (Number.isNaN(started.getTime())) return '—';
+  if (Number.isNaN(started.getTime())) return 'Unknown';
   const now = Date.now();
   const sec = Math.floor((now - started.getTime()) / 1000);
-  if (sec < 0) return '—';
+  if (sec < 0) return 'Unknown';
   if (sec < 60) return `${sec}s`;
   const min = Math.floor(sec / 60);
   if (min < 60) return `${min}m`;

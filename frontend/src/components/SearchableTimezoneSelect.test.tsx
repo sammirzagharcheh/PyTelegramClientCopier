@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { SearchableTimezoneSelect, getTimezoneUtcOffset, DEVICE_TZ_VALUE } from './SearchableTimezoneSelect';
+import { SearchableTimezoneSelect } from './SearchableTimezoneSelect';
+import { DEVICE_TZ_VALUE, getTimezoneUtcOffset } from '../lib/timezones';
 
 describe('SearchableTimezoneSelect', () => {
   const timezones = ['America/New_York', 'Europe/London', 'Asia/Tokyo', 'UTC'];
@@ -17,7 +18,7 @@ describe('SearchableTimezoneSelect', () => {
     );
     const combobox = screen.getByRole('combobox', { name: /timezone/i });
     expect(combobox).toBeInTheDocument();
-    expect(combobox).toHaveAttribute('placeholder', 'Search timezone...');
+    expect(combobox).toHaveAttribute('placeholder', 'Search timezone');
   });
 
   it('shows selected label with UTC offset when value is set', () => {

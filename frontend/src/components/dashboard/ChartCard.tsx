@@ -10,18 +10,18 @@ type Props = {
 
 export function ChartCard({ title, isLoading, isEmpty, children }: Props) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700">
-      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">{title}</h3>
+    <section className="rounded-surface border border-line bg-surface-raised p-5 shadow-surface">
+      <h3 className="mb-4 text-sm font-semibold text-ink">{title}</h3>
       {isLoading ? (
         <ChartSkeleton />
       ) : isEmpty ? (
-        <div className="h-48 flex flex-col items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
-          <BarChart3 className="h-12 w-12 opacity-50" />
-          <span className="text-sm">No data yet</span>
+        <div className="flex h-48 flex-col items-center justify-center gap-2 text-ink-subtle">
+          <BarChart3 className="h-8 w-8" strokeWidth={1.75} aria-hidden />
+          <p className="text-sm">Nothing recorded for this period yet.</p>
         </div>
       ) : (
         children
       )}
-    </div>
+    </section>
   );
 }

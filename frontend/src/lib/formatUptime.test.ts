@@ -13,14 +13,14 @@ describe('formatUptime', () => {
     vi.useRealTimers();
   });
 
-  it('returns — for null or empty', () => {
-    expect(formatUptime(null)).toBe('—');
-    expect(formatUptime(undefined)).toBe('—');
-    expect(formatUptime('')).toBe('—');
+  it('returns Unknown for null or empty', () => {
+    expect(formatUptime(null)).toBe('Unknown');
+    expect(formatUptime(undefined)).toBe('Unknown');
+    expect(formatUptime('')).toBe('Unknown');
   });
 
-  it('returns — for invalid ISO', () => {
-    expect(formatUptime('not-a-date')).toBe('—');
+  it('returns Unknown for invalid ISO', () => {
+    expect(formatUptime('not-a-date')).toBe('Unknown');
   });
 
   it('formats seconds', () => {
@@ -49,7 +49,7 @@ describe('formatUptime', () => {
     expect(formatUptime('2025-02-15T10:00:00Z')).toBe('2d 2h');
   });
 
-  it('returns — for future dates', () => {
-    expect(formatUptime('2025-02-18T12:00:00Z')).toBe('—');
+  it('returns Unknown for future dates', () => {
+    expect(formatUptime('2025-02-18T12:00:00Z')).toBe('Unknown');
   });
 });

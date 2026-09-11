@@ -1,10 +1,187 @@
 @import "tailwindcss";
 
-/* Class-driven dark mode so users can override OS (light / dark / system via JS on <html>). */
+/* Dark mode is driven by a class on <html>, set by ThemeProvider, which also
+   resolves the "system" preference. Tailwind v4 ignores tailwind.config.js
+   unless it is loaded explicitly, so the variant is declared here. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-body {
-  @apply bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 antialiased;
+/* Semantic surface and ink scale. Screens address these, never the raw palette,
+   so light and dark stay in step and the accent can only be changed in one
+   place. Values are one cool neutral family plus a single blue accent. */
+:root {
+  --surface: #f6f7f9;
+  --surface-raised: #fcfcfd;
+  --surface-sunken: #eff1f4;
+  --surface-hover: #f1f3f6;
+
+  --line: #e2e5ea;
+  --line-strong: #cbd0d8;
+
+  --ink: #17191d;
+  --ink-muted: #4f545d;
+  --ink-subtle: #676d77;
+
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-ink: #1d4ed8;
+  --accent-soft: #e7effd;
+  --accent-ring: #2563eb;
+  --accent-fg: #ffffff;
+
+  /* Categorical chart palette. Ordered so adjacent slices differ in hue and
+     lightness, which keeps them apart for the common colour-vision types. */
+  --chart-1: #2563eb;
+  --chart-2: #0d9488;
+  --chart-3: #d97706;
+  --chart-4: #7c3aed;
+  --chart-5: #db2777;
+
+  --shadow-color: 16 18 22;
+}
+
+.dark {
+  --surface: #0f1115;
+  --surface-raised: #171a21;
+  --surface-sunken: #1c2029;
+  --surface-hover: #1f2430;
+
+  --line: #272c36;
+  --line-strong: #3a4150;
+
+  --ink: #e8eaee;
+  --ink-muted: #a7acb7;
+  --ink-subtle: #89909b;
+
+  --accent: #2563eb;
+  --accent-hover: #3b82f6;
+  --accent-ink: #93b8fc;
+  --accent-soft: #17233d;
+  --accent-ring: #60a5fa;
+  --accent-fg: #ffffff;
+
+  /* Lifted for the dark canvas so each series keeps a similar perceived weight. */
+  --chart-1: #60a5fa;
+  --chart-2: #2dd4bf;
+  --chart-3: #fbbf24;
+  --chart-4: #a78bfa;
+  --chart-5: #f472b6;
+
+  --shadow-color: 0 0 0;
+}
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-hover: var(--surface-hover);
+
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-subtle: var(--ink-subtle);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-fg: var(--accent-fg);
+
+  /* One radius rule: rounded-control for inputs and buttons, rounded-surface
+     for cards and overlays, rounded-full for status badges only. */
+  --radius-control: 0.375rem;
+  --radius-surface: 0.625rem;
+
+  /* Shadows are tinted to the canvas and kept shallow. Elevation in this app
+     means "floats above the page", not "is important". */
+  --shadow-surface: 0 1px 2px 0 rgb(var(--shadow-color) / 0.05);
+  --shadow-raised: 0 1px 3px rgb(var(--shadow-color) / 0.06), 0 8px 24px -8px rgb(var(--shadow-color) / 0.1);
+  --shadow-overlay: 0 24px 56px -16px rgb(var(--shadow-color) / 0.32);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono",
+    "Roboto Mono", Menlo, Consolas, monospace;
+}
+
+/* Layer scale. Anything stacking must pick one of these rather than inventing
+   a z-index. */
+@utility z-sticky {
+  z-index: 20;
+}
+@utility z-dropdown {
+  z-index: 30;
+}
+@utility z-overlay {
+  z-index: 40;
+}
+@utility z-toast {
+  z-index: 50;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-surface text-ink antialiased;
+    font-family: var(--font-sans);
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+    letter-spacing: -0.014em;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  /* Figures in an operations console are read in columns, so they line up. */
+  table,
+  time,
+  .numeric {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* Mouse users should not see the ring, keyboard users always should. */
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  ::placeholder {
+    color: var(--ink-subtle);
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /*

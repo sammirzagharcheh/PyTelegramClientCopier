@@ -1,7 +1,7 @@
 import { ArrowLeft, Clock, Eye, Filter, GitBranch, Pencil, Plus, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../lib/api';
 import type { ChannelMapping, MappingPreviewResponse, Transform, TransformCreate } from '../../lib/api';
 import { coerceChannelMappingForEdit } from '../../lib/channelMappingDefaults';
@@ -14,14 +14,23 @@ import { MappingScheduleForm } from '../../components/MappingScheduleForm';
 import { useToast } from '../../components/Toast';
 import { PageHeader } from '../../components/PageHeader';
 import { useAuth } from '../../store/AuthContext';
+import { FilterForm } from '../../components/FilterForm';
 import {
-  FilterForm,
   formatMediaDisplay,
   mediaArrayToString,
   stringToMediaArray,
-} from '../../components/FilterForm';
+} from '../../lib/mediaTypes';
 import { TransformForm } from '../../components/TransformForm';
 import { formatScheduleSummary } from '../../lib/formatDateTime';
+import { CardSkeleton } from '../../components/Skeleton';
+import { Button, ButtonLink } from '../../components/ui/Button';
+import { Card, CardHeader } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { Field, Input, Select, Textarea } from '../../components/ui/Field';
+import { FormError } from '../../components/ui/FormError';
+import { Modal } from '../../components/ui/Modal';
+import { EmptyState, ErrorState } from '../../components/ui/States';
+import { errorMessage } from '../../lib/apiError';
 
 type Filter = {
   id: number;
@@ -68,7 +77,7 @@ function describeFilter(f: Filter): string[] {
   if (f.allowed_sender_ids?.trim()) parts.push(`Allowed senders (IDs): ${f.allowed_sender_ids.trim()}`);
   if (f.denied_usernames?.trim()) parts.push(`Denied usernames: ${f.denied_usernames.trim()}`);
   if (f.min_url_count != null || f.max_url_count != null) {
-    parts.push(`URL count: min ${f.min_url_count ?? '—'} max ${f.max_url_count ?? '—'}`);
+    parts.push(`URL count: min ${f.min_url_count ?? 'none'} to max ${f.max_url_count ?? 'none'}`);
   }
   if (f.required_hashtags?.trim()) parts.push(`Required hashtags: ${f.required_hashtags.trim()}`);
   return parts;
@@ -84,16 +93,17 @@ function describeTransform(t: Transform): string {
   };
   const label = typeLabels[t.rule_type] ?? t.rule_type;
   if (t.rule_type === 'text' || t.rule_type === 'emoji') {
-    return `${label}: "${t.find_text ?? ''}" → "${t.replace_text ?? ''}"`;
+    return `${label}: "${t.find_text ?? ''}" to "${t.replace_text ?? ''}"`;
   }
   if (t.rule_type === 'regex') {
-    return `${label}: /${t.regex_pattern ?? ''}/ → "${t.replace_text ?? ''}"`;
+    return `${label}: /${t.regex_pattern ?? ''}/ to "${t.replace_text ?? ''}"`;
   }
   if (t.rule_type === 'media') {
     return `${label}: asset #${t.replacement_media_asset_id} (${t.apply_to_media_types ?? 'all'})`;
   }
   if (t.rule_type === 'template') {
-    return `${label}: "${(t.replace_text ?? '').slice(0, 40)}${(t.replace_text ?? '').length > 40 ? '…' : ''}"`;
+    const text = t.replace_text ?? '';
+    return `${label}: "${text.slice(0, 40)}${text.length > 40 ? '...' : ''}"`;
   }
   return label;
 }
@@ -125,7 +135,13 @@ export function MappingDetail() {
 
   const canWrite = Boolean(user && user.role !== 'viewer');
 
-  const { data: mapping } = useQuery({
+  const {
+    data: mapping,
+    isLoading: mappingLoading,
+    isError: mappingError,
+    error: mappingLoadError,
+    refetch: refetchMapping,
+  } = useQuery({
     queryKey: ['mapping', id],
     queryFn: async () => (await api.get<ChannelMapping>(`/mappings/${id}`)).data,
     enabled: !!id,
@@ -212,8 +228,8 @@ export function MappingDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
       setMappingToDelete(false);
-      showToast('Mapping deleted. Workers restarting to apply changes.');
-      navigate('/mappings');
+      showToast('Mapping deleted. Workers are restarting to apply it.', 'success');
+      navigate(isAdminView ? '/admin/mappings' : '/mappings');
     },
   });
 
@@ -227,7 +243,9 @@ export function MappingDetail() {
       }
       queryClient.invalidateQueries({ queryKey: ['mapping', id] });
       showToast(
-        (enabledFlag ? 'Mapping enabled' : 'Mapping disabled') + '. Workers restarting to apply changes.'
+        (enabledFlag ? 'Mapping enabled' : 'Mapping disabled') +
+          '. Workers are restarting to apply it.',
+        'success'
       );
     },
   });
@@ -239,9 +257,9 @@ export function MappingDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mapping', id, 'schedule'] });
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
-      showToast('Schedule saved. Workers restarting to apply changes.');
+      showToast('Schedule saved. Workers are restarting to apply it.', 'success');
     },
-    onError: () => showToast('Failed to save schedule'),
+    onError: () => showToast('Saving the schedule failed', 'error'),
   });
 
   const scheduleDeleteMutation = useMutation({
@@ -251,9 +269,9 @@ export function MappingDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mapping', id, 'schedule'] });
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
-      showToast('Using default schedule. Workers restarting to apply changes.');
+      showToast('Using the default schedule. Workers are restarting to apply it.', 'success');
     },
-    onError: () => showToast('Failed to remove schedule override'),
+    onError: () => showToast('Removing the schedule override failed', 'error'),
   });
 
   const transformCreateMutation = useMutation({
@@ -264,11 +282,10 @@ export function MappingDetail() {
       queryClient.invalidateQueries({ queryKey: ['mapping', id, 'transforms'] });
       setTransformCreateSeed(null);
       setTransformModalOpen(null);
-      showToast('Transform added. Workers restarting to apply changes.');
+      showToast('Transform added. Workers are restarting to apply it.', 'success');
     },
     onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      showToast(msg ?? 'Failed to add transform');
+      showToast(errorMessage(err, 'Adding the transform failed'), 'error');
     },
   });
 
@@ -280,11 +297,10 @@ export function MappingDetail() {
       queryClient.invalidateQueries({ queryKey: ['mapping', id, 'transforms'] });
       setTransformCreateSeed(null);
       setTransformModalOpen(null);
-      showToast('Transform updated. Workers restarting to apply changes.');
+      showToast('Transform updated. Workers are restarting to apply it.', 'success');
     },
     onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      showToast(msg ?? 'Failed to update transform');
+      showToast(errorMessage(err, 'Updating the transform failed'), 'error');
     },
   });
 
@@ -295,11 +311,10 @@ export function MappingDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mapping', id, 'transforms'] });
       setTransformDeleteConfirm(null);
-      showToast('Transform removed. Workers restarting to apply changes.');
+      showToast('Transform removed. Workers are restarting to apply it.', 'success');
     },
     onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      showToast(msg ?? 'Failed to remove transform');
+      showToast(errorMessage(err, 'Removing the transform failed'), 'error');
     },
   });
 
@@ -317,6 +332,11 @@ export function MappingDetail() {
     } else if (typeof transformModalOpen === 'number') {
       transformUpdateMutation.mutate({ transformId: transformModalOpen, payload: values });
     }
+  };
+
+  const closeTransformModal = () => {
+    setTransformCreateSeed(null);
+    setTransformModalOpen(null);
   };
 
   const editingFilter = typeof filterModalOpen === 'number' ? filters?.find((f) => f.id === filterModalOpen) : null;
@@ -344,17 +364,31 @@ export function MappingDetail() {
       const { data } = await api.post<MappingPreviewResponse>(`/mappings/${id}/preview`, payload);
       setPreviewResult(data);
     } catch (e: unknown) {
-      const msg =
-        e && typeof e === 'object' && 'response' in e
-          ? String((e as { response?: { data?: { detail?: string } } }).response?.data?.detail ?? 'Preview failed')
-          : 'Preview failed';
-      setPreviewError(msg);
+      setPreviewError(errorMessage(e, 'Preview failed'));
     } finally {
       setPreviewLoading(false);
     }
   };
 
-  if (!mapping) return null;
+  if (mappingError) {
+    return (
+      <ErrorState
+        title="We couldn't load this mapping"
+        error={mappingLoadError}
+        onRetry={() => refetchMapping()}
+      />
+    );
+  }
+
+  if (mappingLoading || !mapping) {
+    return (
+      <div className="space-y-4">
+        <CardSkeleton lines={2} />
+        <CardSkeleton lines={4} />
+        <CardSkeleton lines={3} />
+      </div>
+    );
+  }
 
   const sourceLabel = mapping.source_chat_title
     ? `${mapping.source_chat_title} (${mapping.source_chat_id})`
@@ -363,42 +397,63 @@ export function MappingDetail() {
     ? `${mapping.dest_chat_title} (${mapping.dest_chat_id})`
     : String(mapping.dest_chat_id);
 
+  const hasCustomSchedule =
+    mappingSchedule && Object.values(mappingSchedule).some((v) => v != null && v !== '');
+  const ownsMapping = Boolean(user && mapping.user_id === user.id);
+  const listPath = isAdminView ? '/admin/mappings' : '/mappings';
+  const webhookSecretStored = Boolean(
+    mapping.copy_webhook_secret?.trim() || mapping.webhook_secret_configured
+  );
+
+  const switchToCustom = async () => {
+    const hasUserSchedule =
+      userSchedule && Object.values(userSchedule).some((v) => v != null && v !== '');
+    const payload = hasUserSchedule
+      ? userSchedule!
+      : {
+          mon_start_utc: '09:00',
+          mon_end_utc: '17:00',
+          tue_start_utc: '09:00',
+          tue_end_utc: '17:00',
+          wed_start_utc: '09:00',
+          wed_end_utc: '17:00',
+          thu_start_utc: '09:00',
+          thu_end_utc: '17:00',
+          fri_start_utc: '09:00',
+          fri_end_utc: '17:00',
+          sat_start_utc: null,
+          sat_end_utc: null,
+          sun_start_utc: null,
+          sun_end_utc: null,
+        };
+    await api.put(`/mappings/${id}/schedule`, payload);
+    queryClient.invalidateQueries({ queryKey: ['mapping', id, 'schedule'] });
+    queryClient.invalidateQueries({ queryKey: ['mappings'] });
+    showToast('Now using a custom schedule. Edit below and save.', 'success');
+  };
+
   return (
     <div>
       <PageHeader
         title={mapping.name || `Mapping ${id}`}
         icon={GitBranch}
-        subtitle={`Source: ${sourceLabel} → Dest: ${destLabel}`}
+        subtitle={`Source: ${sourceLabel} to dest: ${destLabel}`}
         actions={
-          <div className="flex items-center gap-3">
+          <>
             {canWrite ? (
-              <button
-                type="button"
-                onClick={() => setEditingMapping(true)}
-                className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
-              >
-                <Pencil className="h-4 w-4" />
+              <Button variant="secondary" size="sm" icon={Pencil} onClick={() => setEditingMapping(true)}>
                 Edit
-              </button>
+              </Button>
             ) : null}
             {canWrite ? (
-              <button
-                type="button"
-                onClick={() => setMappingToDelete(true)}
-                className="flex items-center gap-2 text-sm text-red-600 hover:underline"
-              >
-                <Trash2 className="h-4 w-4" />
+              <Button variant="secondary" size="sm" icon={Trash2} onClick={() => setMappingToDelete(true)}>
                 Delete
-              </button>
+              </Button>
             ) : null}
-            <Link
-              to={isAdminView ? '/admin/mappings' : '/mappings'}
-              className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
-            >
-              <ArrowLeft className="h-4 w-4" />
+            <ButtonLink to={listPath} size="sm" icon={ArrowLeft}>
               Back to mappings
-            </Link>
-          </div>
+            </ButtonLink>
+          </>
         }
       />
 
@@ -410,14 +465,14 @@ export function MappingDetail() {
           title="Delete Channel Mapping"
           message={
             <>
-              Are you sure you want to delete the mapping{' '}
-              <span className="font-semibold">{mapping.name || `Mapping ${id}`}</span>? This will also
-              remove all associated filters. This action cannot be undone.
+              Deleting{' '}
+              <span className="font-medium text-ink">{mapping.name || `Mapping ${id}`}</span> also
+              removes all of its filters and transformations. This cannot be undone.
             </>
           }
           confirmLabel="Delete mapping"
           variant="danger"
-          icon={<Trash2 className="h-5 w-5 text-red-600" />}
+          icon={<Trash2 className="h-5 w-5" />}
           onConfirm={() => mappingDeleteMutation.mutate()}
           onCancel={() => setMappingToDelete(false)}
           isPending={mappingDeleteMutation.isPending}
@@ -426,29 +481,41 @@ export function MappingDetail() {
       {transformDeleteConfirm !== null && (
         <ConfirmDialog
           title="Delete transform"
-          message="Are you sure you want to remove this transform rule? Workers will restart to apply the change."
+          message="Removing this transform rule will restart workers so the change takes effect."
           confirmLabel="Delete"
           variant="danger"
-          icon={<Trash2 className="h-5 w-5 text-red-600" />}
+          icon={<Trash2 className="h-5 w-5" />}
           onConfirm={() => transformDeleteMutation.mutate(transformDeleteConfirm)}
           onCancel={() => setTransformDeleteConfirm(null)}
           isPending={transformDeleteMutation.isPending}
         />
       )}
+      {deleteConfirm !== null && (
+        <ConfirmDialog
+          title="Delete filter"
+          message="Messages that only this filter was holding back will start copying again."
+          confirmLabel="Delete"
+          variant="danger"
+          icon={<Trash2 className="h-5 w-5" />}
+          onConfirm={() => filterDeleteMutation.mutate(deleteConfirm)}
+          onCancel={() => setDeleteConfirm(null)}
+          isPending={filterDeleteMutation.isPending}
+        />
+      )}
 
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6 transition-shadow hover:shadow-lg">
-        <dl className="grid grid-cols-2 gap-4">
+      <Card className="mb-4">
+        <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
-            <dt className="text-sm text-gray-500">Source channel</dt>
-            <dd className="font-mono">{sourceLabel}</dd>
+            <dt className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Source channel</dt>
+            <dd className="mt-1 font-mono text-sm text-ink">{sourceLabel}</dd>
           </div>
           <div>
-            <dt className="text-sm text-gray-500">Destination channel</dt>
-            <dd className="font-mono">{destLabel}</dd>
+            <dt className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Destination channel</dt>
+            <dd className="mt-1 font-mono text-sm text-ink">{destLabel}</dd>
           </div>
           <div>
-            <dt className="text-sm text-gray-500">Status</dt>
-            <dd>
+            <dt className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Status</dt>
+            <dd className="mt-1">
               <MappingEnableToggle
                 enabled={mapping.enabled}
                 onToggle={() => enableMutation.mutate(!mapping.enabled)}
@@ -458,557 +525,419 @@ export function MappingDetail() {
             </dd>
           </div>
           <div>
-            <dt className="text-sm text-gray-500">Send delay</dt>
-            <dd className="font-mono text-sm">{mapping.send_delay_ms ?? 0} ms</dd>
+            <dt className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Send delay</dt>
+            <dd className="mt-1 font-mono text-sm text-ink">{mapping.send_delay_ms ?? 0} ms</dd>
           </div>
           <div>
-            <dt className="text-sm text-gray-500">Sync edits / deletes</dt>
-            <dd className="text-sm">
+            <dt className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Sync edits / deletes</dt>
+            <dd className="mt-1 text-sm text-ink">
               {mapping.sync_edits ? 'Edits on' : 'Edits off'} · {mapping.sync_deletes ? 'Deletes on' : 'Deletes off'}{' '}
               · strategy: {mapping.edit_strategy || 'replace_text'}
             </dd>
           </div>
-          <div className="col-span-2">
-            <dt className="text-sm text-gray-500">Copy webhook</dt>
-            <dd className="text-sm font-mono break-all">
-              {mapping.copy_webhook_url?.trim() ? mapping.copy_webhook_url : '—'}
-              {mapping.copy_webhook_secret ? ' · secret stored' : ''}
+          <div className="sm:col-span-3">
+            <dt className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Copy webhook</dt>
+            <dd className="mt-1 break-all font-mono text-sm text-ink">
+              {mapping.copy_webhook_url?.trim() ? mapping.copy_webhook_url : 'Not set'}
+              {webhookSecretStored ? ' · secret stored' : ''}
             </dd>
           </div>
         </dl>
-        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600 flex flex-wrap items-center gap-3">
-          <button
+        <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line pt-4">
+          <Button
             type="button"
+            variant="secondary"
+            size="sm"
+            icon={Eye}
             onClick={() => {
               setPreviewOpen(true);
               setPreviewResult(null);
               setPreviewError('');
             }}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
           >
-            <Eye className="h-4 w-4" />
             Preview pipeline
-          </button>
+          </Button>
           {!canWrite ? (
-            <span className="text-xs text-gray-500 dark:text-gray-400">Viewer: mapping details are read-only.</span>
+            <span className="text-xs text-ink-subtle">Viewer: mapping details are read-only.</span>
           ) : null}
         </div>
-      </div>
+      </Card>
 
-      <div className="mb-4">
-        <h2 className="text-lg font-semibold mb-1">Schedule</h2>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-          When to copy messages for this mapping. Use default (global) or set a custom schedule.
-        </p>
-      </div>
-
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg mb-6">
-        {(() => {
-          const hasCustomSchedule =
-            mappingSchedule && Object.values(mappingSchedule).some((v) => v != null && v !== '');
-          const ownsMapping = user && mapping.user_id === user.id;
-
-          if (hasCustomSchedule) {
-            return (
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Custom schedule for this mapping
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => scheduleDeleteMutation.mutate()}
-                    disabled={scheduleDeleteMutation.isPending || !canWrite}
-                    className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
-                  >
-                    <RotateCcw className="h-4 w-4" />
-                    Switch to default
-                  </button>
-                </div>
-                <MappingScheduleForm
-                  initialSchedule={mappingSchedule}
-                  timezone={tz}
-                  onSave={(payload) => scheduleSaveMutation.mutate(payload)}
-                  isSaving={scheduleSaveMutation.isPending}
-                  saveLabel="Save schedule"
-                  showDescription={false}
-                  readOnly={!canWrite}
-                />
-              </div>
-            );
-          }
-
-          return (
-            <div className="p-6">
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm">
-                    {ownsMapping && userSchedule
-                      ? formatScheduleSummary(userSchedule)
-                      : 'Default'}
-                  </span>
-                </div>
-                {ownsMapping && (
-                  <Link to="/schedule" className="text-sm text-blue-600 hover:underline">
-                    Configure global schedule
-                  </Link>
-                )}
-                <button
-                  type="button"
-                  disabled={!canWrite}
-                  onClick={async () => {
-                    const hasUserSchedule =
-                      userSchedule && Object.values(userSchedule).some((v) => v != null && v !== '');
-                    const payload = hasUserSchedule
-                      ? userSchedule!
-                      : {
-                          mon_start_utc: '09:00',
-                          mon_end_utc: '17:00',
-                          tue_start_utc: '09:00',
-                          tue_end_utc: '17:00',
-                          wed_start_utc: '09:00',
-                          wed_end_utc: '17:00',
-                          thu_start_utc: '09:00',
-                          thu_end_utc: '17:00',
-                          fri_start_utc: '09:00',
-                          fri_end_utc: '17:00',
-                          sat_start_utc: null,
-                          sat_end_utc: null,
-                          sun_start_utc: null,
-                          sun_end_utc: null,
-                        };
-                    await api.put(`/mappings/${id}/schedule`, payload);
-                    queryClient.invalidateQueries({ queryKey: ['mapping', id, 'schedule'] });
-                    queryClient.invalidateQueries({ queryKey: ['mappings'] });
-                    showToast('Now using custom schedule. Edit below and save.');
-                  }}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
-                >
-                  Switch to custom
-                </button>
-              </div>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                {ownsMapping
-                  ? 'Uses your global schedule from the Schedule page.'
-                  : "Uses the mapping owner's default schedule."}
-              </p>
+      <Card className="mb-4">
+        <CardHeader
+          title="Schedule"
+          icon={Clock}
+          description="When to copy messages for this mapping. Use the default (global) schedule, or set a custom one."
+        />
+        {hasCustomSchedule ? (
+          <div>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <span className="text-sm font-medium text-ink">Custom schedule for this mapping</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={RotateCcw}
+                onClick={() => scheduleDeleteMutation.mutate()}
+                disabled={scheduleDeleteMutation.isPending || !canWrite}
+                isLoading={scheduleDeleteMutation.isPending}
+              >
+                Switch to default
+              </Button>
             </div>
-          );
-        })()}
-      </div>
-
-      <div className="mb-4">
-        <h2 className="text-lg font-semibold mb-1">Transforms</h2>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-          Transform copied messages before sending: replace text, regex patterns, emojis; use templates; or replace media with uploaded assets. Rules are applied by priority (lower first).
-        </p>
-        <div className="flex flex-wrap items-center gap-2 mb-2">
-          {canWrite ? (
-            <button
-              type="button"
-              onClick={() => {
-                setTransformCreateSeed(null);
-                setTransformModalOpen('add');
-              }}
-              className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm"
-            >
-              <Plus className="h-4 w-4" />
-              Add transform
-            </button>
-          ) : null}
-          {canWrite ? (
-            <span className="text-xs text-gray-500 dark:text-gray-400 mr-1">PII presets (regex):</span>
-          ) : null}
-          {canWrite
-            ? PII_TRANSFORM_PRESETS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  title={p.description}
-                  onClick={() => {
-                    setTransformCreateSeed(p.payload);
-                    setTransformModalOpen('add');
-                  }}
-                  className="px-2 py-1 text-xs rounded border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50"
-                >
-                  {p.label}
-                </button>
-              ))
-            : null}
-        </div>
-      </div>
-
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg mb-6">
-        {transformsLoading ? (
-          <div className="p-8 animate-pulse">
-            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-4" />
-            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2 mb-4" />
-            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-5/6" />
+            <MappingScheduleForm
+              initialSchedule={mappingSchedule}
+              timezone={tz}
+              onSave={(payload) => scheduleSaveMutation.mutate(payload)}
+              isSaving={scheduleSaveMutation.isPending}
+              saveLabel="Save schedule"
+              showDescription={false}
+              readOnly={!canWrite}
+            />
           </div>
         ) : (
-          <>
-            <div className="divide-y divide-gray-200 dark:divide-gray-700">
-              {(transforms ?? []).map((t) => (
-                <div key={t.id} className="p-4 flex items-start justify-between gap-4">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`text-xs font-medium px-2 py-0.5 rounded ${
-                          !t.enabled ? 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-400' : 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
-                        }`}
-                      >
-                        {t.rule_type}
-                      </span>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">priority {t.priority}</span>
-                    </div>
-                    <p className="text-sm mt-1">{describeTransform(t)}</p>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    {canWrite ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTransformCreateSeed(null);
-                          setTransformModalOpen(t.id);
-                        }}
-                        className="px-3 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
-                      >
-                        Edit
-                      </button>
-                    ) : null}
-                    {canWrite ? (
-                      <button
-                        type="button"
-                        onClick={() => setTransformDeleteConfirm(t.id)}
-                        className="px-3 py-1 text-sm rounded border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 dark:border-red-800"
-                      >
-                        Delete
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
+          <div>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2 text-sm text-ink">
+                <Clock className="h-4 w-4 text-ink-subtle" aria-hidden />
+                <span>
+                  {ownsMapping && userSchedule ? formatScheduleSummary(userSchedule) : 'Default'}
+                </span>
+              </div>
+              {ownsMapping && (
+                <ButtonLink to="/schedule" variant="ghost" size="sm">
+                  Configure global schedule
+                </ButtonLink>
+              )}
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={!canWrite}
+                onClick={() => void switchToCustom()}
+              >
+                Switch to custom
+              </Button>
             </div>
-            {(transforms ?? []).length === 0 && (
-              <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-                No transforms. Messages are copied as-is.
-                {canWrite ? (
-                  <button
+            <p className="mt-2 text-sm text-ink-subtle">
+              {ownsMapping
+                ? 'Uses your global schedule from the Schedule page.'
+                : "Uses the mapping owner's default schedule."}
+            </p>
+          </div>
+        )}
+      </Card>
+
+      <Card flush className="mb-4">
+        <CardHeader
+          title="Transforms"
+          icon={Sparkles}
+          description="Rewrite copied messages before they are sent: replace text, regex, or emoji; apply a template; or swap media for an uploaded asset. Rules run by priority, lowest first."
+          actions={
+            canWrite ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  icon={Plus}
+                  onClick={() => {
+                    setTransformCreateSeed(null);
+                    setTransformModalOpen('add');
+                  }}
+                >
+                  Add transform
+                </Button>
+                <span className="text-xs text-ink-subtle">PII presets (regex):</span>
+                {PII_TRANSFORM_PRESETS.map((p) => (
+                  <Button
+                    key={p.id}
                     type="button"
+                    variant="secondary"
+                    size="sm"
+                    title={p.description}
                     onClick={() => {
-                      setTransformCreateSeed(null);
+                      setTransformCreateSeed(p.payload);
                       setTransformModalOpen('add');
                     }}
-                    className="ml-2 inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline"
                   >
-                    <Plus className="h-4 w-4" /> Add your first transform
-                  </button>
-                ) : null}
+                    {p.label}
+                  </Button>
+                ))}
               </div>
-            )}
-          </>
+            ) : undefined
+          }
+          inset
+        />
+        {transformsLoading ? (
+          <div className="px-5 py-6">
+            <CardSkeleton lines={3} className="border-0 p-0 shadow-none" />
+          </div>
+        ) : (transforms ?? []).length === 0 ? (
+          <EmptyState
+            icon={Sparkles}
+            title="No transforms"
+            description="Messages are copied as they arrived. Add a rule to rewrite text, emoji, or media."
+            action={
+              canWrite ? (
+                <Button
+                  size="sm"
+                  icon={Plus}
+                  onClick={() => {
+                    setTransformCreateSeed(null);
+                    setTransformModalOpen('add');
+                  }}
+                >
+                  Add your first transform
+                </Button>
+              ) : undefined
+            }
+          />
+        ) : (
+          <ul className="divide-y divide-line">
+            {(transforms ?? []).map((t) => (
+              <li key={t.id} className="flex items-start justify-between gap-4 px-5 py-3.5">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={t.enabled ? 'info' : 'neutral'}>{t.rule_type}</Badge>
+                    <span className="text-xs tabular-nums text-ink-subtle">priority {t.priority}</span>
+                  </div>
+                  <p className="mt-1 text-sm text-ink">{describeTransform(t)}</p>
+                </div>
+                {canWrite ? (
+                  <div className="flex shrink-0 gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setTransformCreateSeed(null);
+                        setTransformModalOpen(t.id);
+                      }}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setTransformDeleteConfirm(t.id)}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
         )}
-      </div>
+      </Card>
 
       {transformModalOpen !== null && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="transform-dialog-title"
-          onClick={() => {
-            setTransformCreateSeed(null);
-            setTransformModalOpen(null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              setTransformCreateSeed(null);
-              setTransformModalOpen(null);
-            }
-          }}
+        <Modal
+          title={transformModalOpen === 'add' ? 'Add transform' : 'Edit transform'}
+          icon={<Sparkles className="h-5 w-5" />}
+          onClose={closeTransformModal}
+          size="lg"
         >
-          <div
-            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2 mb-4">
-              <Sparkles className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-              <h2 id="transform-dialog-title" className="text-xl font-bold">
-                {transformModalOpen === 'add' ? 'Add transform' : 'Edit transform'}
-              </h2>
-            </div>
-            <TransformForm
-              key={
-                transformModalOpen === 'add'
-                  ? `new-${transformCreateSeed?.regex_pattern ?? 'plain'}`
-                  : transformModalOpen
-              }
-              initialValues={editingTransform ?? undefined}
-              createSeed={transformModalOpen === 'add' ? transformCreateSeed : null}
-              mediaAssets={mediaAssets ?? []}
-              onSubmit={handleTransformSubmit}
-              onCancel={() => {
-                setTransformCreateSeed(null);
-                setTransformModalOpen(null);
-              }}
-              submitLabel={transformModalOpen === 'add' ? 'Add' : 'Save'}
-              isSubmitting={transformCreateMutation.isPending || transformUpdateMutation.isPending}
-            />
-          </div>
-        </div>
+          <TransformForm
+            key={
+              transformModalOpen === 'add'
+                ? `new-${transformCreateSeed?.regex_pattern ?? 'plain'}`
+                : transformModalOpen
+            }
+            initialValues={editingTransform ?? undefined}
+            createSeed={transformModalOpen === 'add' ? transformCreateSeed : null}
+            mediaAssets={mediaAssets ?? []}
+            onSubmit={handleTransformSubmit}
+            onCancel={closeTransformModal}
+            submitLabel={transformModalOpen === 'add' ? 'Add' : 'Save'}
+            isSubmitting={transformCreateMutation.isPending || transformUpdateMutation.isPending}
+          />
+        </Modal>
       )}
 
-      <div className="mb-4">
-        <h2 className="text-lg font-semibold mb-1">Filters</h2>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-          Filters determine which messages are copied from source to destination. Within one filter row, every rule
-          must pass (AND). Filters that share the same OR group number match as OR (any of them can satisfy that
-          group). Different OR group numbers are combined with AND (each group must be satisfied).
-        </p>
-        {canWrite ? (
-          <button
-            type="button"
-            onClick={() => setFilterModalOpen('add')}
-            className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm"
-          >
-            <Plus className="h-4 w-4" />
-            Add filter
-          </button>
-        ) : null}
-      </div>
-
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg">
-        <div className="divide-y divide-gray-200 dark:divide-gray-700">
-          {(filters ?? []).map((f) => (
-            <div key={f.id} className="p-4 flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                {describeFilter(f).length > 0 ? (
-                  <ul className="text-sm space-y-0.5">
-                    {describeFilter(f).map((line, i) => (
-                      <li key={i}>{line}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <span className="text-gray-500 text-sm">No rules (all messages pass)</span>
-                )}
-              </div>
-              <div className="flex gap-2 shrink-0">
-                {canWrite ? (
-                  <button
-                    type="button"
-                    onClick={() => setFilterModalOpen(f.id)}
-                    className="px-3 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
-                  >
-                    Edit
-                  </button>
-                ) : null}
-                {canWrite && deleteConfirm === f.id ? (
-                  <div className="flex gap-1">
-                    <button
-                      type="button"
-                      onClick={() => filterDeleteMutation.mutate(f.id)}
-                      disabled={filterDeleteMutation.isPending}
-                      className="px-3 py-1 text-sm rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-                    >
-                      Confirm
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDeleteConfirm(null)}
-                      className="px-3 py-1 text-sm rounded border border-gray-300 dark:border-gray-600"
-                    >
-                      Cancel
-                    </button>
+      <Card flush>
+        <CardHeader
+          title="Filters"
+          icon={Filter}
+          description="Filters decide which messages are copied. Within one filter, every rule must pass (AND). Filters that share the same OR group number match as OR. Different OR group numbers are combined with AND."
+          actions={
+            canWrite ? (
+              <Button size="sm" icon={Plus} onClick={() => setFilterModalOpen('add')}>
+                Add filter
+              </Button>
+            ) : undefined
+          }
+          inset
+        />
+        {(filters ?? []).length === 0 ? (
+          <EmptyState
+            icon={Filter}
+            title="No filters"
+            description="All messages pass through. Add a filter to include or exclude by text, media type, or regex."
+            action={
+              canWrite ? (
+                <Button size="sm" icon={Plus} onClick={() => setFilterModalOpen('add')}>
+                  Add your first filter
+                </Button>
+              ) : undefined
+            }
+          />
+        ) : (
+          <ul className="divide-y divide-line">
+            {(filters ?? []).map((f) => {
+              const lines = describeFilter(f);
+              return (
+                <li key={f.id} className="flex items-start justify-between gap-4 px-5 py-3.5">
+                  <div className="min-w-0 flex-1">
+                    {lines.length > 0 ? (
+                      <ul className="space-y-0.5 text-sm text-ink">
+                        {lines.map((line) => (
+                          <li key={line}>{line}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className="text-sm text-ink-subtle">No rules (all messages pass)</span>
+                    )}
                   </div>
-                ) : canWrite ? (
-                  <button
-                    type="button"
-                    onClick={() => setDeleteConfirm(f.id)}
-                    className="px-3 py-1 text-sm rounded border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 dark:border-red-800"
-                  >
-                    Delete
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          ))}
-        </div>
-        {(filters ?? []).length === 0 && (
-          <div className="p-8 text-center text-gray-500">
-            No filters. All messages pass through.
-            {canWrite ? (
-              <button
-                type="button"
-                onClick={() => setFilterModalOpen('add')}
-                className="ml-2 inline-flex items-center gap-1 text-blue-600 hover:underline"
-              >
-                <Plus className="h-4 w-4" /> Add your first filter
-              </button>
-            ) : null}
-          </div>
+                  {canWrite ? (
+                    <div className="flex shrink-0 gap-2">
+                      <Button variant="secondary" size="sm" onClick={() => setFilterModalOpen(f.id)}>
+                        Edit
+                      </Button>
+                      <Button variant="secondary" size="sm" onClick={() => setDeleteConfirm(f.id)}>
+                        Delete
+                      </Button>
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
         )}
-      </div>
+      </Card>
 
       {filterModalOpen !== null && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="filter-dialog-title"
-          onClick={() => setFilterModalOpen(null)}
-          onKeyDown={(e) => e.key === 'Escape' && setFilterModalOpen(null)}
+        <Modal
+          title={filterModalOpen === 'add' ? 'Add filter' : 'Edit filter'}
+          icon={<Filter className="h-5 w-5" />}
+          onClose={() => setFilterModalOpen(null)}
+          size="sm"
         >
-          <div
-            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2 mb-4">
-              <Filter className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-              <h2 id="filter-dialog-title" className="text-xl font-bold">
-                {filterModalOpen === 'add' ? 'Add filter' : 'Edit filter'}
-              </h2>
-            </div>
-            <FilterForm
-              key={filterModalOpen === 'add' ? 'new' : filterModalOpen}
-              isSubmitting={createMutation.isPending || updateMutation.isPending}
-              initialValues={
-                editingFilter
-                  ? {
-                      include_text: editingFilter.include_text ?? '',
-                      exclude_text: editingFilter.exclude_text ?? '',
-                      media_types: stringToMediaArray(editingFilter.media_types),
-                      regex_pattern: editingFilter.regex_pattern ?? '',
-                      or_group_id: editingFilter.or_group_id,
-                      allowed_sender_ids: editingFilter.allowed_sender_ids ?? '',
-                      denied_usernames: editingFilter.denied_usernames ?? '',
-                      min_url_count:
-                        editingFilter.min_url_count != null ? String(editingFilter.min_url_count) : '',
-                      max_url_count:
-                        editingFilter.max_url_count != null ? String(editingFilter.max_url_count) : '',
-                      required_hashtags: editingFilter.required_hashtags ?? '',
-                    }
-                  : undefined
-              }
-              onSubmit={handleFilterSubmit}
-              onCancel={() => setFilterModalOpen(null)}
-              submitLabel={filterModalOpen === 'add' ? 'Add' : 'Save'}
-            />
-          </div>
-        </div>
+          <FilterForm
+            key={filterModalOpen === 'add' ? 'new' : filterModalOpen}
+            isSubmitting={createMutation.isPending || updateMutation.isPending}
+            initialValues={
+              editingFilter
+                ? {
+                    include_text: editingFilter.include_text ?? '',
+                    exclude_text: editingFilter.exclude_text ?? '',
+                    media_types: stringToMediaArray(editingFilter.media_types),
+                    regex_pattern: editingFilter.regex_pattern ?? '',
+                    or_group_id: editingFilter.or_group_id,
+                    allowed_sender_ids: editingFilter.allowed_sender_ids ?? '',
+                    denied_usernames: editingFilter.denied_usernames ?? '',
+                    min_url_count:
+                      editingFilter.min_url_count != null ? String(editingFilter.min_url_count) : '',
+                    max_url_count:
+                      editingFilter.max_url_count != null ? String(editingFilter.max_url_count) : '',
+                    required_hashtags: editingFilter.required_hashtags ?? '',
+                  }
+                : undefined
+            }
+            onSubmit={handleFilterSubmit}
+            onCancel={() => setFilterModalOpen(null)}
+            submitLabel={filterModalOpen === 'add' ? 'Add' : 'Save'}
+          />
+        </Modal>
       )}
 
       {previewOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="preview-dialog-title"
-          onClick={() => setPreviewOpen(false)}
-          onKeyDown={(e) => e.key === 'Escape' && setPreviewOpen(false)}
+        <Modal
+          title="Preview pipeline"
+          icon={<Eye className="h-5 w-5" />}
+          description="Simulate one message through this mapping's filters, schedule check, and transforms (no Telegram send)."
+          onClose={() => setPreviewOpen(false)}
+          size="md"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setPreviewOpen(false)}>
+                Close
+              </Button>
+              <Button onClick={() => void runPreview()} isLoading={previewLoading}>
+                Run preview
+              </Button>
+            </>
+          }
         >
-          <div
-            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 id="preview-dialog-title" className="text-xl font-bold mb-4 flex items-center gap-2">
-              <Eye className="h-5 w-5" />
-              Preview pipeline
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              Simulate one message through this mapping&apos;s filters, schedule check, and transforms (no Telegram send).
-            </p>
-            <div className="space-y-3 mb-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Sample text</label>
-                <textarea
+          <div className="space-y-3">
+            <Field label="Sample text">
+              {(fieldProps) => (
+                <Textarea
+                  {...fieldProps}
                   aria-label="Sample message text for preview"
                   value={previewSampleText}
                   onChange={(e) => setPreviewSampleText(e.target.value)}
                   rows={3}
-                  className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
                 />
-              </div>
-              <div>
-                <label htmlFor="preview-media-type" className="block text-sm font-medium mb-1">
-                  Media type
-                </label>
-                <select
-                  id="preview-media-type"
+              )}
+            </Field>
+            <Field label="Media type">
+              {(fieldProps) => (
+                <Select
+                  {...fieldProps}
                   value={previewMediaType}
                   onChange={(e) => setPreviewMediaType(e.target.value)}
-                  className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
                 >
                   {['text', 'photo', 'video', 'voice', 'other'].map((t) => (
                     <option key={t} value={t}>
                       {t}
                     </option>
                   ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Sender ID (optional)</label>
-                  <input
+                </Select>
+              )}
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Sender ID (optional)">
+                {(fieldProps) => (
+                  <Input
+                    {...fieldProps}
                     type="text"
                     value={previewSenderId}
                     onChange={(e) => setPreviewSenderId(e.target.value)}
-                    className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm font-mono"
                     placeholder="numeric"
+                    className="font-mono"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Sender username (optional)</label>
-                  <input
+                )}
+              </Field>
+              <Field label="Sender username (optional)">
+                {(fieldProps) => (
+                  <Input
+                    {...fieldProps}
                     type="text"
                     value={previewSenderUsername}
                     onChange={(e) => setPreviewSenderUsername(e.target.value)}
-                    className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
                     placeholder="without @"
                   />
-                </div>
-              </div>
+                )}
+              </Field>
             </div>
-            {previewError ? (
-              <div className="mb-3 p-2 rounded bg-red-50 dark:bg-red-900/20 text-red-600 text-sm">{previewError}</div>
-            ) : null}
+            <FormError message={previewError} />
             {previewResult ? (
-              <dl className="text-sm space-y-1 mb-4 border border-gray-200 dark:border-gray-600 rounded p-3">
+              <dl className="space-y-2 rounded-control border border-line bg-surface-sunken p-3 text-sm">
                 <div className="flex justify-between gap-2">
-                  <dt className="text-gray-500">Passes filters</dt>
-                  <dd className="font-medium">{previewResult.passes_filters ? 'Yes' : 'No'}</dd>
+                  <dt className="text-ink-subtle">Passes filters</dt>
+                  <dd className="font-medium text-ink">{previewResult.passes_filters ? 'Yes' : 'No'}</dd>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <dt className="text-gray-500">Passes schedule</dt>
-                  <dd className="font-medium">{previewResult.passes_schedule ? 'Yes' : 'No'}</dd>
+                  <dt className="text-ink-subtle">Passes schedule</dt>
+                  <dd className="font-medium text-ink">{previewResult.passes_schedule ? 'Yes' : 'No'}</dd>
                 </div>
                 <div>
-                  <dt className="text-gray-500 mb-1">Transformed text</dt>
-                  <dd className="font-mono text-xs whitespace-pre-wrap break-words bg-gray-50 dark:bg-gray-900/50 p-2 rounded">
+                  <dt className="mb-1 text-ink-subtle">Transformed text</dt>
+                  <dd className="whitespace-pre-wrap break-words rounded-control bg-surface-raised p-2 font-mono text-xs text-ink">
                     {previewResult.transformed_text || '(empty)'}
                   </dd>
                 </div>
               </dl>
             ) : null}
-            <div className="flex flex-wrap gap-2 justify-end">
-              <button
-                type="button"
-                onClick={() => setPreviewOpen(false)}
-                className="px-4 py-2 rounded border border-gray-300 dark:border-gray-600"
-              >
-                Close
-              </button>
-              <button
-                type="button"
-                disabled={previewLoading}
-                onClick={() => void runPreview()}
-                className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
-              >
-                {previewLoading ? 'Running…' : 'Run preview'}
-              </button>
-            </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

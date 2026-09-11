@@ -1,4 +1,4 @@
-import { Filter, Inbox, MessageSquare } from 'lucide-react';
+import { MessageSquare } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
@@ -7,6 +7,11 @@ import { useAuth } from '../../store/AuthContext';
 import { PageHeader } from '../../components/PageHeader';
 import { Pagination } from '../../components/Pagination';
 import { StatusBadge } from '../../components/StatusBadge';
+import { TableSkeleton } from '../../components/Skeleton';
+import { MessageRef } from '../../components/MessageRef';
+import { UserFilterSelect } from '../../components/UserFilterSelect';
+import { EmptyState, ErrorState } from '../../components/ui/States';
+import { TableShell, Tbody, Td, Th, Thead, Tr } from '../../components/ui/TableShell';
 
 type Log = {
   user_id: number;
@@ -37,7 +42,7 @@ export function AdminLogs() {
   });
   const users = usersData?.items ?? [];
 
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['admin', 'message-logs', page, pageSize, userId],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
@@ -46,104 +51,105 @@ export function AdminLogs() {
     },
   });
 
-  if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
-
-  if (isError) {
-    const msg =
-      (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-      'Failed to load message logs.';
-    return (
-      <div>
-        <PageHeader title="All Message Logs" icon={MessageSquare} subtitle="Forwarded message history across all users" />
-        <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800">
-          <p className="font-medium">Could not load logs</p>
-          <p className="mt-1 text-sm">{msg}</p>
-          <p className="mt-2 text-sm">Configure MongoDB URI with credentials in Admin Settings.</p>
-        </div>
-      </div>
-    );
-  }
-
   const items = (data?.items ?? []) as Log[];
 
   return (
     <div>
-      <PageHeader title="All Message Logs" icon={MessageSquare} subtitle="Forwarded message history across all users" />
-      <div className="mb-6 flex flex-wrap items-center gap-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 px-4 py-3">
-        <Filter className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-        <label htmlFor="admin-logs-user-filter" className="text-sm font-medium">Filter by user</label>
-        <select
-          id="admin-logs-user-filter"
-          value={userId ?? ''}
-          onChange={(e) => {
-            const v = e.target.value;
-            setUserId(v === '' ? null : parseInt(v, 10));
-            setPage(1);
-          }}
-          className="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+      <PageHeader
+        title="All Message Logs"
+        icon={MessageSquare}
+        subtitle="Forwarded message history across all users"
+      />
+
+      <UserFilterSelect
+        users={users}
+        value={userId}
+        onChange={(next) => {
+          setUserId(next);
+          setPage(1);
+        }}
+        className="mb-4 max-w-80"
+      />
+
+      {isError ? (
+        <ErrorState
+          title="We couldn't load the message logs"
+          error={error}
+          onRetry={() => refetch()}
+        />
+      ) : isLoading ? (
+        <TableSkeleton columns={5} rows={8} />
+      ) : (
+        <TableShell
+          caption="Message logs for all users"
+          footer={
+            items.length === 0 ? (
+              <EmptyState
+                icon={MessageSquare}
+                title={userId != null ? 'This user has no message logs' : 'No messages copied yet'}
+                description={
+                  userId != null
+                    ? 'Switch the filter back to all users to see the rest.'
+                    : 'Copied messages from every mapping will appear here. If this stays empty, check that MongoDB is configured in Settings.'
+                }
+              />
+            ) : (
+              data && (
+                <Pagination
+                  page={data.page}
+                  pageSize={data.page_size}
+                  total={data.total}
+                  totalPages={data.total_pages}
+                  onPageChange={setPage}
+                  onPageSizeChange={(n) => {
+                    setPageSize(n);
+                    setPage(1);
+                  }}
+                />
+              )
+            )
+          }
         >
-          <option value="">All users</option>
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>
-              User {u.id} ({u.email})
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-          <thead className="bg-gray-50 dark:bg-gray-700">
+          <Thead>
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">User</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Source</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Dest</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Time</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Status</th>
+              <Th>User</Th>
+              <Th>Source</Th>
+              <Th>Destination</Th>
+              <Th>Time</Th>
+              <Th>Status</Th>
             </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+          </Thead>
+          <Tbody>
             {items.map((log, i) => (
-              <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td className="px-6 py-4 text-sm">{log.user_id}</td>
-                <td className="px-6 py-4 text-sm">
-                  {log.source_chat_title ? (
-                    <span title={`ID: ${log.source_chat_id}`}>{log.source_chat_title} <span className="font-mono text-gray-500">({log.source_chat_id} / {log.source_msg_id})</span></span>
-                  ) : (
-                    <span className="font-mono">{log.source_chat_id} / {log.source_msg_id}</span>
-                  )}
-                </td>
-                <td className="px-6 py-4 text-sm">
-                  {log.dest_chat_title ? (
-                    <span title={`ID: ${log.dest_chat_id}`}>{log.dest_chat_title} <span className="font-mono text-gray-500">({log.dest_chat_id} / {log.dest_msg_id})</span></span>
-                  ) : (
-                    <span className="font-mono">{log.dest_chat_id} / {log.dest_msg_id}</span>
-                  )}
-                </td>
-                <td className="px-6 py-4 text-sm" title={log.timestamp}>{formatLocalDateTime(log.timestamp, user?.timezone ?? undefined)}</td>
-                <td className="px-6 py-4 text-sm">
+              <Tr key={`${log.user_id}-${log.source_chat_id}-${log.source_msg_id}-${i}`}>
+                <Td className="tabular-nums text-ink-subtle">{log.user_id}</Td>
+                <Td className="max-w-56">
+                  <MessageRef
+                    title={log.source_chat_title}
+                    chatId={log.source_chat_id}
+                    messageId={log.source_msg_id}
+                  />
+                </Td>
+                <Td className="max-w-56">
+                  <MessageRef
+                    title={log.dest_chat_title}
+                    chatId={log.dest_chat_id}
+                    messageId={log.dest_msg_id}
+                  />
+                </Td>
+                <Td className="whitespace-nowrap text-ink-muted">
+                  <time dateTime={log.timestamp}>
+                    {formatLocalDateTime(log.timestamp, user?.timezone ?? undefined)}
+                  </time>
+                </Td>
+                <Td>
                   <StatusBadge status={log.status ?? ''} variant="status" />
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
-          </tbody>
-        </table>
-        {items.length === 0 && (
-          <div className="p-8 text-center text-gray-500 flex flex-col items-center gap-2">
-            <Inbox className="h-12 w-12 text-gray-400" />
-            <p>No logs yet.</p>
-          </div>
-        )}
-        {data && (
-          <Pagination
-            page={data.page}
-            pageSize={data.page_size}
-            total={data.total}
-            totalPages={data.total_pages}
-            onPageChange={setPage}
-            onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
-          />
-        )}
-      </div>
+          </Tbody>
+        </TableShell>
+      )}
     </div>
   );
 }

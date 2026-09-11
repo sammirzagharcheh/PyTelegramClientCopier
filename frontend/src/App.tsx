@@ -1,3 +1,4 @@
+import { Loader2 } from 'lucide-react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './store/AuthContext';
@@ -30,9 +31,21 @@ import { ThemeProvider } from './theme/ThemeProvider';
 
 const queryClient = createQueryClient();
 
+function SessionLoading() {
+  return (
+    <div
+      className="flex min-h-[100dvh] items-center justify-center bg-surface"
+      role="status"
+      aria-label="Checking your session"
+    >
+      <Loader2 className="h-5 w-5 animate-spin text-ink-subtle" aria-hidden />
+    </div>
+  );
+}
+
 function ProtectedRoute({ children, adminOnly }: { children: React.ReactNode; adminOnly?: boolean }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  if (loading) return <SessionLoading />;
   if (!user) return <Navigate to="/login" replace />;
   if (adminOnly && user.role !== 'admin') return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
@@ -40,7 +53,7 @@ function ProtectedRoute({ children, adminOnly }: { children: React.ReactNode; ad
 
 function RootRedirect() {
   const { user, loading } = useAuth();
-  if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  if (loading) return <SessionLoading />;
   if (!user) return <Navigate to="/login" replace />;
   return <Navigate to={user.role === 'admin' ? '/admin' : '/dashboard'} replace />;
 }

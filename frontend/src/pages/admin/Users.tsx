@@ -1,7 +1,8 @@
-import { Filter, Lock, Pencil, Plus, Search, Trash2, Users, X } from 'lucide-react';
+import { Lock, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { errorMessage } from '../../lib/apiError';
 import { CreateUserDialog } from '../../components/CreateUserDialog';
 import { EditUserDialog } from '../../components/EditUserDialog';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -10,6 +11,13 @@ import { PageHeader } from '../../components/PageHeader';
 import { SortableTh } from '../../components/SortableTh';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Pagination } from '../../components/Pagination';
+import { TableSkeleton } from '../../components/Skeleton';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
+import { Field, Input, Select } from '../../components/ui/Field';
+import { FormError } from '../../components/ui/FormError';
+import { EmptyState, ErrorState } from '../../components/ui/States';
+import { TableShell, Tbody, Td, Th, Thead, Tr } from '../../components/ui/TableShell';
 
 type User = {
   id: number;
@@ -47,26 +55,19 @@ export function AdminUsers() {
       setActionError('');
     },
     onError: (err: unknown) => {
-      setActionError(
-        err &&
-          typeof err === 'object' &&
-          'response' in err &&
-          err.response &&
-          typeof err.response === 'object' &&
-          'data' in err.response &&
-          err.response.data &&
-          typeof err.response.data === 'object' &&
-          'detail' in err.response.data
-          ? String((err.response.data as { detail: unknown }).detail)
-          : 'Failed to delete user'
-      );
+      setActionError(errorMessage(err, 'Failed to delete user'));
     },
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['admin', 'users', page, pageSize, roleFilter, statusFilter, search, sortBy, sortOrder],
     queryFn: async () => {
-      const params = new URLSearchParams({ page: String(page), page_size: String(pageSize), sort_by: sortBy, sort_order: sortOrder });
+      const params = new URLSearchParams({
+        page: String(page),
+        page_size: String(pageSize),
+        sort_by: sortBy,
+        sort_order: sortOrder,
+      });
       if (roleFilter) params.set('role', roleFilter);
       if (statusFilter) params.set('status_filter', statusFilter);
       if (search.trim()) params.set('search', search.trim());
@@ -74,9 +75,16 @@ export function AdminUsers() {
     },
   });
 
-  if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
-
   const users = data?.items ?? [];
+  const isFiltered = search !== '' || roleFilter !== '' || statusFilter !== '';
+
+  const handleSort = (key: string, order: 'asc' | 'desc') => {
+    setSortBy(key);
+    setSortOrder(order);
+    setPage(1);
+  };
+
+  const sortProps = { currentSort: sortBy, currentOrder: sortOrder, onSort: handleSort };
 
   return (
     <div>
@@ -85,59 +93,77 @@ export function AdminUsers() {
         icon={Users}
         subtitle="Manage user accounts and permissions"
         actions={
-          <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">
-            <Plus className="h-4 w-4" />
+          <Button icon={Plus} onClick={() => setShowCreate(true)}>
             Create User
-          </button>
+          </Button>
         }
       />
-      <div className="mb-6 flex flex-wrap items-center gap-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 px-4 py-3">
-        <Filter className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-        <label htmlFor="admin-users-search" className="text-sm font-medium">Search</label>
-        <div className="relative">
-          <Search className="h-4 w-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            id="admin-users-search"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Email or name"
-            className="pl-9 pr-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm w-56"
-          />
-        </div>
-        <label htmlFor="admin-users-role" className="text-sm font-medium">Role</label>
-        <select
-          id="admin-users-role"
-          value={roleFilter}
-          onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}
-          className="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
-        >
-          <option value="">All</option>
-          <option value="user">User</option>
-          <option value="viewer">Viewer</option>
-          <option value="admin">Admin</option>
-        </select>
-        <label htmlFor="admin-users-status" className="text-sm font-medium">Status</label>
-        <select
-          id="admin-users-status"
-          value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-          className="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
-        >
-          <option value="">All</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-        </select>
-        {(search || roleFilter || statusFilter) && (
-          <button
+
+      <div className="mb-4 flex flex-wrap items-end gap-4">
+        <Field label="Search" className="w-56">
+          {(fieldProps) => (
+            <Input
+              {...fieldProps}
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Email or name"
+            />
+          )}
+        </Field>
+        <Field label="Role" className="w-40">
+          {(fieldProps) => (
+            <Select
+              {...fieldProps}
+              value={roleFilter}
+              onChange={(e) => {
+                setRoleFilter(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">All roles</option>
+              <option value="user">User</option>
+              <option value="viewer">Viewer</option>
+              <option value="admin">Admin</option>
+            </Select>
+          )}
+        </Field>
+        <Field label="Status" className="w-40">
+          {(fieldProps) => (
+            <Select
+              {...fieldProps}
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">All statuses</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </Select>
+          )}
+        </Field>
+        {isFiltered && (
+          <Button
             type="button"
-            onClick={() => { setSearch(''); setRoleFilter(''); setStatusFilter(''); setPage(1); }}
-            className="inline-flex items-center gap-1 px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+            variant="secondary"
+            size="sm"
+            icon={X}
+            onClick={() => {
+              setSearch('');
+              setRoleFilter('');
+              setStatusFilter('');
+              setPage(1);
+            }}
           >
-            <X className="h-3 w-3" />
             Reset
-          </button>
+          </Button>
         )}
       </div>
+
       {showCreate && <CreateUserDialog onClose={() => setShowCreate(false)} />}
       {editingUser && <EditUserDialog user={editingUser} onClose={() => setEditingUser(null)} />}
       {deletingUser && (
@@ -151,88 +177,114 @@ export function AdminUsers() {
           onConfirm={() => deleteMutation.mutate(deletingUser.id)}
         />
       )}
-      {actionError && (
-        <div className="mb-4 p-3 rounded bg-red-50 dark:bg-red-900/20 text-red-600 text-sm">{actionError}</div>
-      )}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-          <thead className="bg-gray-50 dark:bg-gray-700">
+      <FormError message={actionError} className="mb-4" />
+
+      {isError ? (
+        <ErrorState title="We couldn't load the user list" error={error} onRetry={() => refetch()} />
+      ) : isLoading ? (
+        <TableSkeleton columns={6} />
+      ) : (
+        <TableShell
+          caption="User accounts"
+          footer={
+            users.length === 0 ? (
+              <EmptyState
+                icon={Users}
+                title={isFiltered ? 'No users match these filters' : 'No users yet'}
+                description={
+                  isFiltered
+                    ? 'Clear the search, role, or status filter to see the rest.'
+                    : 'Create the first account to give someone access.'
+                }
+                action={
+                  !isFiltered && (
+                    <Button icon={Plus} size="sm" onClick={() => setShowCreate(true)}>
+                      Create User
+                    </Button>
+                  )
+                }
+              />
+            ) : (
+              data && (
+                <Pagination
+                  page={data.page}
+                  pageSize={data.page_size}
+                  total={data.total}
+                  totalPages={data.total_pages}
+                  onPageChange={setPage}
+                  onPageSizeChange={(n) => {
+                    setPageSize(n);
+                    setPage(1);
+                  }}
+                />
+              )
+            )
+          }
+        >
+          <Thead>
             <tr>
-              <SortableTh label="ID" sortKey="id" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
-              <SortableTh label="Email" sortKey="email" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
-              <SortableTh label="Name" sortKey="name" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
-              <SortableTh label="Role" sortKey="role" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
-              <SortableTh label="Status" sortKey="status" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Actions</th>
+              <SortableTh label="ID" sortKey="id" {...sortProps} />
+              <SortableTh label="Email" sortKey="email" {...sortProps} />
+              <SortableTh label="Name" sortKey="name" {...sortProps} />
+              <SortableTh label="Role" sortKey="role" {...sortProps} />
+              <SortableTh label="Status" sortKey="status" {...sortProps} />
+              <Th className="w-40 text-right">Actions</Th>
             </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+          </Thead>
+          <Tbody>
             {users.map((u) => (
-              <tr key={u.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td className="px-6 py-4 text-sm">{u.id}</td>
-                <td className="px-6 py-4 text-sm">
+              <Tr key={u.id}>
+                <Td className="tabular-nums text-ink-subtle">{u.id}</Td>
+                <Td className="font-medium">
                   <span className="inline-flex items-center gap-2">
                     {u.email}
                     {u.id === currentUser?.id && (
-                      <span
-                        title="Current account"
-                        className="inline-flex items-center gap-1 rounded-full border border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300"
-                      >
-                        <Lock className="h-3 w-3" />
+                      <Badge tone="neutral" icon={Lock}>
                         You
-                      </span>
+                      </Badge>
                     )}
                   </span>
-                </td>
-                <td className="px-6 py-4 text-sm">{u.name || '—'}</td>
-                <td className="px-6 py-4 text-sm">
+                </Td>
+                <Td className="text-ink-muted">{u.name || 'Not set'}</Td>
+                <Td>
                   <StatusBadge status={u.role} variant="role" />
-                </td>
-                <td className="px-6 py-4 text-sm">
+                </Td>
+                <Td>
                   <StatusBadge status={u.status} variant="status" />
-                </td>
-                <td className="px-6 py-4 text-sm">
-                  <div className="flex items-center gap-2">
-                    <button
+                </Td>
+                <Td className="text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={Pencil}
                       onClick={() => setEditingUser(u)}
-                      className="flex items-center gap-1 px-3 py-1 rounded bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-sm"
                     >
-                      <Pencil className="h-3 w-3" />
                       Edit
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
+                      variant="danger"
+                      size="sm"
+                      icon={Trash2}
                       disabled={u.id === currentUser?.id}
-                      onClick={() => { setActionError(''); setDeletingUser(u); }}
-                      title={u.id === currentUser?.id ? 'You cannot delete your own account' : 'Delete user'}
-                      className="flex items-center gap-1 px-3 py-1 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50 text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-100 dark:disabled:hover:bg-red-900/30"
+                      title={
+                        u.id === currentUser?.id ? 'You cannot delete your own account' : 'Delete user'
+                      }
+                      onClick={() => {
+                        setActionError('');
+                        setDeletingUser(u);
+                      }}
                     >
-                      <Trash2 className="h-3 w-3" />
                       Delete
-                    </button>
+                    </Button>
                   </div>
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
-          </tbody>
-        </table>
-        {users.length === 0 && (
-          <div className="p-8 text-center text-gray-500 flex flex-col items-center gap-2">
-            <Users className="h-12 w-12 text-gray-400" />
-            <p>{search || roleFilter || statusFilter ? 'No users match current filters.' : 'No users yet.'}</p>
-          </div>
-        )}
-        {data && (
-          <Pagination
-            page={data.page}
-            pageSize={data.page_size}
-            total={data.total}
-            totalPages={data.total_pages}
-            onPageChange={setPage}
-            onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
-          />
-        )}
-      </div>
+          </Tbody>
+        </TableShell>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { Database, Filter, Inbox } from 'lucide-react';
+import { Database } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
@@ -6,6 +6,10 @@ import { formatLocalDateTime } from '../../lib/formatDateTime';
 import { useAuth } from '../../store/AuthContext';
 import { PageHeader } from '../../components/PageHeader';
 import { Pagination } from '../../components/Pagination';
+import { TableSkeleton } from '../../components/Skeleton';
+import { UserFilterSelect } from '../../components/UserFilterSelect';
+import { EmptyState, ErrorState } from '../../components/ui/States';
+import { TableShell, Tbody, Td, Th, Thead, Tr } from '../../components/ui/TableShell';
 
 type IndexEntry = {
   user_id: number;
@@ -33,7 +37,7 @@ export function AdminMessageIndex() {
   });
   const users = usersData?.items ?? [];
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['admin', 'message-index', page, pageSize, userId],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
@@ -41,8 +45,6 @@ export function AdminMessageIndex() {
       return (await api.get<PaginatedIndex>(`/message-index?${params}`)).data;
     },
   });
-
-  if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
 
   const items = (data?.items ?? []) as IndexEntry[];
 
@@ -53,67 +55,78 @@ export function AdminMessageIndex() {
         icon={Database}
         subtitle="Source to destination message ID mapping for reply threading"
       />
-      <div className="mb-6 flex flex-wrap items-center gap-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 px-4 py-3">
-        <Filter className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-        <label htmlFor="admin-message-index-user-filter" className="text-sm font-medium">Filter by user</label>
-        <select
-          id="admin-message-index-user-filter"
-          value={userId ?? ''}
-          onChange={(e) => {
-            const v = e.target.value;
-            setUserId(v === '' ? null : parseInt(v, 10));
-            setPage(1);
-          }}
-          className="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+
+      <UserFilterSelect
+        users={users}
+        value={userId}
+        onChange={(next) => {
+          setUserId(next);
+          setPage(1);
+        }}
+        className="mb-4 max-w-80"
+      />
+
+      {isError ? (
+        <ErrorState title="We couldn't load the message index" error={error} onRetry={() => refetch()} />
+      ) : isLoading ? (
+        <TableSkeleton columns={4} rows={8} />
+      ) : (
+        <TableShell
+          caption="Message index for all users"
+          footer={
+            items.length === 0 ? (
+              <EmptyState
+                icon={Database}
+                title={userId != null ? 'This user has no index entries' : 'No index entries yet'}
+                description={
+                  userId != null
+                    ? 'Switch the filter back to all users to see the rest.'
+                    : 'Entries are written as messages are copied, so replies can be threaded to the right message.'
+                }
+              />
+            ) : (
+              data && (
+                <Pagination
+                  page={data.page}
+                  pageSize={data.page_size}
+                  total={data.total}
+                  totalPages={data.total_pages}
+                  onPageChange={setPage}
+                  onPageSizeChange={(n) => {
+                    setPageSize(n);
+                    setPage(1);
+                  }}
+                />
+              )
+            )
+          }
         >
-          <option value="">All users</option>
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>
-              User {u.id} ({u.email})
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-          <thead className="bg-gray-50 dark:bg-gray-700">
+          <Thead>
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">User</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Source</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Dest</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Updated</th>
+              <Th>User</Th>
+              <Th>Source</Th>
+              <Th>Destination</Th>
+              <Th>Updated</Th>
             </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+          </Thead>
+          <Tbody>
             {items.map((e, i) => (
-              <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td className="px-6 py-4 text-sm">{e.user_id}</td>
-                <td className="px-6 py-4 text-sm font-mono">{e.source_chat_id} / {e.source_msg_id}</td>
-                <td className="px-6 py-4 text-sm font-mono">{e.dest_chat_id} / {e.dest_msg_id}</td>
-                <td className="px-6 py-4 text-sm whitespace-nowrap" title={e.updated_at ?? undefined}>
+              <Tr key={`${e.user_id}-${e.source_chat_id}-${e.source_msg_id}-${i}`}>
+                <Td className="tabular-nums text-ink-subtle">{e.user_id}</Td>
+                <Td className="font-mono text-xs tabular-nums">
+                  {e.source_chat_id} / {e.source_msg_id}
+                </Td>
+                <Td className="font-mono text-xs tabular-nums">
+                  {e.dest_chat_id} / {e.dest_msg_id}
+                </Td>
+                <Td className="whitespace-nowrap text-ink-muted" title={e.updated_at ?? undefined}>
                   {formatLocalDateTime(e.updated_at, user?.timezone ?? undefined)}
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
-          </tbody>
-        </table>
-        {items.length === 0 && (
-          <div className="p-8 text-center text-gray-500 flex flex-col items-center gap-2">
-            <Inbox className="h-12 w-12 text-gray-400" />
-            <p>No index entries yet.</p>
-          </div>
-        )}
-        {data && (
-          <Pagination
-            page={data.page}
-            pageSize={data.page_size}
-            total={data.total}
-            totalPages={data.total_pages}
-            onPageChange={setPage}
-            onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
-          />
-        )}
-      </div>
+          </Tbody>
+        </TableShell>
+      )}
     </div>
   );
 }

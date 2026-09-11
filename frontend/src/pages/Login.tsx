@@ -1,70 +1,77 @@
-import { LogIn } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Button } from '../components/ui/Button';
+import { Field, Input } from '../components/ui/Field';
+import { errorMessage } from '../lib/apiError';
 import { useAuth } from '../store/AuthContext';
 
 export function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setIsSubmitting(true);
     try {
       await login(email, password);
       navigate('/');
     } catch (err: unknown) {
-      setError(
-        err && typeof err === 'object' && 'response' in err && err.response && typeof err.response === 'object' && 'data' in err.response && err.response.data && typeof err.response.data === 'object' && 'detail' in err.response.data
-          ? String((err.response.data as { detail: unknown }).detail)
-          : 'Login failed'
-      );
+      setError(errorMessage(err, 'Sign in failed. Check your email and password.'));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 border-l-4 border-l-blue-500">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="rounded-lg bg-blue-100 dark:bg-blue-900/40 p-2.5 text-blue-600 dark:text-blue-400">
-          <LogIn className="h-6 w-6" strokeWidth={2} />
-        </div>
-        <h1 className="text-2xl font-bold">Sign in</h1>
-      </div>
-      <form onSubmit={handleSubmit} className="space-y-4">
+    <div className="rounded-surface border border-line bg-surface-raised p-6 shadow-surface">
+      <h1 className="text-lg font-semibold text-ink">Sign in</h1>
+      <p className="mt-1 text-sm text-ink-subtle">Use your operator account to continue.</p>
+
+      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
         {error && (
-          <div className="p-3 rounded-md bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm">
-            {error}
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-control border border-red-300 bg-red-50 px-3 py-2.5 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/50 dark:text-red-200"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <span>{error}</span>
           </div>
         )}
-        <div>
-          <label className="block text-sm font-medium mb-2">Email</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-4 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:ring-2 focus:ring-blue-500"
-            required
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-2">Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-4 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:ring-2 focus:ring-blue-500"
-            required
-          />
-        </div>
-        <button
-          type="submit"
-          className="w-full py-2 px-4 rounded-md bg-blue-600 text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500"
-        >
+        <Field label="Email" required>
+          {(fieldProps) => (
+            <Input
+              {...fieldProps}
+              type="email"
+              autoComplete="username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              invalid={Boolean(error)}
+              required
+            />
+          )}
+        </Field>
+        <Field label="Password" required>
+          {(fieldProps) => (
+            <Input
+              {...fieldProps}
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              invalid={Boolean(error)}
+              required
+            />
+          )}
+        </Field>
+        <Button type="submit" isLoading={isSubmitting} className="w-full">
           Sign in
-        </button>
+        </Button>
       </form>
     </div>
   );

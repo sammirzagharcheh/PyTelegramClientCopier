@@ -3,12 +3,13 @@ import { CheckCircle, Shield, XCircle } from 'lucide-react';
 type Variant = 'success' | 'warning' | 'error' | 'neutral' | 'role-admin' | 'role-user';
 
 const variantStyles: Record<Variant, string> = {
-  success: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
-  warning: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
-  error: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
-  neutral: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-400',
-  'role-admin': 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400',
-  'role-user': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+  success:
+    'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300',
+  warning: 'bg-amber-100 text-amber-900 dark:bg-amber-500/15 dark:text-amber-300',
+  error: 'bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300',
+  neutral: 'bg-surface-sunken text-ink-muted',
+  'role-admin': 'bg-violet-100 text-violet-800 dark:bg-violet-500/15 dark:text-violet-300',
+  'role-user': 'bg-accent-soft text-accent-ink',
 };
 
 function getVariant(status: string, field?: 'status' | 'role' | 'type' | 'enabled'): Variant {
@@ -42,14 +43,15 @@ type Props = {
 
 export function StatusBadge({ status, variant = 'status', showIcon = false }: Props) {
   const v = getVariant(status, variant);
-  const displayText = status || '—';
+  const displayText = status || 'Unknown';
   const Icon =
     v === 'success' ? CheckCircle : v === 'error' || v === 'warning' ? XCircle : v === 'role-admin' ? Shield : null;
 
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${variantStyles[v]}`}
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${variantStyles[v]}`}
     >
-      {showIcon && Icon && <Icon className="h-3 w-3 shrink-0" />}
+      {showIcon && Icon && <Icon className="h-3 w-3 shrink-0" aria-hidden />}
       {displayText}
     </span>
   );

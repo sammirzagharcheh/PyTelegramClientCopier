@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { MappingScheduleForm, TEMPLATES, WEEKDAY_LABELS } from './MappingScheduleForm';
+import { MappingScheduleForm } from './MappingScheduleForm';
+import { TEMPLATES, WEEKDAY_LABELS } from '../lib/scheduleUtils';
 
 // Keep times as-is for predictable tests
 vi.mock('../lib/formatDateTime', () => ({

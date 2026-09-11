@@ -1,5 +1,5 @@
 import { Eye, Pencil, Trash2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { ActionDivider, IconAction, IconActionLink } from './ui/IconAction';
 
 type Props = {
   mappingId: number;
@@ -8,40 +8,14 @@ type Props = {
   viewBasePath?: string;
 };
 
-const iconButtonBase =
-  'p-2 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 dark:focus:ring-offset-gray-800';
-
 export function MappingTableActions({ mappingId, onEdit, onDelete, viewBasePath }: Props) {
   const viewTo = viewBasePath ? `${viewBasePath}/${mappingId}` : `/mappings/${mappingId}`;
   return (
-    <div className="flex items-center justify-end gap-1">
-      <button
-        type="button"
-        onClick={onEdit}
-        title="Edit"
-        aria-label="Edit mapping"
-        className={`${iconButtonBase} text-gray-500 hover:bg-gray-100 hover:text-blue-600 dark:hover:bg-gray-700 dark:hover:text-blue-400`}
-      >
-        <Pencil className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
-        onClick={onDelete}
-        title="Delete"
-        aria-label="Delete mapping"
-        className={`${iconButtonBase} text-gray-500 hover:bg-gray-100 hover:text-red-600 dark:hover:bg-gray-700 dark:hover:text-red-500`}
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
-      <span className="mx-0.5 h-4 w-px bg-gray-200 dark:bg-gray-600" aria-hidden />
-      <Link
-        to={viewTo}
-        title="View details"
-        aria-label="View details"
-        className={`${iconButtonBase} text-gray-500 hover:bg-gray-100 hover:text-blue-600 dark:hover:bg-gray-700 dark:hover:text-blue-400`}
-      >
-        <Eye className="h-4 w-4" />
-      </Link>
+    <div className="flex items-center justify-end gap-0.5">
+      <IconAction icon={Pencil} label="Edit mapping" onClick={onEdit} />
+      <IconAction icon={Trash2} label="Delete mapping" tone="danger" onClick={onDelete} />
+      <ActionDivider />
+      <IconActionLink icon={Eye} label="View mapping details" to={viewTo} />
     </div>
   );
 }

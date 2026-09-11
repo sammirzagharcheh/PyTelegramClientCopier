@@ -3,8 +3,13 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { ChannelMapping } from '../lib/api';
+import { errorMessage } from '../lib/apiError';
 import { MappingRouteFields } from './MappingRouteFields';
 import { useToast } from './Toast';
+import { Button } from './ui/Button';
+import { Field, Input, Select, Textarea } from './ui/Field';
+import { FormError } from './ui/FormError';
+import { Modal } from './ui/Modal';
 import {
   hasRouteErrors,
   parseChatId,
@@ -45,6 +50,8 @@ const WEBHOOK_TEMPLATE_TOKENS = [
   { label: 'text', value: '{{text}}' },
   { label: 'guid', value: '{{guid}}' },
 ];
+
+const checkboxClass = 'h-4 w-4 rounded border-line-strong accent-[var(--accent)]';
 
 function buildInitialRoute(m: ChannelMapping): MappingRouteValues {
   return {
@@ -167,7 +174,7 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
       // leaves old values visible until a background refetch completes.
       queryClient.setQueryData<ChannelMapping>(['mapping', String(mapping.id)], data);
       // List page (`/mappings`) never had sync_* in row payloads; merge PATCH result into any
-      // paginated `['mappings', …]` cache so reopening Edit from the table shows saved toggles.
+      // paginated `['mappings', ...]` cache so reopening Edit from the table shows saved toggles.
       const secretTrim =
         typeof data.copy_webhook_secret === 'string' ? data.copy_webhook_secret.trim() : '';
       queryClient.setQueriesData({ queryKey: ['mappings'], exact: false }, (old) => {
@@ -213,25 +220,15 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
       });
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
       queryClient.invalidateQueries({ queryKey: ['mapping', String(mapping.id)] });
-      showToast('Mapping updated. Workers restarting to apply changes.');
+      showToast('Mapping updated. Workers are restarting to apply it.');
       onClose();
     },
     onError: (err: unknown) => {
-      const msg =
-        err instanceof Error && err.message.startsWith('Send delay')
-          ? err.message
-          : err &&
-              typeof err === 'object' &&
-              'response' in err &&
-              err.response &&
-              typeof err.response === 'object' &&
-              'data' in err.response &&
-              err.response.data &&
-              typeof err.response.data === 'object' &&
-              'detail' in err.response.data
-            ? String((err.response.data as { detail: unknown }).detail)
-            : 'Failed to update mapping';
-      setError(msg);
+      if (err instanceof Error && err.message.startsWith('Send delay')) {
+        setError(err.message);
+        return;
+      }
+      setError(errorMessage(err, 'We could not update this mapping.'));
     },
   });
 
@@ -267,6 +264,7 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
     setClearWebhookHeaderSecret(false);
     setError('');
   }, [mapping]);
+
   const insertWebhookToken = (token: string) => {
     const textarea = payloadTemplateRef.current;
     if (!textarea) {
@@ -286,237 +284,253 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div
-        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 mb-4">
-          <Pencil className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-          <h2 className="text-xl font-bold">Edit Channel Mapping</h2>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="p-3 rounded bg-red-50 dark:bg-red-900/20 text-red-600 text-sm">{error}</div>
-          )}
-          <MappingRouteFields
-            values={route}
-            onChange={setRoute}
-            errors={fieldErrors}
-            name={name}
-            onNameChange={setName}
-            initialSourceChatId={mapping.source_chat_id}
-            initialDestChatId={mapping.dest_chat_id}
-            initialSourceTitle={mapping.source_chat_title}
-            initialDestTitle={mapping.dest_chat_title}
-          />
+    <Modal
+      title="Edit channel mapping"
+      icon={<Pencil className="h-5 w-5 text-ink-subtle" strokeWidth={2} aria-hidden />}
+      size="lg"
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" form="edit-mapping-form" isLoading={mutation.isPending}>
+            Save changes
+          </Button>
+        </>
+      }
+    >
+      <form id="edit-mapping-form" onSubmit={handleSubmit} className="space-y-4" noValidate>
+        <FormError message={error} />
+        <MappingRouteFields
+          values={route}
+          onChange={setRoute}
+          errors={fieldErrors}
+          name={name}
+          onNameChange={setName}
+          initialSourceChatId={mapping.source_chat_id}
+          initialDestChatId={mapping.dest_chat_id}
+          initialSourceTitle={mapping.source_chat_title}
+          initialDestTitle={mapping.dest_chat_title}
+        />
 
-          <fieldset className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 space-y-3">
-            <legend className="text-sm font-medium px-1">Advanced</legend>
-            <div>
-              <label htmlFor="edit-mapping-send-delay" className="block text-sm font-medium mb-1">
-                Send delay (ms)
-              </label>
-              <input
-                id="edit-mapping-send-delay"
+        <fieldset className="space-y-4 rounded-surface border border-line p-4">
+          <legend className="px-1 text-sm font-medium text-ink">Advanced</legend>
+          <Field
+            label="Send delay (ms)"
+            hint={`Extra delay before each forwarded message (0-${MAX_SEND_DELAY_MS} ms).`}
+          >
+            {(fieldProps) => (
+              <Input
+                {...fieldProps}
                 type="number"
                 min={0}
                 max={MAX_SEND_DELAY_MS}
                 value={sendDelayMs}
                 onChange={(e) => setSendDelayMs(e.target.value)}
-                className="w-full max-w-xs px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+                className="max-w-xs tabular-nums"
               />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Extra delay before each forwarded message (0–{MAX_SEND_DELAY_MS} ms).
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-4">
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={syncEdits}
-                  onChange={(e) => setSyncEdits(e.target.checked)}
-                  className="rounded border-gray-300"
-                />
-                Sync edits to destination
-              </label>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={syncDeletes}
-                  onChange={(e) => setSyncDeletes(e.target.checked)}
-                  className="rounded border-gray-300"
-                />
-                Sync deletes to destination
-              </label>
-            </div>
-            <div>
-              <span className="block text-sm font-medium mb-1">Edit strategy</span>
-              <div className="flex flex-wrap gap-3 text-sm">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="edit_strategy"
-                    checked={editStrategy === 'replace_text'}
-                    onChange={() => setEditStrategy('replace_text')}
-                  />
-                  Replace destination text
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="edit_strategy"
-                    checked={editStrategy === 'append_notice'}
-                    onChange={() => setEditStrategy('append_notice')}
-                  />
-                  Append notice (new message)
-                </label>
-              </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Use “Append notice” when destination messages cannot be edited (e.g. some media-only posts).
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Copy webhook URL (optional)</label>
+            )}
+          </Field>
+          <div className="flex flex-wrap gap-4">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-ink">
               <input
+                type="checkbox"
+                checked={syncEdits}
+                onChange={(e) => setSyncEdits(e.target.checked)}
+                className={checkboxClass}
+              />
+              Sync edits to destination
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={syncDeletes}
+                onChange={(e) => setSyncDeletes(e.target.checked)}
+                className={checkboxClass}
+              />
+              Sync deletes to destination
+            </label>
+          </div>
+          <fieldset>
+            <legend className="mb-2 text-sm font-medium text-ink">Edit strategy</legend>
+            <div className="flex flex-wrap gap-4 text-sm text-ink">
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="radio"
+                  name="edit_strategy"
+                  checked={editStrategy === 'replace_text'}
+                  onChange={() => setEditStrategy('replace_text')}
+                  className={checkboxClass}
+                />
+                Replace destination text
+              </label>
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="radio"
+                  name="edit_strategy"
+                  checked={editStrategy === 'append_notice'}
+                  onChange={() => setEditStrategy('append_notice')}
+                  className={checkboxClass}
+                />
+                Append notice (new message)
+              </label>
+            </div>
+            <p className="mt-1 text-xs text-ink-subtle">
+              Use &quot;Append notice&quot; when destination messages cannot be edited (for example,
+              some media-only posts).
+            </p>
+          </fieldset>
+          <Field label="Copy webhook URL" hint="Optional.">
+            {(fieldProps) => (
+              <Input
+                {...fieldProps}
                 type="url"
                 value={copyWebhookUrl}
                 onChange={(e) => setCopyWebhookUrl(e.target.value)}
-                className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-mono text-sm"
-                placeholder="https://…"
+                className="font-mono"
+                placeholder="https://"
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Webhook secret (optional)</label>
-              <input
-                type="password"
-                value={copyWebhookSecret}
-                onChange={(e) => setCopyWebhookSecret(e.target.value)}
-                className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-mono text-sm"
-                placeholder={
-                  webhookSecretPresent ? 'Leave blank to keep; enter new to rotate' : 'Optional'
-                }
-                autoComplete="off"
-              />
-              {webhookSecretPresent ? (
-                <label className="flex items-center gap-2 mt-2 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={clearWebhookSecret}
-                    onChange={(e) => {
-                      setClearWebhookSecret(e.target.checked);
-                      if (e.target.checked) setCopyWebhookSecret('');
-                    }}
-                  />
-                  Clear stored webhook secret
-                </label>
-              ) : null}
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Webhook payload template (JSON)</label>
-              <div className="flex flex-wrap gap-2 mb-2">
-                <select
-                  aria-label="Select webhook template variable"
-                  value={selectedWebhookToken}
-                  onChange={(e) => setSelectedWebhookToken(e.target.value)}
-                  className="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm font-mono"
-                >
-                  {WEBHOOK_TEMPLATE_TOKENS.map((tok) => (
-                    <option key={tok.value} value={tok.value}>
-                      {tok.label}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => insertWebhookToken(selectedWebhookToken)}
-                  className="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-sm"
-                >
-                  Insert variable
-                </button>
-              </div>
-              <textarea
-                ref={payloadTemplateRef}
-                value={copyWebhookPayloadTemplate}
-                onChange={(e) => setCopyWebhookPayloadTemplate(e.target.value)}
-                className="w-full min-h-24 px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-mono text-sm"
-                placeholder='{"event":"{{event}}","mapping_id":"{{mapping_id}}"}'
-              />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Available variables: {WEBHOOK_TEMPLATE_TOKENS.map((t) => t.value).join(', ')}
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Tip: use quoted placeholders for string values (for example, message uses the text token in quotes),
-                and unquoted placeholders for numbers/arrays (for example, ids token without quotes).
-              </p>
-            </div>
-            <div>
-              <label htmlFor="edit-mapping-webhook-secret-mode" className="block text-sm font-medium mb-1">
-                Webhook secret mode
+            )}
+          </Field>
+          <div className="space-y-2">
+            <Field
+              label="Webhook secret"
+              hint={
+                webhookSecretPresent
+                  ? 'Leave blank to keep the stored secret. Enter a new value to rotate it.'
+                  : 'Optional.'
+              }
+            >
+              {(fieldProps) => (
+                <Input
+                  {...fieldProps}
+                  type="password"
+                  value={copyWebhookSecret}
+                  onChange={(e) => setCopyWebhookSecret(e.target.value)}
+                  className="font-mono"
+                  autoComplete="off"
+                />
+              )}
+            </Field>
+            {webhookSecretPresent ? (
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  checked={clearWebhookSecret}
+                  onChange={(e) => {
+                    setClearWebhookSecret(e.target.checked);
+                    if (e.target.checked) setCopyWebhookSecret('');
+                  }}
+                  className={checkboxClass}
+                />
+                Clear stored webhook secret
               </label>
-              <select
-                id="edit-mapping-webhook-secret-mode"
+            ) : null}
+          </div>
+          <Field
+            label="Webhook payload template (JSON)"
+            hint={`Available variables: ${WEBHOOK_TEMPLATE_TOKENS.map((t) => t.value).join(', ')}. Use quoted placeholders for string values and unquoted placeholders for numbers or arrays.`}
+          >
+            {(fieldProps) => (
+              <>
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <Select
+                    aria-label="Select webhook template variable"
+                    value={selectedWebhookToken}
+                    onChange={(e) => setSelectedWebhookToken(e.target.value)}
+                    className="font-mono"
+                  >
+                    {WEBHOOK_TEMPLATE_TOKENS.map((tok) => (
+                      <option key={tok.value} value={tok.value}>
+                        {tok.label}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => insertWebhookToken(selectedWebhookToken)}
+                  >
+                    Insert variable
+                  </Button>
+                </div>
+                <Textarea
+                  {...fieldProps}
+                  ref={payloadTemplateRef}
+                  value={copyWebhookPayloadTemplate}
+                  onChange={(e) => setCopyWebhookPayloadTemplate(e.target.value)}
+                  rows={5}
+                  className="min-h-24 font-mono"
+                  placeholder='{"event":"{{event}}","mapping_id":"{{mapping_id}}"}'
+                />
+              </>
+            )}
+          </Field>
+          <Field label="Webhook secret mode">
+            {(fieldProps) => (
+              <Select
+                {...fieldProps}
                 value={copyWebhookSecretMode}
                 onChange={(e) => setCopyWebhookSecretMode(e.target.value)}
-                className="w-full max-w-xs px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+                className="max-w-xs"
               >
                 <option value="hmac_sha256">HMAC SHA-256 signature</option>
                 <option value="header_value">Custom header value</option>
                 <option value="none">No secret header</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Webhook secret header name</label>
-              <input
+              </Select>
+            )}
+          </Field>
+          <Field label="Webhook secret header name">
+            {(fieldProps) => (
+              <Input
+                {...fieldProps}
                 type="text"
                 value={copyWebhookSecretHeaderName}
                 onChange={(e) => setCopyWebhookSecretHeaderName(e.target.value)}
-                className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-mono text-sm"
+                className="font-mono"
                 placeholder="X-Webhook-Secret"
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Webhook secret header value</label>
-              <input
-                type="password"
-                value={copyWebhookSecretHeaderValue}
-                onChange={(e) => setCopyWebhookSecretHeaderValue(e.target.value)}
-                className="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-mono text-sm"
-                placeholder={
-                  webhookHeaderSecretPresent ? 'Leave blank to keep; enter new to rotate' : 'Optional'
-                }
-                autoComplete="off"
-              />
-              {webhookHeaderSecretPresent ? (
-                <label className="flex items-center gap-2 mt-2 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={clearWebhookHeaderSecret}
-                    onChange={(e) => {
-                      setClearWebhookHeaderSecret(e.target.checked);
-                      if (e.target.checked) setCopyWebhookSecretHeaderValue('');
-                    }}
-                  />
-                  Clear stored webhook header secret value
-                </label>
-              ) : null}
-            </div>
-          </fieldset>
-
-          <div className="flex gap-2 justify-end">
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded border border-gray-300">
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={mutation.isPending}
-              className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
+            )}
+          </Field>
+          <div className="space-y-2">
+            <Field
+              label="Webhook secret header value"
+              hint={
+                webhookHeaderSecretPresent
+                  ? 'Leave blank to keep the stored value. Enter a new value to rotate it.'
+                  : 'Optional.'
+              }
             >
-              {mutation.isPending ? 'Saving…' : 'Save'}
-            </button>
+              {(fieldProps) => (
+                <Input
+                  {...fieldProps}
+                  type="password"
+                  value={copyWebhookSecretHeaderValue}
+                  onChange={(e) => setCopyWebhookSecretHeaderValue(e.target.value)}
+                  className="font-mono"
+                  autoComplete="off"
+                />
+              )}
+            </Field>
+            {webhookHeaderSecretPresent ? (
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  checked={clearWebhookHeaderSecret}
+                  onChange={(e) => {
+                    setClearWebhookHeaderSecret(e.target.checked);
+                    if (e.target.checked) setCopyWebhookSecretHeaderValue('');
+                  }}
+                  className={checkboxClass}
+                />
+                Clear stored webhook header secret value
+              </label>
+            ) : null}
           </div>
-        </form>
-      </div>
-    </div>
+        </fieldset>
+      </form>
+    </Modal>
   );
 }

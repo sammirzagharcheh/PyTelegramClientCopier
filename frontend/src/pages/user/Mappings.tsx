@@ -1,4 +1,4 @@
-import { GitBranch, Inbox, Plus, Trash2 } from 'lucide-react';
+import { GitBranch, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
@@ -9,10 +9,15 @@ import { EditMappingDialog } from '../../components/EditMappingDialog';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { MappingEnableToggle } from '../../components/MappingEnableToggle';
 import { MappingTableActions } from '../../components/MappingTableActions';
+import { ChannelCell } from '../../components/ChannelCell';
 import { useToast } from '../../components/Toast';
 import { PageHeader } from '../../components/PageHeader';
 import { SortableTh } from '../../components/SortableTh';
 import { Pagination } from '../../components/Pagination';
+import { TableSkeleton } from '../../components/Skeleton';
+import { Button } from '../../components/ui/Button';
+import { EmptyState, ErrorState } from '../../components/ui/States';
+import { TableShell, Tbody, Td, Th, Thead, Tr } from '../../components/ui/TableShell';
 
 type Mapping = {
   id: number;
@@ -34,12 +39,6 @@ type Mapping = {
 
 type PaginatedMappings = { items: Mapping[]; total: number; page: number; page_size: number; total_pages: number };
 
-function formatChannelLabel(m: Mapping, type: 'source' | 'dest') {
-  const title = type === 'source' ? m.source_chat_title : m.dest_chat_title;
-  const id = type === 'source' ? m.source_chat_id : m.dest_chat_id;
-  return title ? `${title} (${id})` : String(id);
-}
-
 export function Mappings() {
   const [showAdd, setShowAdd] = useState(false);
   const [editingMapping, setEditingMapping] = useState<Mapping | null>(null);
@@ -53,12 +52,12 @@ export function Mappings() {
   const { data: activeAccounts = [] } = useActiveAccounts();
 
   const accountNameById = (id: number | null | undefined) => {
-    if (id == null) return '—';
+    if (id == null) return 'Not set';
     const acc = activeAccounts.find((a) => a.id === id);
     return acc ? formatAccountLabel(acc) : `#${id}`;
   };
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['mappings', page, pageSize, sortBy, sortOrder],
     queryFn: async () =>
       (await api.get<PaginatedMappings>(`/mappings?page=${page}&page_size=${pageSize}&sort_by=${sortBy}&sort_order=${sortOrder}`)).data,
@@ -72,7 +71,7 @@ export function Mappings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
       setMappingToDelete(null);
-      showToast('Mapping deleted. Workers restarting to apply changes.');
+      showToast('Mapping deleted. Workers are restarting to apply it.', 'success');
     },
   });
 
@@ -104,11 +103,13 @@ export function Mappings() {
       if (context?.prev) {
         queryClient.setQueryData(['mappings', page, pageSize, sortBy, sortOrder], context.prev);
       }
-      showToast('Failed to update mapping');
+      showToast('Updating the mapping failed', 'error');
     },
     onSuccess: (_, vars) => {
       showToast(
-        (vars.enabled ? 'Mapping enabled' : 'Mapping disabled') + '. Workers restarting to apply changes.'
+        (vars.enabled ? 'Mapping enabled' : 'Mapping disabled') +
+          '. Workers are restarting to apply it.',
+        'success'
       );
     },
     onSettled: () => {
@@ -116,7 +117,13 @@ export function Mappings() {
     },
   });
 
-  if (isLoading) return <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />;
+  const handleSort = (key: string, order: 'asc' | 'desc') => {
+    setSortBy(key);
+    setSortOrder(order);
+    setPage(1);
+  };
+
+  const sortProps = { currentSort: sortBy, currentOrder: sortOrder, onSort: handleSort };
 
   return (
     <div>
@@ -125,10 +132,9 @@ export function Mappings() {
         icon={GitBranch}
         subtitle="Configure source and destination channel connections"
         actions={
-          <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">
-            <Plus className="h-4 w-4" />
+          <Button icon={Plus} onClick={() => setShowAdd(true)}>
             Add Mapping
-          </button>
+          </Button>
         }
       />
       {showAdd && <AddMappingDialog onClose={() => setShowAdd(false)} />}
@@ -143,87 +149,104 @@ export function Mappings() {
           title="Delete Channel Mapping"
           message={
             <>
-              Are you sure you want to delete the mapping{' '}
-              <span className="font-semibold">{mappingToDelete.name || `Mapping ${mappingToDelete.id}`}</span>?
-              This will also remove all associated filters. This action cannot be undone.
+              Deleting{' '}
+              <span className="font-medium text-ink">
+                {mappingToDelete.name || `Mapping ${mappingToDelete.id}`}
+              </span>{' '}
+              also removes all of its filters and transformations. This cannot be undone.
             </>
           }
           confirmLabel="Delete mapping"
           variant="danger"
-          icon={<Trash2 className="h-5 w-5 text-red-600" />}
+          icon={<Trash2 className="h-5 w-5" />}
           onConfirm={() => deleteMutation.mutate(mappingToDelete.id)}
           onCancel={() => setMappingToDelete(null)}
           isPending={deleteMutation.isPending}
         />
       )}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-shadow hover:shadow-lg">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-          <thead className="bg-gray-50 dark:bg-gray-700">
+
+      {isError ? (
+        <ErrorState
+          title="We couldn't load your mappings"
+          error={error}
+          onRetry={() => refetch()}
+        />
+      ) : isLoading ? (
+        <TableSkeleton columns={7} />
+      ) : (
+        <TableShell
+          caption="Channel mappings"
+          footer={
+            mappings.length === 0 ? (
+              <EmptyState
+                icon={GitBranch}
+                title="No mappings yet"
+                description="A mapping links one source channel to one destination channel. Add the first one to start copying."
+                action={
+                  <Button icon={Plus} size="sm" onClick={() => setShowAdd(true)}>
+                    Add Mapping
+                  </Button>
+                }
+              />
+            ) : (
+              data && (
+                <Pagination
+                  page={data.page}
+                  pageSize={data.page_size}
+                  total={data.total}
+                  totalPages={data.total_pages}
+                  onPageChange={setPage}
+                  onPageSizeChange={(n) => {
+                    setPageSize(n);
+                    setPage(1);
+                  }}
+                />
+              )
+            )
+          }
+        >
+          <Thead>
             <tr>
-              <SortableTh label="Name" sortKey="name" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                Account
-              </th>
-              <SortableTh label="Source" sortKey="source_chat_id" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
-              <SortableTh label="Dest" sortKey="dest_chat_id" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
-              <SortableTh label="Status" sortKey="enabled" currentSort={sortBy} currentOrder={sortOrder} onSort={(k, o) => { setSortBy(k); setSortOrder(o); setPage(1); }} />
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Schedule</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase w-32 min-w-[120px]">Actions</th>
+              <SortableTh label="Name" sortKey="name" {...sortProps} />
+              <Th>Account</Th>
+              <SortableTh label="Source" sortKey="source_chat_id" {...sortProps} />
+              <SortableTh label="Destination" sortKey="dest_chat_id" {...sortProps} />
+              <SortableTh label="Status" sortKey="enabled" {...sortProps} />
+              <Th>Schedule</Th>
+              <Th className="w-32 text-right">Actions</Th>
             </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+          </Thead>
+          <Tbody>
             {mappings.map((m) => (
-              <tr key={m.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                <td className="px-6 py-4 text-sm">{m.name || `Mapping ${m.id}`}</td>
-                <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
-                  {accountNameById(m.telegram_account_id)}
-                </td>
-                <td className="px-6 py-4 text-sm font-mono" title={`ID: ${m.source_chat_id}`}>
-                  {formatChannelLabel(m, 'source')}
-                </td>
-                <td className="px-6 py-4 text-sm font-mono" title={`ID: ${m.dest_chat_id}`}>
-                  {formatChannelLabel(m, 'dest')}
-                </td>
-                <td className="px-6 py-4 text-sm">
+              <Tr key={m.id}>
+                <Td className="font-medium">{m.name || `Mapping ${m.id}`}</Td>
+                <Td className="text-ink-muted">{accountNameById(m.telegram_account_id)}</Td>
+                <Td className="max-w-56">
+                  <ChannelCell title={m.source_chat_title} id={m.source_chat_id} />
+                </Td>
+                <Td className="max-w-56">
+                  <ChannelCell title={m.dest_chat_title} id={m.dest_chat_id} />
+                </Td>
+                <Td>
                   <MappingEnableToggle
                     enabled={m.enabled}
                     onToggle={() => enableMutation.mutate({ id: m.id, enabled: !m.enabled })}
                     isPending={enableMutation.isPending && enableMutation.variables?.id === m.id}
                   />
-                </td>
-                <td className="px-6 py-4 text-sm">
-                  <span className="text-gray-600 dark:text-gray-400" title="Copy schedule">
-                    {m.schedule_summary ?? '24/7'}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-sm text-right">
+                </Td>
+                <Td className="text-ink-muted">{m.schedule_summary ?? '24/7'}</Td>
+                <Td className="text-right">
                   <MappingTableActions
                     mappingId={m.id}
                     onEdit={() => setEditingMapping(m)}
                     onDelete={() => setMappingToDelete(m)}
                   />
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
-          </tbody>
-        </table>
-        {mappings.length === 0 && (
-          <div className="p-8 text-center text-gray-500 flex flex-col items-center gap-2">
-            <Inbox className="h-12 w-12 text-gray-400" />
-            <p>No mappings yet.</p>
-          </div>
-        )}
-        {data && (
-          <Pagination
-            page={data.page}
-            pageSize={data.page_size}
-            total={data.total}
-            totalPages={data.total_pages}
-            onPageChange={setPage}
-            onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
-          />
-        )}
-      </div>
+          </Tbody>
+        </TableShell>
+      )}
     </div>
   );
 }

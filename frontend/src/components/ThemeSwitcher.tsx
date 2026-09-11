@@ -14,9 +14,9 @@ export function ThemeSwitcher() {
 
   return (
     <div
-      className="inline-flex rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/60 p-0.5 gap-0.5"
+      className="inline-flex gap-0.5 rounded-control border border-line bg-surface-sunken p-0.5"
       role="radiogroup"
-      aria-label="Color theme"
+      aria-label="Colour theme"
     >
       {options.map(({ value, label, Icon }) => {
         const active = preference === value;
@@ -25,17 +25,17 @@ export function ThemeSwitcher() {
             key={value}
             type="button"
             role="radio"
-            aria-checked={active ? 'true' : 'false'}
+            aria-checked={active}
             title={label}
             aria-label={label}
             onClick={() => setPreference(value)}
-            className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
+            className={`flex h-8 w-8 items-center justify-center rounded-[0.3rem] transition-colors ${
               active
-                ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                ? 'bg-surface-raised text-ink shadow-surface'
+                : 'text-ink-subtle hover:text-ink'
             }`}
           >
-            <Icon className="h-4 w-4" strokeWidth={2} />
+            <Icon className="h-4 w-4" strokeWidth={2} aria-hidden />
           </button>
         );
       })}

@@ -6,6 +6,13 @@ import type { MediaAsset } from '../../lib/api';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import { PageHeader } from '../../components/PageHeader';
+import { CardSkeleton } from '../../components/Skeleton';
+import { Button } from '../../components/ui/Button';
+import { Card, CardHeader } from '../../components/ui/Card';
+import { Field, Input, Select } from '../../components/ui/Field';
+import { FormError } from '../../components/ui/FormError';
+import { EmptyState, ErrorState } from '../../components/ui/States';
+import { errorMessage } from '../../lib/apiError';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -23,7 +30,7 @@ export function MediaAssets() {
   const [uploadError, setUploadError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: assets = [], isLoading } = useQuery({
+  const { data: assets = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['media-assets'],
     queryFn: async () => (await api.get<MediaAsset[]>('/media-assets')).data,
   });
@@ -35,15 +42,10 @@ export function MediaAssets() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['media-assets'] });
       setAssetToDelete(null);
-      showToast('Media asset deleted');
+      showToast('Media asset deleted', 'success');
     },
     onError: (err: unknown) => {
-      const res = (err as { response?: { status?: number; data?: { detail?: string } } })?.response;
-      if (res?.status === 409) {
-        showToast(res.data?.detail ?? 'Asset is in use by a transform rule');
-      } else {
-        showToast((res?.data?.detail as string) ?? 'Failed to delete asset');
-      }
+      showToast(errorMessage(err, 'Deleting the asset failed'), 'error');
     },
   });
 
@@ -59,133 +61,134 @@ export function MediaAssets() {
       if (uploadKind.trim()) formData.append('media_kind', uploadKind.trim());
       await api.post('/media-assets', formData);
       queryClient.invalidateQueries({ queryKey: ['media-assets'] });
-      showToast('Media asset uploaded');
+      showToast('Media asset uploaded', 'success');
       setUploadName('');
       setUploadKind('');
       if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setUploadError(msg ?? 'Upload failed');
+      setUploadError(errorMessage(err, 'The upload failed'));
     } finally {
       setIsUploading(false);
     }
   };
 
-  if (isLoading) {
-    return (
-      <div>
-        <PageHeader title="Media Assets" icon={Image} subtitle="Upload files for media replacement transforms" />
-        <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-700 rounded" />
-      </div>
-    );
-  }
-
   return (
-    <div>
+    <div className="max-w-4xl">
       <PageHeader
         title="Media Assets"
         icon={Image}
-        subtitle="Upload files for media replacement transforms. Use these in mapping transforms to replace source media."
+        subtitle="Files you can swap in with a media replacement transform on any mapping."
       />
 
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-        <h3 className="text-sm font-semibold mb-3">Upload new asset</h3>
-        <div className="flex flex-wrap items-end gap-4">
-          <div>
-            <label htmlFor="upload-file" className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
-              File
-            </label>
-            <input
-              id="upload-file"
-              ref={fileInputRef}
-              type="file"
-              onChange={handleUpload}
-              disabled={isUploading}
-              className="block text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900/30 dark:file:text-blue-300"
-            />
-          </div>
-          <div>
-            <label htmlFor="upload-name" className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
-              Name (optional)
-            </label>
-            <input
-              id="upload-name"
-              type="text"
-              value={uploadName}
-              onChange={(e) => setUploadName(e.target.value)}
-              placeholder="Display name"
-              className="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
-            />
-          </div>
-          <div>
-            <label htmlFor="upload-kind" className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
-              Kind (optional)
-            </label>
-            <select
-              id="upload-kind"
-              value={uploadKind}
-              onChange={(e) => setUploadKind(e.target.value)}
-              className="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
-            >
-              <option value="">Auto-detect</option>
-              <option value="photo">Photo</option>
-              <option value="video">Video</option>
-              <option value="voice">Voice</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-        </div>
-        {uploadError && (
-          <p className="mt-2 text-sm text-red-600 dark:text-red-400">{uploadError}</p>
-        )}
-        {isUploading && (
-          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Uploading…</p>
-        )}
-      </div>
-
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
-        <div className="divide-y divide-gray-200 dark:divide-gray-700">
-          {assets.map((asset) => (
-            <div
-              key={asset.id}
-              className="p-4 flex items-center justify-between gap-4 hover:bg-gray-50 dark:hover:bg-gray-700/30"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="font-medium truncate">{asset.name}</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {asset.media_kind} · {formatBytes(asset.size_bytes)}
-                  {asset.mime_type && ` · ${asset.mime_type}`}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setAssetToDelete(asset)}
-                className="px-3 py-1 text-sm rounded border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 dark:border-red-800 shrink-0"
+      <Card className="mb-4">
+        <CardHeader
+          title="Upload a new asset"
+          description="Pick a file to upload it right away. Name and kind are optional."
+        />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Field label="File">
+            {(fieldProps) => (
+              <input
+                {...fieldProps}
+                ref={fileInputRef}
+                type="file"
+                onChange={handleUpload}
+                disabled={isUploading}
+                className="block w-full text-sm text-ink-muted file:mr-3 file:rounded-control file:border-0 file:bg-accent-soft file:px-3 file:py-2 file:text-sm file:font-medium file:text-accent-ink hover:file:bg-accent-soft/70 disabled:opacity-60"
+              />
+            )}
+          </Field>
+          <Field label="Name" hint="Defaults to the file name.">
+            {(fieldProps) => (
+              <Input
+                {...fieldProps}
+                type="text"
+                value={uploadName}
+                onChange={(e) => setUploadName(e.target.value)}
+                placeholder="Display name"
+                disabled={isUploading}
+              />
+            )}
+          </Field>
+          <Field label="Kind">
+            {(fieldProps) => (
+              <Select
+                {...fieldProps}
+                value={uploadKind}
+                onChange={(e) => setUploadKind(e.target.value)}
+                disabled={isUploading}
               >
-                Delete
-              </button>
-            </div>
-          ))}
+                <option value="">Detect automatically</option>
+                <option value="photo">Photo</option>
+                <option value="video">Video</option>
+                <option value="voice">Voice</option>
+                <option value="other">Other</option>
+              </Select>
+            )}
+          </Field>
         </div>
-        {assets.length === 0 && (
-          <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-            No media assets yet. Upload a file above to get started.
-          </div>
+        <FormError message={uploadError} className="mt-3" />
+        {isUploading && (
+          <p className="mt-3 text-sm text-ink-subtle" role="status">
+            Uploading your file
+          </p>
         )}
-      </div>
+      </Card>
+
+      {isError ? (
+        <ErrorState title="We couldn't load your media assets" error={error} onRetry={() => refetch()} />
+      ) : isLoading ? (
+        <CardSkeleton lines={4} />
+      ) : (
+        <Card flush>
+          {assets.length === 0 ? (
+            <EmptyState
+              icon={Image}
+              title="No media assets yet"
+              description="Upload a file above, then reference it from a media replacement transform."
+            />
+          ) : (
+            <ul className="divide-y divide-line">
+              {assets.map((asset) => (
+                <li
+                  key={asset.id}
+                  className="flex items-center justify-between gap-4 px-5 py-3.5 transition-colors hover:bg-surface-hover"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-ink">{asset.name}</p>
+                    <p className="mt-0.5 text-xs text-ink-subtle">
+                      {asset.media_kind} · {formatBytes(asset.size_bytes)}
+                      {asset.mime_type && ` · ${asset.mime_type}`}
+                    </p>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={Trash2}
+                    onClick={() => setAssetToDelete(asset)}
+                    className="shrink-0"
+                  >
+                    Delete
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
 
       {assetToDelete && (
         <ConfirmDialog
           title="Delete media asset"
           message={
             <>
-              Are you sure you want to delete <span className="font-semibold">{assetToDelete.name}</span>?
-              This will fail if the asset is in use by a transform rule.
+              Deleting <span className="font-medium text-ink">{assetToDelete.name}</span> cannot be
+              undone. It will fail if a transform rule still points at this asset.
             </>
           }
           confirmLabel="Delete"
           variant="danger"
-          icon={<Trash2 className="h-5 w-5 text-red-600" />}
+          icon={<Trash2 className="h-5 w-5" />}
           onConfirm={() => deleteMutation.mutate(assetToDelete.id)}
           onCancel={() => setAssetToDelete(null)}
           isPending={deleteMutation.isPending}

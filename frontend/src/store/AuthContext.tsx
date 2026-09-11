@@ -73,6 +73,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+// The hook stays next to its provider so callers have one import to remember.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');
