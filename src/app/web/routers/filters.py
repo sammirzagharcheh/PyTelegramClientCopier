@@ -13,8 +13,13 @@ from app.web.schemas.mappings import (
     MappingFilterUpdate,
     MappingFilterResponse,
 )
+from app.web.scope_deps import resource_scope_dependency
 
-router = APIRouter(prefix="/mappings", tags=["filters"])
+router = APIRouter(
+    prefix="/mappings",
+    tags=["filters"],
+    dependencies=[resource_scope_dependency("mappings:read", "mappings:write")],
+)
 
 _FILTER_COLUMNS = (
     "include_text",

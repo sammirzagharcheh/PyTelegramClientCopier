@@ -5,17 +5,33 @@ from __future__ import annotations
 import hashlib
 import secrets
 
-from fastapi import APIRouter, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel, Field, field_validator
 
+from app.auth.scopes import DEFAULT_API_KEY_SCOPES, validate_scopes_string
 from app.web.deps import CurrentUser, Db, WriterUser
+from app.web.scope_deps import resource_scope_dependency
 
-router = APIRouter(prefix="/users", tags=["api-keys"])
+router = APIRouter(
+    prefix="/users",
+    tags=["api-keys"],
+    dependencies=[
+        resource_scope_dependency("keys:read", "keys:write"),
+    ],
+)
 
 
 class ApiKeyCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
-    scopes: str = "mappings:read,mappings:write"
+    scopes: str = DEFAULT_API_KEY_SCOPES
+
+    @field_validator("scopes")
+    @classmethod
+    def _scopes_must_be_known(cls, v: str) -> str:
+        try:
+            return validate_scopes_string(v)
+        except ValueError as e:
+            raise ValueError(str(e)) from e
 
 
 class ApiKeyCreatedResponse(BaseModel):
@@ -55,11 +71,15 @@ async def list_api_keys(db: Db, user: CurrentUser) -> list[dict]:
 
 @router.post("/me/api-keys", response_model=ApiKeyCreatedResponse, status_code=status.HTTP_201_CREATED)
 async def create_api_key(data: ApiKeyCreate, db: Db, user: WriterUser) -> dict:
+    try:
+        scopes = validate_scopes_string(data.scopes)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
     plain = secrets.token_urlsafe(32)
     key_hash = hashlib.sha256(plain.encode("utf-8")).hexdigest()
     cur = await db.execute(
         "INSERT INTO user_api_keys (user_id, name, key_hash, scopes) VALUES (?, ?, ?, ?)",
-        (user["id"], data.name.strip(), key_hash, data.scopes.strip()),
+        (user["id"], data.name.strip(), key_hash, scopes),
     )
     await db.commit()
     kid = cur.lastrowid

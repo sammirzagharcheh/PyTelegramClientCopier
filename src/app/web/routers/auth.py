@@ -20,6 +20,7 @@ from app.web.schemas.auth import (
     UpdateProfileRequest,
     UserMe,
 )
+from app.web.scope_deps import reject_api_key_dependency
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -126,7 +127,7 @@ async def me(user: CurrentUser) -> dict:
     return user
 
 
-@router.patch("/me", response_model=UserMe)
+@router.patch("/me", response_model=UserMe, dependencies=[reject_api_key_dependency()])
 async def update_me(
     data: UpdateProfileRequest,
     user: CurrentUser,
@@ -168,7 +169,7 @@ async def update_me(
     }
 
 
-@router.post("/change-password")
+@router.post("/change-password", dependencies=[reject_api_key_dependency()])
 async def change_password(
     data: ChangePasswordRequest,
     user: CurrentUser,

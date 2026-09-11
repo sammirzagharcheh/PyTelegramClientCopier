@@ -9,6 +9,7 @@ const USER_PAGE_LABELS: Record<string, string> = {
   'message-index': 'Message index',
   schedule: 'Schedule',
   'media-assets': 'Media assets',
+  'api-keys': 'API keys',
 };
 
 const ADMIN_CHILD_LABELS: Record<string, string> = {

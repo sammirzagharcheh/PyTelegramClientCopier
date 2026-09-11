@@ -6,8 +6,13 @@ from fastapi import APIRouter, status
 from pydantic import AnyHttpUrl, BaseModel
 
 from app.web.deps import CurrentUser, Db, WriterUser
+from app.web.scope_deps import resource_scope_dependency
 
-router = APIRouter(prefix="/users", tags=["alert-webhooks"])
+router = APIRouter(
+    prefix="/users",
+    tags=["alert-webhooks"],
+    dependencies=[resource_scope_dependency("webhooks:read", "webhooks:write")],
+)
 
 
 class AlertWebhookCreate(BaseModel):

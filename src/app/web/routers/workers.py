@@ -17,9 +17,14 @@ import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.web.deps import CurrentUser, Db, WriterUser
+from app.web.scope_deps import resource_scope_dependency
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/workers", tags=["workers"])
+router = APIRouter(
+    prefix="/workers",
+    tags=["workers"],
+    dependencies=[resource_scope_dependency("workers:read", "workers:write")],
+)
 
 # In-memory registry: worker_id -> {user_id, account_id, session_path, process?, pid, ...}
 # process may be None for reattached workers (orphans from prior API run)

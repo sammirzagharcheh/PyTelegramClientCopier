@@ -9,8 +9,13 @@ from pymongo.errors import OperationFailure, ServerSelectionTimeoutError
 
 from app.db.mongo import get_mongo_db
 from app.web.deps import CurrentUser, Db
+from app.web.scope_deps import read_only_scope_dependency
 
-router = APIRouter(prefix="/webhook-logs", tags=["webhook-logs"])
+router = APIRouter(
+    prefix="/webhook-logs",
+    tags=["webhook-logs"],
+    dependencies=[read_only_scope_dependency("logs:read")],
+)
 
 
 def _mongo_error_message(e: Exception) -> str:

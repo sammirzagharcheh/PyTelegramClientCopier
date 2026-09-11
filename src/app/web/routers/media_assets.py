@@ -12,8 +12,13 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from app.config import settings
 from app.web.deps import CurrentUser, Db
 from app.web.schemas.media_assets import MediaAssetResponse
+from app.web.scope_deps import resource_scope_dependency
 
-router = APIRouter(prefix="/media-assets", tags=["media-assets"])
+router = APIRouter(
+    prefix="/media-assets",
+    tags=["media-assets"],
+    dependencies=[resource_scope_dependency("mappings:read", "mappings:write")],
+)
 
 _ALLOWED_MEDIA_KINDS = {"photo", "video", "voice", "other"}
 

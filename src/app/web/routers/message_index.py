@@ -5,8 +5,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from app.web.deps import CurrentUser, Db
+from app.web.scope_deps import read_only_scope_dependency
 
-router = APIRouter(prefix="/message-index", tags=["message-index"])
+router = APIRouter(
+    prefix="/message-index",
+    tags=["message-index"],
+    dependencies=[read_only_scope_dependency("logs:read")],
+)
 
 
 def _normalize_sqlite_utc_for_json(value: str | None) -> str | None:

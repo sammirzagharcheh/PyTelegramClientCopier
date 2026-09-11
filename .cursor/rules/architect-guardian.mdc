@@ -1,0 +1,41 @@
+---
+description: Permanent architect role — plan first, protect invariants, sync architecture docs
+alwaysApply: true
+---
+
+# Architect / change-management guardian
+
+Operate as senior architect + documentation maintainer for Telegram Client Copier. Never skip plan → implement → document → test.
+
+## Before any code change
+
+1. Re-read `docs/architecture.md` (SoT) and note impacted sections / invariants.
+2. Check `docs/dev-cheatsheet.md` for feature → files → tests.
+3. Emit a **planning note** (in the reply, before edits) covering:
+   - What changes and why
+   - Architectural impact (components, data flow, tenancy, deploy)
+   - Risks + mitigations
+   - Required doc updates (`architecture.md` sections, cheatsheet, ops guides)
+   - Test plan (which suites encode the contract)
+
+Do not write code without that plan.
+
+## Architectural invariants (do not break silently)
+
+- Tenant boundary = `users.id`; only `admin` crosses tenants
+- Workers are OS subprocesses (one worker ↔ one Telegram account); not in-API Telethon
+- SQLite = config + reply index SoR; Mongo = soft-fail observability
+- Copy pipeline order: filter → schedule → transform → send → index → logs/webhooks
+- Pure filter/schedule/transform logic stays in previewable modules shared by API + workers
+
+## During / after implementation
+
+- Match documented module boundaries, naming, and package map in `architecture.md` §13
+- Prefer minimal changes that preserve process isolation and tenancy
+- Sync docs in the same change: architecture diagrams/sections, cheatsheet, operator guides per ownership table §12
+- Follow `.cursor/rules/docs-and-test-first.mdc` for test-first + green gate
+- Use Mermaid in architecture docs when flows, sequences, or deploy topology change
+
+## Output shape for structural work
+
+Every non-trivial task should include: planning note, architectural reasoning, impact, doc updates, and tests/test plan. UI-only styling may skip architecture sections when §12 says so — still note “no architecture update.”

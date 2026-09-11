@@ -15,9 +15,14 @@ from telethon.errors import (
 
 from app.config import settings
 from app.web.deps import CurrentUser, Db
+from app.web.scope_deps import resource_scope_dependency
 
 
-router = APIRouter(prefix="/accounts/login", tags=["accounts-login"])
+router = APIRouter(
+    prefix="/accounts/login",
+    tags=["accounts-login"],
+    dependencies=[resource_scope_dependency("accounts:read", "accounts:write")],
+)
 
 
 class BeginLoginRequest(BaseModel):

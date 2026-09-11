@@ -54,6 +54,7 @@ const userNav: NavGroup[] = [
       { to: '/webhook-logs', label: 'Webhook Logs', icon: Webhook },
       { to: '/logs', label: 'Message Logs', icon: MessageSquare },
       { to: '/message-index', label: 'Message Index', icon: Database },
+      { to: '/api-keys', label: 'API Keys', icon: KeyRound },
     ],
   },
 ];
@@ -68,6 +69,7 @@ const adminNav: NavGroup[] = [
     items: [
       { to: '/admin/users', label: 'Users', icon: Users },
       { to: '/admin/settings', label: 'Settings', icon: Settings },
+      { to: '/api-keys', label: 'API Keys', icon: KeyRound },
     ],
   },
   {

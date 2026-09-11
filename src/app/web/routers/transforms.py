@@ -15,8 +15,13 @@ from app.web.schemas.mappings import (
     MappingTransformResponse,
     MappingTransformUpdate,
 )
+from app.web.scope_deps import resource_scope_dependency
 
-router = APIRouter(prefix="/mappings", tags=["transforms"])
+router = APIRouter(
+    prefix="/mappings",
+    tags=["transforms"],
+    dependencies=[resource_scope_dependency("mappings:read", "mappings:write")],
+)
 
 _ALLOWED_RULE_TYPES = {"text", "regex", "emoji", "media", "template"}
 _ALLOWED_REGEX_FLAGS = {"i", "m", "s"}

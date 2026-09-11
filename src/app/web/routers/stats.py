@@ -8,8 +8,13 @@ from fastapi import APIRouter, Depends
 
 from app.db.mongo import get_mongo_db
 from app.web.deps import CurrentUser, Db
+from app.web.scope_deps import read_only_scope_dependency
 
-router = APIRouter(prefix="/stats", tags=["stats"])
+router = APIRouter(
+    prefix="/stats",
+    tags=["stats"],
+    dependencies=[read_only_scope_dependency("stats:read")],
+)
 
 
 @router.get("/dashboard")

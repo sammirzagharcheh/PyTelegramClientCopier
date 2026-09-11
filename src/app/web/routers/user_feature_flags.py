@@ -9,8 +9,13 @@ from pydantic import BaseModel
 
 from app.services.feature_flags import get_user_feature_flags, set_user_feature_flags
 from app.web.deps import CurrentUser, Db, WriterUser
+from app.web.scope_deps import reject_api_key_dependency
 
-router = APIRouter(prefix="/users", tags=["feature-flags"])
+router = APIRouter(
+    prefix="/users",
+    tags=["feature-flags"],
+    dependencies=[reject_api_key_dependency()],
+)
 
 
 class FeatureFlagsUpdate(BaseModel):

@@ -7,8 +7,13 @@ from fastapi import APIRouter, HTTPException, status
 from app.services.mapping_service import WEEKDAY_COLS
 from app.web.deps import CurrentUser, Db
 from app.web.schemas.schedules import ScheduleResponse, ScheduleUpdate
+from app.web.scope_deps import resource_scope_dependency
 
-router = APIRouter(prefix="/users", tags=["schedules"])
+router = APIRouter(
+    prefix="/users",
+    tags=["schedules"],
+    dependencies=[resource_scope_dependency("mappings:read", "mappings:write")],
+)
 
 
 def _schedule_row_to_dict(row: tuple | None) -> dict:

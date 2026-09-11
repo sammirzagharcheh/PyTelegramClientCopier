@@ -74,7 +74,7 @@ flowchart TB
 
 | Area | Module(s) | Responsibility |
 |------|-----------|----------------|
-| Auth | `auth/`, `web/deps.py`, `routers/auth.py` | JWT access/refresh, password hashing, `X-Api-Key`, role guards (`admin` / writer / viewer) |
+| Auth | `auth/`, `web/deps.py`, `web/scope_deps.py`, `routers/auth.py`, `routers/api_keys.py` | JWT access/refresh, password hashing, `X-Api-Key` + scopes, role guards (`admin` / writer / viewer) |
 | Tenancy admin | `routers/admin_users.py`, `admin_settings.py`, `admin_stats.py` | User CRUD, global settings (including Mongo URI override in `app_settings`), cross-tenant analytics |
 | Accounts | `routers/accounts.py`, `accounts_login.py` | Telegram account records; phone-code login wizard writing session files |
 | Mappings & rules | `routers/mappings.py`, `filters.py`, `schedules.py`, `transforms.py`, `media_assets.py` | CRUD for copy configuration; filter/transform changes may restart affected workers |
@@ -118,8 +118,8 @@ Note: an `alembic/` tree may exist on disk; **live SQLite evolution is `db/migra
 
 Vite + React SPA with two surfaces:
 
-- **User panel** (`/`): dashboard, accounts, mappings (+ detail for filters/transforms/schedules), workers, logs, message index, schedule, media assets.
-- **Admin panel** (`/admin`): users, all mappings, workers, logs, settings, cross-tenant views.
+- **User panel** (`/`): dashboard, accounts, mappings (+ detail for filters/transforms/schedules), workers, logs, message index, schedule, media assets, API keys.
+- **Admin panel** (`/admin`): users, all mappings, workers, logs, settings, cross-tenant views (API keys link to `/api-keys`).
 
 Auth state (`AuthContext`) sends Bearer tokens to `/api`. Dev mode proxies to the API; production unified image serves the built SPA from the same FastAPI process.
 
@@ -209,15 +209,34 @@ sequenceDiagram
 flowchart LR
   REQ[HTTP request] --> AUTH{Credential}
   AUTH -->|Bearer JWT| JWT[Validate HS256<br/>role in claims]
-  AUTH -->|X-Api-Key| KEY[SHA-256 lookup<br/>user_api_keys]
+  AUTH -->|X-Api-Key| KEY[SHA-256 lookup<br/>user_api_keys + scopes]
   JWT --> ROLE{Role}
   KEY --> ROLE
-  ROLE -->|admin| ALL[Cross-tenant access]
+  ROLE -->|admin| ALL[Cross-tenant access<br/>JWT only for /admin]
   ROLE -->|user| OWN[Own resources + WriterUser mutations]
   ROLE -->|viewer| READ[Authenticated read;<br/>mutations blocked]
+  KEY --> SCOPE{API key scopes}
+  SCOPE -->|missing| DENY[403 missing scope]
+  SCOPE -->|granted| ROLE
 ```
 
 Refresh tokens are stored hashed in SQLite. Feature flags are per-user JSON blobs in `app_settings` (`user_feature_flags_{id}`), not a separate tenancy database.
+
+### API key scopes
+
+JWT sessions ignore scopes and use role checks only. When `auth_via` is `api_key`, every routed family also requires at least one matching scope from the catalog in `app/auth/scopes.py` (enforced via `app/web/scope_deps.py` router dependencies).
+
+| Scope | Allows |
+|-------|--------|
+| `mappings:read` / `mappings:write` | Mappings, filters, transforms, schedules, media assets; `POST …/preview` counts as read |
+| `accounts:read` / `accounts:write` | Accounts + phone login wizard |
+| `workers:read` / `workers:write` | List / start / stop workers |
+| `logs:read` | Message, worker, webhook logs; message index |
+| `stats:read` | User dashboard stats |
+| `keys:read` / `keys:write` | List / create / revoke own API keys |
+| `webhooks:read` / `webhooks:write` | Alert webhook CRUD |
+
+Unknown scopes are rejected on create (422). Default create string is `mappings:read,mappings:write`. **Admin routes** (`AdminUser`) and feature-flag / profile-mutation endpoints reject API keys entirely (JWT required). The user panel manages keys at `/api-keys`.
 
 ---
 
@@ -278,7 +297,7 @@ Durable paths in containers typically map under `/app/data` (`SQLITE_PATH`, `SES
 | Copy webhooks | Outbound HTTP | Per-mapping notify after successful copy; results in `webhook_logs` |
 | Alert webhooks | Outbound HTTP | Stale worker alerts from API background loop |
 | SPA ↔ API | Browser | JWT; Vite proxy in dev; same-origin in unified image |
-| External API clients | Inbound | `X-Api-Key` header |
+| External API clients | Inbound | `X-Api-Key` header; scopes from `user_api_keys` enforced per route family |
 
 ---
 
@@ -379,12 +398,12 @@ src/app/
   main.py              # Typer: api + db
   config.py            # Settings from env
   worker.py            # Worker process
-  auth/                # JWT + passwords
+  auth/                # JWT + passwords + API key scopes
   cli/                 # db subcommands
   db/                  # SQLite + Mongo + cleanup
   services/            # Mapping aggregate, webhooks, alerts, settings
   telegram/            # Telethon client, handlers, pipeline
-  web/                 # FastAPI app, deps, routers, schemas
+  web/                 # FastAPI app, deps, scope_deps, routers, schemas
 frontend/              # React SPA
 tests/                 # unit / api / functional / integration
 deploy/                # Multi-env compose + env examples

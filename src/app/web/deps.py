@@ -124,6 +124,11 @@ WriterUser = Annotated[dict, Depends(require_writer)]
 
 
 async def require_admin(user: CurrentUser) -> dict:
+    if user.get("auth_via") == "api_key":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin endpoints require JWT authentication; API keys are not allowed",
+        )
     if user.get("role") != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

@@ -21,6 +21,7 @@ import { Settings } from './pages/admin/Settings';
 import { UserWorkers } from './pages/user/Workers';
 import { Schedule } from './pages/user/Schedule';
 import { MediaAssets } from './pages/user/MediaAssets';
+import { ApiKeys } from './pages/user/ApiKeys';
 import { WorkerLogs } from './pages/user/WorkerLogs';
 import { WebhookLogs } from './pages/user/WebhookLogs';
 import { AdminWorkerLogs } from './pages/admin/AdminWorkerLogs';
@@ -77,6 +78,7 @@ function AppRoutes() {
         <Route path="message-index" element={<MessageIndex />} />
         <Route path="schedule" element={<Schedule />} />
         <Route path="media-assets" element={<MediaAssets />} />
+        <Route path="api-keys" element={<ApiKeys />} />
       </Route>
       <Route path="/admin" element={<ProtectedRoute adminOnly><MainLayout /></ProtectedRoute>}>
         <Route index element={<AdminDashboard />} />

@@ -17,6 +17,7 @@ from app.telegram.pipeline_preview import (
 )
 from app.web.deps import CurrentUser, Db, WriterUser
 from app.web.routers.workers import restart_workers_for_mapping
+from app.web.scope_deps import resource_scope_dependency
 from app.web.validation.mapping_validation import (
     validate_mapping_create,
     validate_mapping_update_routing,
@@ -46,7 +47,17 @@ from app.web.schemas.mappings import (
 )
 from app.web.schemas.schedules import ScheduleResponse, ScheduleUpdate
 
-router = APIRouter(prefix="/mappings", tags=["mappings"])
+router = APIRouter(
+    prefix="/mappings",
+    tags=["mappings"],
+    dependencies=[
+        resource_scope_dependency(
+            "mappings:read",
+            "mappings:write",
+            read_path_suffixes=("/preview",),
+        ),
+    ],
+)
 _ALLOWED_WEBHOOK_SECRET_MODES = {"hmac_sha256", "header_value", "none"}
 _HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 

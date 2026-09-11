@@ -64,7 +64,11 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ## Web Panel
 
 - **Admin panel** (`/admin/*`): Manage users, view all mappings, logs, workers.
-- **User panel** (`/dashboard`, `/accounts`, `/mappings`, etc.): Manage your Telegram accounts, channel mappings, filters, and workers.
+- **User panel** (`/dashboard`, `/accounts`, `/mappings`, `/api-keys`, etc.): Manage Telegram accounts, channel mappings, filters, workers, and API keys.
+
+### API keys (`X-Api-Key`)
+
+Create keys in the panel at **API Keys**. Pass `X-Api-Key: <plaintext>` on API requests. Scopes (e.g. `mappings:read`, `mappings:write`) are enforced for key auth; JWT panel sessions ignore scopes. Admin routes require JWT. See [docs/architecture.md](docs/architecture.md) §5.
 
 ## Filters
 

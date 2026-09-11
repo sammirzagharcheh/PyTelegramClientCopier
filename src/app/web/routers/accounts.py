@@ -20,8 +20,13 @@ from app.web.schemas.accounts import TelegramAccountUpdate
 from app.web.schemas.dialogs import TelegramDialogListResponse, TelegramDialogResponse
 from app.web.deps import AdminUser, CurrentUser, Db, WriterUser
 from app.web.routers.workers import stop_workers_for_account
+from app.web.scope_deps import resource_scope_dependency
 
-router = APIRouter(prefix="/accounts", tags=["accounts"])
+router = APIRouter(
+    prefix="/accounts",
+    tags=["accounts"],
+    dependencies=[resource_scope_dependency("accounts:read", "accounts:write")],
+)
 
 
 _ALLOWED_SORT = {"id", "name", "type", "status", "created_at", "user_id"}
