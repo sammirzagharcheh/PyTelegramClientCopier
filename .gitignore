@@ -17,6 +17,7 @@ coverage.xml
 htmlcov/
 .env
 data/
+backups/
 sessions/
 *.session
 .idea/

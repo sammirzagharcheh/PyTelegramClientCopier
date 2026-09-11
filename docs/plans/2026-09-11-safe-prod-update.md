@@ -20,6 +20,8 @@ Local branch: `main` is **ahead 4** of `origin/main`.
 
 Docker multi-env (`deploy/scripts/deploy-env.sh prod`) pulls **GHCR images**, which only rebuild after CI publish on pushed `main`. Same gate: **push first**.
 
+**Follow-up (Done):** `update-vps.sh` now runs `backup-vps-data.sh` before pull (SQLite, sessions, media, `.env`, `data/` tree; optional Mongo). See [Auto-backup in update-vps.sh](2026-09-11-update-vps-auto-backup.md). First VPS update after that lands should refresh scripts or manually copy `data/` once (old script has no backup call).
+
 ## What can break (and how we stay safe)
 
 | Change | Risk | Mitigation |

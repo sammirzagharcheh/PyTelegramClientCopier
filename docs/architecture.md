@@ -285,7 +285,7 @@ flowchart TB
 | No Mongo container | [docker-production-no-mongo.md](docker-production-no-mongo.md) | App only; optional external Mongo |
 | Multi-env | [docker-multi-env.md](docker-multi-env.md) | Isolated compose projects, env files, ports, volumes; GHCR images |
 | Dev overlay | [docker-development.md](docker-development.md) | Vite `:5173` + API reload |
-| Native VPS | [deploy-ubuntu.md](deploy-ubuntu.md) | venv + systemd + nginx |
+| Native VPS | [deploy-ubuntu.md](deploy-ubuntu.md) | venv + systemd + nginx; `update-vps.sh` auto-backs up `data/` + `.env` under `backups/` before pull |
 | CI/CD | [github-actions-ci-cd.md](github-actions-ci-cd.md) | Tests → publish → optional SSH deploy |
 
 Durable paths in containers typically map under `/app/data` (`SQLITE_PATH`, `SESSIONS_DIR`, `MEDIA_ASSETS_DIR`).

@@ -2,8 +2,8 @@
 # =============================================================================
 # Telegram Client Copier - VPS Update Script
 # =============================================================================
-# Updates an existing deployment: pull latest, reinstall deps, rebuild frontend,
-# restart services. Run on the VPS after SSH.
+# Updates an existing deployment: backup durable data, pull latest, reinstall
+# deps, rebuild frontend, restart services. Run on the VPS after SSH.
 #
 # Usage:
 #   sudo bash scripts/update-vps.sh
@@ -11,12 +11,14 @@
 #   sudo bash /opt/telegram-copier/scripts/update-vps.sh
 #
 # Env vars: INSTALL_DIR (default /opt/telegram-copier), APP_USER (default tgcopier)
+# Backup: SKIP_BACKUP=1, BACKUP_DIR, BACKUP_KEEP (default 5), BACKUP_MONGO=1
 # =============================================================================
 
 set -euo pipefail
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/telegram-copier}"
 APP_USER="${APP_USER:-tgcopier}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ $EUID -ne 0 ]] && ! sudo -n true 2>/dev/null; then
   echo "This script needs sudo. Run: sudo bash $0"
@@ -33,6 +35,32 @@ else
 fi
 
 [[ ! -d "$INSTALL_DIR/.venv" ]] && { echo "No existing install at $INSTALL_DIR. Run deploy-ubuntu.sh first."; exit 1; }
+
+# Prefer backup helper next to this script (must run before git reset).
+BACKUP_HELPER="$SCRIPT_DIR/backup-vps-data.sh"
+if [[ ! -f "$BACKUP_HELPER" ]]; then
+  BACKUP_HELPER="$INSTALL_DIR/scripts/backup-vps-data.sh"
+fi
+# Bootstrap helper from origin when this install predates the feature.
+if [[ ! -f "$BACKUP_HELPER" && "${SKIP_BACKUP:-0}" != "1" ]]; then
+  echo "==> Fetching backup-vps-data.sh from origin/main..."
+  $RUN_AS bash -c "cd $INSTALL_DIR && git fetch origin && git checkout origin/main -- scripts/backup-vps-data.sh" \
+    && BACKUP_HELPER="$INSTALL_DIR/scripts/backup-vps-data.sh" \
+    || true
+fi
+if [[ -f "$BACKUP_HELPER" ]]; then
+  # Run as root so we can copy files owned by APP_USER; chown backups after.
+  INSTALL_DIR="$INSTALL_DIR" \
+    BACKUP_DIR="${BACKUP_DIR:-$INSTALL_DIR/backups}" \
+    BACKUP_KEEP="${BACKUP_KEEP:-5}" \
+    SKIP_BACKUP="${SKIP_BACKUP:-0}" \
+    BACKUP_MONGO="${BACKUP_MONGO:-0}" \
+    bash "$BACKUP_HELPER"
+  $SUDO chown -R "$APP_USER:" "${BACKUP_DIR:-$INSTALL_DIR/backups}" 2>/dev/null || true
+else
+  echo "WARNING: backup-vps-data.sh not found; continuing without backup." >&2
+  echo "         Manually copy $INSTALL_DIR/data before retrying if this is critical." >&2
+fi
 
 echo "==> Pulling latest code..."
 $RUN_AS bash -c "cd $INSTALL_DIR && git fetch origin && git reset --hard origin/main"

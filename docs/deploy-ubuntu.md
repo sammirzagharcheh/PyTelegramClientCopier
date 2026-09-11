@@ -359,6 +359,37 @@ On the VPS:
 sudo bash /opt/telegram-copier/scripts/update-vps.sh
 ```
 
+`update-vps.sh` **backs up first** (via `scripts/backup-vps-data.sh`) into `/opt/telegram-copier/backups/pre-update-…`, then pulls `origin/main`, rebuilds, and restarts. It copies SQLite, sessions, media assets, `.env`, and a full `data/` tree. Keeps the last **5** snapshots (`BACKUP_KEEP`).
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `SKIP_BACKUP` | `0` | Set `1` to skip backup (emergency only) |
+| `BACKUP_DIR` | `$INSTALL_DIR/backups` | Snapshot root (gitignored) |
+| `BACKUP_KEEP` | `5` | How many `pre-update-*` dirs to retain |
+| `BACKUP_MONGO` | `0` | Set `1` to also run `mongodump` when available |
+
+**First update after this feature lands:** if the VPS still has an old `update-vps.sh` without the backup call, either manually copy `data/` once, or refresh the scripts then update:
+
+```bash
+sudo -u tgcopier bash -c 'cd /opt/telegram-copier && git fetch origin && git checkout origin/main -- scripts/update-vps.sh scripts/backup-vps-data.sh'
+sudo bash /opt/telegram-copier/scripts/update-vps.sh
+```
+
+### Restore from a pre-update backup
+
+Stop the service, restore files, fix ownership, start again:
+
+```bash
+SNAP=/opt/telegram-copier/backups/pre-update-YYYYMMDD-HHMMSS-…   # pick a stamp
+sudo systemctl stop telegram-copier
+sudo cp -a "$SNAP/sqlite/app.db" /opt/telegram-copier/data/app.db
+sudo cp -a "$SNAP/sessions/." /opt/telegram-copier/data/sessions/
+sudo cp -a "$SNAP/media_assets/." /opt/telegram-copier/data/media_assets/ 2>/dev/null || true
+# optional: sudo cp -a "$SNAP/dotenv.env" /opt/telegram-copier/.env
+sudo chown -R tgcopier:tgcopier /opt/telegram-copier/data /opt/telegram-copier/.env
+sudo systemctl start telegram-copier
+```
+
 Or re-run deploy in update mode:
 
 ```bash
@@ -374,11 +405,12 @@ UPDATE_ONLY=true curl -fsSL "https://raw.githubusercontent.com/sammirzagharcheh/
 | Service status | `sudo systemctl status telegram-copier` |
 | API logs | `sudo journalctl -u telegram-copier -f` |
 | Restart API | `sudo systemctl restart telegram-copier` |
+| Manual backup only | `sudo bash /opt/telegram-copier/scripts/backup-vps-data.sh` |
 | Show config | `sudo -u tgcopier bash -c "cd /opt/telegram-copier && .venv/bin/tg-copier db show-config"` |
 | Test Mongo | `sudo -u tgcopier bash -c "cd /opt/telegram-copier && .venv/bin/tg-copier db test-mongo"` |
 | nginx reload | `sudo nginx -t && sudo systemctl reload nginx` |
 
-Data lives under `/opt/telegram-copier/data/` (SQLite DB, Telethon sessions, media assets). Keep backups of this folder.
+Data lives under `/opt/telegram-copier/data/` (SQLite DB, Telethon sessions, media assets). Automatic update backups live under `/opt/telegram-copier/backups/`.
 
 **Docker contrast:** with Compose, the same files live inside a volume mounted at `/app/data` (named volume `…_app_data`, or a host bind mount). Multi-env stacks isolate that per environment — see [Docker multi-env — Data volumes](docker-multi-env.md#data-volumes-sqlite-sessions-media-mongodb).
 
@@ -390,7 +422,7 @@ Data lives under `/opt/telegram-copier/data/` (SQLite DB, Telethon sessions, med
 - [ ] `API_ID` / `API_HASH` kept private; `.env` mode `600`
 - [ ] HTTPS with a real domain when public
 - [ ] Firewall allows only SSH + HTTP/HTTPS
-- [ ] Backup `data/` regularly (sessions = login state)
+- [ ] Confirm `update-vps.sh` backups (or off-box copies of `data/` + `backups/`)
 - [ ] MongoDB installed if you need message/worker logs in the UI
 
 ---
