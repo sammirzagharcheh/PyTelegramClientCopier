@@ -10,6 +10,7 @@ Durable planning notes for non-trivial work. The agent writes a plan here **befo
 
 | Date | Plan | Status |
 |------|------|--------|
+| 2026-09-18 | [Persist bot sessions + encrypt bot credentials](2026-09-18-bot-session-at-rest.md) | Done |
 | 2026-09-18 | [Bot mapping access preflight](2026-09-18-bot-mapping-preflight.md) | Done |
 | 2026-09-18 | [Resolve @username / chat ID for mapping routes](2026-09-18-resolve-peer-mapping.md) | Done |
 | 2026-09-18 | [Docker dev overlay ignores bind-mounted src](2026-09-18-docker-dev-pythonpath.md) | Done |

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.telegram.at_rest import CredentialSealError
 from app.telegram.dialog_service import (
     AccountCredentials,
     SessionLockedError,
@@ -105,7 +106,7 @@ async def assert_bot_mapping_access(
         dest_entity = await _load_entity(client, dest_chat_id, "destination chat")
         dest_type = entity_dialog_type(dest_entity)
         _assert_dest(await _permissions(client, dest_entity, "destination chat"), dest_type)
-    except (SessionLockedError, PeerAccessDenied):
+    except (SessionLockedError, PeerAccessDenied, CredentialSealError):
         raise
     except Exception as e:
         raise PeerAccessDenied(

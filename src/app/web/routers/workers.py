@@ -17,6 +17,7 @@ import aiosqlite
 from fastapi import APIRouter, HTTPException, status
 
 from app.telegram.bot_token import is_valid_bot_token
+from app.telegram.at_rest import CredentialSealError, reveal_secret
 from app.telegram.worker_account import bot_registry_path, build_run_worker_argv
 from app.web.deps import CurrentUser, Db, WriterUser
 from app.web.scope_deps import resource_scope_dependency
@@ -498,7 +499,14 @@ async def start_worker(
     bot_token = row[4]
     session_path = row[2]
     if acc_type == "bot":
-        if not bot_token or not is_valid_bot_token(bot_token):
+        try:
+            plain = reveal_secret(bot_token)
+        except CredentialSealError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e),
+            ) from e
+        if not plain or not is_valid_bot_token(plain):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="bot_token must look like a BotFather token (digits:secret)",

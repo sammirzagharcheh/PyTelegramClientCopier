@@ -33,7 +33,8 @@ Simple guides for installing and running **Telegram Client Copier**.
 1. **Clone the repo** (public HTTPS, or SSH/PAT if private) — [git-clone-and-private-repo.md](git-clone-and-private-repo.md)
 2. **Telegram API credentials** from [my.telegram.org](https://my.telegram.org): `API_ID` and `API_HASH`
 3. A strong **`JWT_SECRET`** for production (example: `openssl rand -hex 32`)
-4. Ubuntu **22.04 / 24.04** (or Docker Engine on any host)
+4. Optional **`CREDENTIALS_AT_REST_KEY`** (Fernet) to seal bot tokens and bot session blobs; leave empty for plaintext
+5. Ubuntu **22.04 / 24.04** (or Docker Engine on any host)
 
 ## Pick a path (quick)
 

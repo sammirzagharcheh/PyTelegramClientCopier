@@ -7,6 +7,7 @@ from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 
 from app.config import settings
+from app.telegram.bot_session import load_bot_string_session, save_bot_string_session
 
 
 async def start_user_client(session_path: str) -> TelegramClient:
@@ -25,12 +26,16 @@ async def start_user_client(session_path: str) -> TelegramClient:
                 raise
 
 
-async def start_bot_client(bot_token: str) -> TelegramClient:
+async def start_bot_client(bot_token: str, *, session_path: str | None = None) -> TelegramClient:
     if settings.api_id is None or settings.api_hash is None:
         raise RuntimeError("API_ID and API_HASH must be configured for bot sessions.")
-    # In-memory session avoids a shared on-disk "bot_session" colliding across tokens.
-    client = TelegramClient(StringSession(), settings.api_id, settings.api_hash)
+    session = load_bot_string_session(session_path) if session_path else StringSession()
+    client = TelegramClient(session, settings.api_id, settings.api_hash)
     await client.start(bot_token=bot_token)
+    if session_path:
+        blob = client.session.save()
+        if blob:
+            save_bot_string_session(session_path, blob)
     return client
 
 

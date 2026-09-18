@@ -16,6 +16,7 @@ from app.telegram.pipeline_preview import (
     passes_filters,
     passes_schedule,
 )
+from app.telegram.at_rest import CredentialSealError
 from app.telegram.dialog_service import AccountCredentials, SessionLockedError
 from app.telegram.peer_access import PeerAccessDenied, assert_bot_mapping_access
 from app.web.deps import CurrentUser, Db, WriterUser
@@ -55,6 +56,8 @@ async def _preflight_bot_mapping_route(
     try:
         await assert_bot_mapping_access(account, source_chat_id, dest_chat_id)
     except PeerAccessDenied as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except CredentialSealError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     except SessionLockedError:
         raise HTTPException(

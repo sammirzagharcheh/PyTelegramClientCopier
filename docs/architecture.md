@@ -87,13 +87,15 @@ flowchart TB
 
 | Module | Responsibility |
 |--------|----------------|
-| `worker.py` | Process entry: user session copy or bot token (`start_bot_client`); load enabled mappings; heartbeat `worker_registry`; attach handlers |
-| `telegram/client_manager.py` | Construct/start user/bot clients (bot uses in-memory `StringSession`); register event handlers |
+| `worker.py` | Process entry: user session copy or bot token + persisted StringSession (`start_bot_client`); load enabled mappings; heartbeat `worker_registry`; attach handlers |
+| `telegram/client_manager.py` | Construct/start user/bot clients; bots persist StringSession under `SESSIONS_DIR/{user}/{id}.bot.session` |
 | `telegram/handlers.py` | New / edit / delete / album debounce; send to destination; write index + logs; fire copy webhooks |
 | `telegram/pipeline_preview.py` | Pure filter / schedule / transform evaluation shared with preview APIs |
 | `telegram/dialog_service.py` | List dialogs for UI chat pickers (user sessions only; bots return empty + `manual_required`) |
 | `telegram/peer_resolve.py` | Resolve `@username` / `t.me` / numeric ID via `get_entity` for mapping save (`POST /accounts/{id}/resolve-peer`) |
 | `telegram/peer_access.py` | Bot mapping preflight: `get_permissions` on source/dest; 400 if the bot cannot receive or post |
+| `telegram/bot_session.py` | Bot StringSession path load/save (independent in-memory copies; no sqlite lock) |
+| `telegram/at_rest.py` | Optional Fernet seal for `bot_token` and bot session blobs (`CREDENTIALS_AT_REST_KEY`) |
 | `telegram/bot_token.py` | BotFather token shape validation |
 | `telegram/worker_account.py` | Bot registry sentinel `bot://{id}` and worker CLI argv (token never on argv) |
 | `telegram/chat_ids.py` | Normalize ± chat id forms for matching |
@@ -362,6 +364,7 @@ Durable paths in containers typically map under `/app/data` (`SQLITE_PATH`, `SES
 |---------------|----------|
 | `API_ID`, `API_HASH` | Required for Telethon |
 | `JWT_SECRET`, algorithm, TTLs | Auth |
+| `CREDENTIALS_AT_REST_KEY` | Optional Fernet key; seals bot tokens + bot `.bot.session` blobs. Empty = plaintext. User `.session` sqlite files stay unencrypted |
 | `SQLITE_PATH`, `SESSIONS_DIR`, `MEDIA_ASSETS_DIR` | Local durable state |
 | `MONGO_URI`, `MONGO_DB` | Log store; runtime override via SQLite `app_settings` |
 | `FRONTEND_DIST_DIR` | Empty → API-only; set in Docker unified image |

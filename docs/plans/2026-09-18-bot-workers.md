@@ -194,8 +194,8 @@ Do not implement until this plan is approved.
 |-------|------|--------|
 | 2 | `get_entity` resolve of `@username` / numeric ID on mapping save (bot must already see the chat) | **Done** — [2026-09-18-resolve-peer-mapping.md](2026-09-18-resolve-peer-mapping.md) |
 | 3 | Preflight: “can this bot access source/dest?” with a clear 400 before save | **Done** — [2026-09-18-bot-mapping-preflight.md](2026-09-18-bot-mapping-preflight.md) |
-| 4 | Optional persist bot StringSession to `sessions/{user}/{id}.bot.session` for faster reconnect | Not started |
-| 5 | Token-at-rest encryption if we encrypt session files | Not started |
+| 4 | Optional persist bot StringSession to `sessions/{user}/{id}.bot.session` for faster reconnect | **Done** — [2026-09-18-bot-session-at-rest.md](2026-09-18-bot-session-at-rest.md) |
+| 5 | Token-at-rest encryption if we encrypt session files | **Done** — same plan; optional `CREDENTIALS_AT_REST_KEY` (user sqlite `.session` files remain unencrypted) |
 
 ---
 

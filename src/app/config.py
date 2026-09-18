@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     # Worker FloodWait: sleep up to this many seconds, then retry; over cap → skip log.
     flood_wait_max_seconds: int = 120
     flood_wait_retries: int = 1
+    # Fernet key (url-safe base64). Empty = store bot tokens/session blobs in plaintext.
+    credentials_at_rest_key: str = ""
 
 
 settings = Settings()

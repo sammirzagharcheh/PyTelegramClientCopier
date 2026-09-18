@@ -13,6 +13,7 @@ Multi-tenant Telegram copier with admin controls, filtering, and media forwardin
    - `API_ID`
    - `API_HASH`
    - `JWT_SECRET` (optional, for auth; set in production)
+   - `CREDENTIALS_AT_REST_KEY` (optional Fernet key; seals bot tokens and `.bot.session` blobs)
    - `BOT_TOKEN` (optional, for live Telegram test; from @BotFather)
    - `MONGO_URI` (optional)
    - `MONGO_DB` (optional)

@@ -12,6 +12,8 @@ from app.db.mongo import get_mongo_db
 from app.db.sqlite import get_sqlite, init_sqlite
 from app.services.mapping_service import list_enabled_mappings
 from app.worker_log_handler import MongoWorkerLogHandler, test_mongo_connection
+from app.telegram.at_rest import reveal_secret
+from app.telegram.bot_session import bot_session_path
 from app.telegram.client_manager import attach_message_handlers, start_bot_client, start_user_client
 from app.telegram.handlers import build_message_handlers
 from app.telegram.worker_account import is_bot_registry_path
@@ -41,12 +43,18 @@ async def connect_worker_client(
     account_type: str,
     session_path: str | None,
     bot_token: str | None,
+    user_id: int | None = None,
+    account_id: int | None = None,
 ):
-    """Start Telethon for a worker: bot token (in-memory session) or user session file copy."""
+    """Start Telethon for a worker: bot token (+ persisted StringSession) or user session copy."""
     if account_type == "bot":
-        if not bot_token:
+        token = reveal_secret(bot_token)
+        if not token:
             raise ValueError("Bot account is not connected")
-        return await start_bot_client(bot_token)
+        bot_sess = None
+        if user_id is not None and account_id is not None:
+            bot_sess = str(bot_session_path(user_id, account_id))
+        return await start_bot_client(token, session_path=bot_sess)
     if not session_path:
         raise ValueError("Account is not connected")
     worker_session = _worker_session_path(session_path)
@@ -127,6 +135,8 @@ async def run_worker(
             account_type=account_type,
             session_path=file_session,
             bot_token=bot_token,
+            user_id=user_id,
+            account_id=telegram_account_id,
         )
         logger.info("Connected to Telegram: user_id=%s account_id=%s", user_id, telegram_account_id)
         h_new, h_edit, h_del = build_message_handlers(

@@ -76,6 +76,8 @@ Bots only copy chats they are allowed to see and post to:
 | Destination | Bot must be allowed to post; edit/delete sync usually works only for messages **the bot sent** |
 | Chat picker | Telegram forbids `GetDialogs` for bots — paste `@username`, `t.me/name`, or `-100…`; resolved to an integer ID on save |
 | Save preflight | Creating/updating a **bot** mapping checks membership and post permission; a clear 400 is returned instead of saving a dead route. Group BotFather privacy still cannot be detected. |
+| Bot session file | `SESSIONS_DIR/{user_id}/{account_id}.bot.session` is a StringSession blob (not Telethon sqlite). Safe to load while a worker runs. |
+| Token encryption | If `CREDENTIALS_AT_REST_KEY` is set, `bot_token` and the bot session blob are Fernet-sealed (`enc:v1:`). Missing key with sealed data → start fails until the key is restored. |
 
 If the worker is running but nothing copies, check Message Logs / worker logs for `ChatAdminRequired`, not a participant, or chat not found. The bot cannot join chats by itself.
 

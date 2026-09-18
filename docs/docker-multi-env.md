@@ -55,6 +55,7 @@ Edit each file and set at least:
 |----------|--------|
 | `API_ID` / `API_HASH` | From [my.telegram.org](https://my.telegram.org) |
 | `JWT_SECRET` | **Different** strong secret per env (`openssl rand -hex 32`) |
+| `CREDENTIALS_AT_REST_KEY` | Optional Fernet key (`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`). Seals bot tokens + `.bot.session` files. Leave empty for plaintext. |
 | `MONGO_DB` | Defaults already differ (`telegram_copier_dev`, `_tst`, …) — logical DB name inside Mongo |
 | `LOG_LEVEL` | `DEBUG` (dev) → `WARNING` (prod) |
 | `MONGO_URI` | Keep `mongodb://mongodb:27017` with in-compose Mongo; or Atlas / external URI with `NO_MONGO=1` |

@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, 
 from fastapi import status as http_status
 
 from app.config import settings
+from app.telegram.at_rest import CredentialSealError, seal_secret
 from app.telegram.bot_token import is_valid_bot_token, normalize_bot_token
 from app.telegram.dialog_service import (
     AccountCredentials,
@@ -315,10 +316,17 @@ async def create_account(
         )
         await db.commit()
     else:
+        try:
+            stored_token = seal_secret(bot_token or "")
+        except CredentialSealError as e:
+            raise HTTPException(
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                detail=str(e),
+            ) from e
         cursor = await db.execute(
             """INSERT INTO telegram_accounts (user_id, type, bot_token, status, name, created_at)
                VALUES (?, 'bot', ?, 'active', ?, ?)""",
-            (user["id"], bot_token or "", name or "Bot account", now),
+            (user["id"], stored_token, name or "Bot account", now),
         )
         await db.commit()
         acc_id = cursor.lastrowid

@@ -9,6 +9,8 @@ from typing import Any
 
 from telethon.tl.types import Channel, Chat, User
 
+from app.telegram.at_rest import reveal_secret
+from app.telegram.bot_session import bot_session_path
 from app.telegram.client_manager import start_bot_client, start_user_client
 
 
@@ -93,9 +95,11 @@ async def start_account_client(account: AccountCredentials):
                 raise SessionLockedError(str(e)) from e
             raise TelegramDialogsError(str(e)) from e
     if account.account_type == "bot":
-        if not account.bot_token:
+        token = reveal_secret(account.bot_token)
+        if not token:
             raise ValueError("Account is not connected")
-        return await start_bot_client(account.bot_token)
+        path = bot_session_path(account.user_id, account.account_id)
+        return await start_bot_client(token, session_path=str(path))
     raise ValueError(f"Unsupported account type: {account.account_type}")
 
 

@@ -200,6 +200,42 @@ def test_create_bot_account_rejects_invalid_token(api_client, user_token):
     assert "botfather" in r.json()["detail"].lower() or "token" in r.json()["detail"].lower()
 
 
+def test_create_bot_account_seals_token_when_key_set(api_client, user_token, monkeypatch):
+    import asyncio
+
+    from cryptography.fernet import Fernet
+
+    from app.telegram.at_rest import SEAL_PREFIX, reveal_secret
+
+    key = Fernet.generate_key().decode("ascii")
+    monkeypatch.setattr("app.telegram.at_rest.settings.credentials_at_rest_key", key)
+    token = "123456:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw"
+    r = api_client.post(
+        "/api/accounts",
+        data={"name": "Sealed Bot", "type": "bot", "bot_token": token},
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert r.status_code == 201
+    acc_id = r.json()["id"]
+
+    async def read_stored():
+        from app.db.sqlite import get_sqlite
+
+        db = await get_sqlite()
+        async with db.execute(
+            "SELECT bot_token FROM telegram_accounts WHERE id = ?",
+            (acc_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        await db.close()
+        return row[0]
+
+    stored = asyncio.run(read_stored())
+    assert stored.startswith(SEAL_PREFIX)
+    assert token not in stored
+    assert reveal_secret(stored) == token
+
+
 def test_resolve_peer_400_bad_query(api_client, user_token):
     r = api_client.post(
         "/api/accounts/1/resolve-peer",
