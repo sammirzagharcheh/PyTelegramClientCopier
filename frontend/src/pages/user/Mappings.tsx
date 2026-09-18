@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { coerceChannelMappingForEdit } from '../../lib/channelMappingDefaults';
+import { invalidateDashboardStats } from '../../lib/queryClient';
 import { useActiveAccounts, formatAccountLabel } from '../../hooks/useActiveAccounts';
 import { AddMappingDialog } from '../../components/AddMappingDialog';
 import { EditMappingDialog } from '../../components/EditMappingDialog';
@@ -76,6 +77,7 @@ export function Mappings() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
+      invalidateDashboardStats(queryClient);
       setMappingToDelete(null);
       showToast('Mapping deleted. Workers are restarting to apply it.', 'success');
     },
@@ -87,6 +89,7 @@ export function Mappings() {
     },
     onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
+      invalidateDashboardStats(queryClient);
       showToast('Mapping cloned as disabled. Review and enable when ready.', 'success');
       navigate(`/mappings/${created.id}`);
     },
@@ -134,6 +137,7 @@ export function Mappings() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
+      invalidateDashboardStats(queryClient);
     },
   });
 

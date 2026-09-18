@@ -2,6 +2,7 @@ import { Pencil } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import { invalidateDashboardStats } from '../lib/queryClient';
 import { useToast } from './Toast';
 import { AccountTypeBadge } from './AccountTypeBadge';
 import { Button } from './ui/Button';
@@ -42,6 +43,7 @@ export function EditAccountDialog({ account, onClose }: Props) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      invalidateDashboardStats(queryClient);
       showToast('Account updated');
       onClose();
     },

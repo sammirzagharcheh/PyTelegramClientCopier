@@ -1,6 +1,7 @@
 import { Activity, Zap } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { invalidateDashboardStats } from '../../lib/queryClient';
 import { formatLocalDateTime } from '../../lib/formatDateTime';
 import { formatUptime } from '../../lib/formatUptime';
 import { useAuth } from '../../store/AuthContext';
@@ -43,13 +44,19 @@ export function UserWorkers() {
     mutationFn: async (accountId: number) => {
       return (await api.post(`/workers/start?account_id=${accountId}`)).data;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['workers'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workers'] });
+      invalidateDashboardStats(queryClient);
+    },
   });
   const stopMutation = useMutation({
     mutationFn: async (workerId: string) => {
       await api.post(`/workers/${workerId}/stop`);
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['workers'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workers'] });
+      invalidateDashboardStats(queryClient);
+    },
   });
 
   const userAccounts = accounts.filter(

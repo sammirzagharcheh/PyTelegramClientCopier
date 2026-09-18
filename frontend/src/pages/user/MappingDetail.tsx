@@ -5,6 +5,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../lib/api';
 import type { ChannelMapping, MappingPreviewResponse, Transform, TransformCreate } from '../../lib/api';
 import { coerceChannelMappingForEdit } from '../../lib/channelMappingDefaults';
+import { invalidateDashboardStats } from '../../lib/queryClient';
 import { PII_TRANSFORM_PRESETS } from '../../lib/piiTransformPresets';
 import type { FilterFormValues } from '../../components/FilterForm';
 import { EditMappingDialog } from '../../components/EditMappingDialog';
@@ -227,6 +228,7 @@ export function MappingDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
+      invalidateDashboardStats(queryClient);
       setMappingToDelete(false);
       showToast('Mapping deleted. Workers are restarting to apply it.', 'success');
       navigate(isAdminView ? '/admin/mappings' : '/mappings');
@@ -239,6 +241,7 @@ export function MappingDetail() {
     },
     onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
+      invalidateDashboardStats(queryClient);
       showToast('Mapping cloned as disabled. Review and enable when ready.', 'success');
       navigate(isAdminView ? `/admin/mappings/${created.id}` : `/mappings/${created.id}`);
     },
@@ -256,6 +259,7 @@ export function MappingDetail() {
         queryClient.setQueryData<ChannelMapping>(['mapping', id], data);
       }
       queryClient.invalidateQueries({ queryKey: ['mapping', id] });
+      invalidateDashboardStats(queryClient);
       showToast(
         (enabledFlag ? 'Mapping enabled' : 'Mapping disabled') +
           '. Workers are restarting to apply it.',

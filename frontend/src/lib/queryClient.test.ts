@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createQueryClient, queryClientDefaultOptions } from './queryClient';
+import { createQueryClient, invalidateDashboardStats, queryClientDefaultOptions } from './queryClient';
 
 describe('queryClient', () => {
   it('default options have 60s staleTime', () => {
@@ -24,5 +24,15 @@ describe('queryClient', () => {
     expect(defaultOpts?.staleTime).toBe(60 * 1000);
     expect(defaultOpts?.gcTime).toBe(5 * 60 * 1000);
     expect(defaultOpts?.refetchOnWindowFocus).toBe(false);
+  });
+
+  it('invalidateDashboardStats marks user and admin dashboard queries stale', async () => {
+    const client = createQueryClient();
+    client.setQueryData(['stats', 'dashboard'], { setup: { account: false } });
+    client.setQueryData(['admin', 'stats', 'dashboard'], { users_total: 1 });
+    invalidateDashboardStats(client);
+    await Promise.resolve();
+    expect(client.getQueryState(['stats', 'dashboard'])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(['admin', 'stats', 'dashboard'])?.isInvalidated).toBe(true);
   });
 });

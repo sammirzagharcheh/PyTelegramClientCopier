@@ -2,6 +2,7 @@ import { KeyRound, Smartphone, Upload } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import { invalidateDashboardStats } from '../lib/queryClient';
 import { Button } from './ui/Button';
 import { Field, Input, Select } from './ui/Field';
 import { FormError } from './ui/FormError';
@@ -65,6 +66,7 @@ export function AddAccountDialog({ onClose }: Props) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      invalidateDashboardStats(queryClient);
       onClose();
     },
     onError: (err: unknown) => {
@@ -101,6 +103,7 @@ export function AddAccountDialog({ onClose }: Props) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      invalidateDashboardStats(queryClient);
       onClose();
     },
     onError: (err: unknown) => {

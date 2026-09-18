@@ -2,6 +2,7 @@ import { GitBranch } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
+import { invalidateDashboardStats } from '../lib/queryClient';
 import { errorMessage } from '../lib/apiError';
 import { MappingRouteFields } from './MappingRouteFields';
 import { useToast } from './Toast';
@@ -54,6 +55,7 @@ export function AddMappingDialog({ onClose }: Props) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
+      invalidateDashboardStats(queryClient);
       showToast('Mapping created. Workers are restarting to apply it.');
       onClose();
     },

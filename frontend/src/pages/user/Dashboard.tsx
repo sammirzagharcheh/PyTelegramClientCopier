@@ -83,6 +83,7 @@ export function UserDashboard() {
     queryKey: ['stats', 'dashboard'],
     queryFn: async () => (await api.get<DashboardStats>('/stats/dashboard')).data,
     staleTime: 2 * 60 * 1000,
+    refetchOnMount: 'always',
   });
 
   const messagesTrend = stats

@@ -2,6 +2,7 @@ import { Plus, Smartphone, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { invalidateDashboardStats } from '../../lib/queryClient';
 import { AddAccountDialog } from '../../components/AddAccountDialog';
 import { EditAccountDialog } from '../../components/EditAccountDialog';
 import { ViewAccountDialog } from '../../components/ViewAccountDialog';
@@ -55,6 +56,7 @@ export function Accounts() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      invalidateDashboardStats(queryClient);
       setAccountToDelete(null);
       showToast('Account deleted', 'success');
     },

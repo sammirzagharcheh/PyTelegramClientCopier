@@ -18,3 +18,9 @@ export const queryClientDefaultOptions = {
 export function createQueryClient() {
   return new QueryClient(queryClientDefaultOptions);
 }
+
+/** Invalidate dashboard setup checklist + stats after account/mapping/worker changes. */
+export function invalidateDashboardStats(queryClient: QueryClient) {
+  void queryClient.invalidateQueries({ queryKey: ['stats', 'dashboard'] });
+  void queryClient.invalidateQueries({ queryKey: ['admin', 'stats', 'dashboard'] });
+}
