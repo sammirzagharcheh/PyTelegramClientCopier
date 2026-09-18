@@ -93,6 +93,7 @@ flowchart TB
 | `telegram/pipeline_preview.py` | Pure filter / schedule / transform evaluation shared with preview APIs |
 | `telegram/dialog_service.py` | List dialogs for UI chat pickers (user sessions only; bots return empty + `manual_required`) |
 | `telegram/peer_resolve.py` | Resolve `@username` / `t.me` / numeric ID via `get_entity` for mapping save (`POST /accounts/{id}/resolve-peer`) |
+| `telegram/peer_access.py` | Bot mapping preflight: `get_permissions` on source/dest; 400 if the bot cannot receive or post |
 | `telegram/bot_token.py` | BotFather token shape validation |
 | `telegram/worker_account.py` | Bot registry sentinel `bot://{id}` and worker CLI argv (token never on argv) |
 | `telegram/chat_ids.py` | Normalize ± chat id forms for matching |
@@ -325,7 +326,7 @@ Durable paths in containers typically map under `/app/data` (`SQLITE_PATH`, `SES
 |---------|-------------------|------------|
 | Mongo unreachable | Copy path continues; worker/message/webhook logging degrades with warnings | Soft-fail handlers; `tg-copier db test-mongo`; ops docs |
 | Session file locked / contended | Worker copies session to `*_worker_{pid}.session` before connect | Copy-on-start in `worker.py`; see [WORKER_TROUBLESHOOTING.md](WORKER_TROUBLESHOOTING.md) |
-| Bot not in source/dest / privacy on | Worker runs but copies nothing or send fails (`ChatAdminRequired`, not participant) | Mapping hint; message/worker logs; add bot as admin / disable BotFather privacy |
+| Bot not in source/dest / privacy on | **Save** returns 400 for bots that cannot receive/post; if a mapping was saved earlier, worker may still copy nothing (`ChatAdminRequired`, not participant) | Preflight `peer_access.py`; mapping hint; message/worker logs; add bot as admin / disable BotFather privacy |
 | Worker process crash | Heartbeat stops; registry stale | API restore-on-boot; alert checker (~90s loop); manual start/stop in UI |
 | API restart | In-memory spawn map lost | Delayed `restore_workers_from_db` on lifespan |
 | Chat id invalid / migrated | Send may retry alternate ± id forms; exhausted → `message_logs` `failed` / `chat_id_invalid` | `chat_ids` helpers + handler fallbacks |

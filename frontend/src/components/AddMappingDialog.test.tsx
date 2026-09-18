@@ -123,4 +123,29 @@ describe('AddMappingDialog', () => {
     expect(api.post).toHaveBeenCalledWith('/accounts/1/resolve-peer', { query: '@srcchan' });
     expect(api.post).toHaveBeenCalledWith('/accounts/1/resolve-peer', { query: '@dstchan' });
   });
+
+  it('shows mapping create 400 detail', async () => {
+    const err = {
+      response: {
+        status: 400,
+        data: {
+          detail: 'This bot must be an admin on the source channel to receive posts.',
+        },
+      },
+    };
+    vi.mocked(api.post).mockRejectedValue(err);
+
+    renderDialog();
+    fireEvent.change(screen.getByLabelText(/telegram account/i), { target: { value: '1' } });
+    fireEvent.click(screen.getByLabelText(/enter chat id manually/i));
+    fireEvent.change(screen.getByLabelText(/source chat id/i), { target: { value: '-1001' } });
+    fireEvent.change(screen.getByLabelText(/destination chat id/i), { target: { value: '-1002' } });
+    fireEvent.click(screen.getByRole('button', { name: /create/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/admin on the source channel/i)
+      ).toBeInTheDocument();
+    });
+  });
 });

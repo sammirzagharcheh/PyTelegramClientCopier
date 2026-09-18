@@ -194,7 +194,8 @@ export function MappingRouteFields({
             >
               <p>
                 Telegram bots cannot list chats. Paste @username, a t.me link, or a numeric
-                chat ID. We resolve it when you save.
+                chat ID. We resolve it when you save, and reject the mapping if this bot
+                cannot see the source or post to the destination.
               </p>
               <p>
                 Add this bot as admin on the source channel (or as a member of a group with

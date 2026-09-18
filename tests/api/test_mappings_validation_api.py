@@ -1,8 +1,9 @@
 """API tests for channel mapping validation."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from app.telegram.peer_access import PeerAccessDenied
 
 
 @pytest.fixture
@@ -10,6 +11,30 @@ def writer_token(api_client):
     from app.auth import create_access_token
 
     return create_access_token(sub="user@test.com", user_id=1, role="user")
+
+
+def _seed_bot(name: str) -> int:
+    import asyncio
+
+    async def seed():
+        from app.db.sqlite import get_sqlite
+
+        db = await get_sqlite()
+        await db.execute(
+            "INSERT INTO telegram_accounts (user_id, type, bot_token, status, name) "
+            "VALUES (?, 'bot', ?, 'active', ?)",
+            (1, "123456:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw", name),
+        )
+        await db.commit()
+        async with db.execute(
+            "SELECT id FROM telegram_accounts WHERE name = ?",
+            (name,),
+        ) as cur:
+            row = await cur.fetchone()
+        await db.close()
+        return row[0]
+
+    return asyncio.run(seed())
 
 
 def test_create_mapping_success(api_client, writer_token):
@@ -155,3 +180,86 @@ def test_viewer_cannot_create_mapping(api_client):
         },
     )
     assert r.status_code == 403
+
+
+def test_create_bot_mapping_preflight_ok(api_client, writer_token):
+    bot_id = _seed_bot("Preflight Bot")
+    with (
+        patch("app.web.routers.mappings.restart_workers_for_mapping"),
+        patch(
+            "app.web.routers.mappings.assert_bot_mapping_access",
+            new_callable=AsyncMock,
+        ) as mock_preflight,
+    ):
+        r = api_client.post(
+            "/api/mappings",
+            headers={"Authorization": f"Bearer {writer_token}"},
+            json={
+                "source_chat_id": -100501,
+                "dest_chat_id": -100502,
+                "telegram_account_id": bot_id,
+                "name": "bot-preflight-ok",
+            },
+        )
+    assert r.status_code == 201
+    mock_preflight.assert_awaited_once()
+    assert r.json()["name"] == "bot-preflight-ok"
+
+
+def test_create_bot_mapping_preflight_denied(api_client, writer_token):
+    bot_id = _seed_bot("Denied Bot")
+    with (
+        patch("app.web.routers.mappings.restart_workers_for_mapping"),
+        patch(
+            "app.web.routers.mappings.assert_bot_mapping_access",
+            new_callable=AsyncMock,
+            side_effect=PeerAccessDenied(
+                "This bot must be an admin on the source channel to receive posts."
+            ),
+        ),
+    ):
+        r = api_client.post(
+            "/api/mappings",
+            headers={"Authorization": f"Bearer {writer_token}"},
+            json={
+                "source_chat_id": -100601,
+                "dest_chat_id": -100602,
+                "telegram_account_id": bot_id,
+                "name": "bot-preflight-denied",
+            },
+        )
+    assert r.status_code == 400
+    assert "admin on the source channel" in r.json()["detail"].lower()
+    listed = api_client.get(
+        "/api/mappings",
+        headers={"Authorization": f"Bearer {writer_token}"},
+    )
+    assert listed.status_code == 200
+    assert not any(i.get("name") == "bot-preflight-denied" for i in listed.json()["items"])
+
+
+def test_patch_bot_mapping_preflight_denied(api_client, writer_token):
+    bot_id = _seed_bot("Patch Denied Bot")
+    with (
+        patch("app.web.routers.mappings.restart_workers_for_mapping"),
+        patch(
+            "app.web.routers.mappings.assert_bot_mapping_access",
+            new_callable=AsyncMock,
+            side_effect=PeerAccessDenied(
+                "This bot cannot post in the destination channel. Grant it post permission."
+            ),
+        ),
+    ):
+        r = api_client.patch(
+            "/api/mappings/1",
+            headers={"Authorization": f"Bearer {writer_token}"},
+            json={"telegram_account_id": bot_id},
+        )
+    assert r.status_code == 400
+    assert "cannot post" in r.json()["detail"].lower()
+    kept = api_client.get(
+        "/api/mappings/1",
+        headers={"Authorization": f"Bearer {writer_token}"},
+    )
+    assert kept.status_code == 200
+    assert kept.json()["telegram_account_id"] == 1

@@ -75,6 +75,7 @@ Bots only copy chats they are allowed to see and post to:
 | Source **group** | Bot must be a member, and BotFather **Group Privacy** must be **disabled** (`/setprivacy` → Disable) or the bot will not see ordinary messages |
 | Destination | Bot must be allowed to post; edit/delete sync usually works only for messages **the bot sent** |
 | Chat picker | Telegram forbids `GetDialogs` for bots — paste `@username`, `t.me/name`, or `-100…`; resolved to an integer ID on save |
+| Save preflight | Creating/updating a **bot** mapping checks membership and post permission; a clear 400 is returned instead of saving a dead route. Group BotFather privacy still cannot be detected. |
 
 If the worker is running but nothing copies, check Message Logs / worker logs for `ChatAdminRequired`, not a participant, or chat not found. The bot cannot join chats by itself.
 

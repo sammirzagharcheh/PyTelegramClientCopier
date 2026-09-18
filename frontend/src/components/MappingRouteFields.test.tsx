@@ -104,6 +104,7 @@ describe('MappingRouteFields', () => {
     renderFields({ ...baseValues, telegramAccountId: 2 }, vi.fn());
     expect(screen.getByTestId('bot-manual-ids-hint')).toBeInTheDocument();
     expect(screen.getByText(/cannot list chats/i)).toBeInTheDocument();
+    expect(screen.getByText(/reject the mapping if this bot/i)).toBeInTheDocument();
     expect(screen.getByText(/start its worker/i)).toBeInTheDocument();
     expect(screen.queryByText(/cannot start workers yet/i)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/source chat id/i)).toBeInTheDocument();

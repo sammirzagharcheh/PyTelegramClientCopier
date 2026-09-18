@@ -16,6 +16,8 @@ from app.telegram.pipeline_preview import (
     passes_filters,
     passes_schedule,
 )
+from app.telegram.dialog_service import AccountCredentials, SessionLockedError
+from app.telegram.peer_access import PeerAccessDenied, assert_bot_mapping_access
 from app.web.deps import CurrentUser, Db, WriterUser
 from app.web.routers.workers import restart_workers_for_mapping
 from app.web.scope_deps import resource_scope_dependency
@@ -23,6 +25,42 @@ from app.web.validation.mapping_validation import (
     validate_mapping_create,
     validate_mapping_update_routing,
 )
+
+
+async def _preflight_bot_mapping_route(
+    db: Db,
+    account_id: int | None,
+    source_chat_id: int,
+    dest_chat_id: int,
+) -> None:
+    """400 if a bot cannot see the source or post to the dest. User accounts skip."""
+    if account_id is None:
+        return
+    async with db.execute(
+        "SELECT id, user_id, type, session_path, bot_token, status "
+        "FROM telegram_accounts WHERE id = ?",
+        (account_id,),
+    ) as cur:
+        row = await cur.fetchone()
+    if not row or row[2] != "bot":
+        return
+    account = AccountCredentials(
+        account_id=row[0],
+        user_id=row[1],
+        account_type=row[2],
+        session_path=row[3],
+        bot_token=row[4],
+        status=row[5],
+    )
+    try:
+        await assert_bot_mapping_access(account, source_chat_id, dest_chat_id)
+    except PeerAccessDenied as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except SessionLockedError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Account session is in use; stop the worker and retry",
+        ) from None
 
 
 def _schedule_summary(row: tuple | None) -> str:
@@ -264,6 +302,7 @@ async def create_mapping(
         dest_chat_id=data.dest_chat_id,
         telegram_account_id=data.telegram_account_id,
     )
+    await _preflight_bot_mapping_route(db, account_id, src, dst)
     now = datetime.now(timezone.utc).isoformat()
     cursor = await db.execute(
         """INSERT INTO channel_mappings
@@ -408,6 +447,7 @@ async def update_mapping(
             dest_chat_id=data.dest_chat_id,
             telegram_account_id=data.telegram_account_id,
         )
+        await _preflight_bot_mapping_route(db, account_id, src, dst)
     else:
         src, dst, account_id = int(old_source_chat_id), int(old_dest_chat_id), old_account_id
 
