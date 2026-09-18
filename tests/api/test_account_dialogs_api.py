@@ -159,6 +159,47 @@ def test_list_dialogs_502_telegram_failure(api_client, user_token):
     assert r.status_code == 502
 
 
+def test_list_dialogs_bot_returns_manual_required(api_client, user_token):
+    import asyncio
+
+    async def seed_bot():
+        from app.db.sqlite import get_sqlite
+
+        db = await get_sqlite()
+        await db.execute(
+            "INSERT INTO telegram_accounts (user_id, type, bot_token, status, name) "
+            "VALUES (?, 'bot', ?, 'active', ?)",
+            (1, "123456:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw", "Test Bot"),
+        )
+        await db.commit()
+        async with db.execute(
+            "SELECT id FROM telegram_accounts WHERE type = 'bot' ORDER BY id DESC LIMIT 1"
+        ) as cur:
+            row = await cur.fetchone()
+        await db.close()
+        return row[0]
+
+    account_id = asyncio.run(seed_bot())
+    r = api_client.get(
+        f"/api/accounts/{account_id}/dialogs",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["items"] == []
+    assert data["manual_required"] is True
+
+
+def test_create_bot_account_rejects_invalid_token(api_client, user_token):
+    r = api_client.post(
+        "/api/accounts",
+        data={"name": "Bad Bot", "type": "bot", "bot_token": "not-a-real-token"},
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert r.status_code == 400
+    assert "botfather" in r.json()["detail"].lower() or "token" in r.json()["detail"].lower()
+
+
 def test_list_accounts_status_active_filter(api_client, user_token):
     import asyncio
 

@@ -12,8 +12,9 @@ from app.db.mongo import get_mongo_db
 from app.db.sqlite import get_sqlite, init_sqlite
 from app.services.mapping_service import list_enabled_mappings
 from app.worker_log_handler import MongoWorkerLogHandler, test_mongo_connection
-from app.telegram.client_manager import attach_message_handlers, start_user_client
+from app.telegram.client_manager import attach_message_handlers, start_bot_client, start_user_client
 from app.telegram.handlers import build_message_handlers
+from app.telegram.worker_account import is_bot_registry_path
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +36,36 @@ def _worker_session_path(session_path: str) -> str:
         return str(path)
 
 
+async def connect_worker_client(
+    *,
+    account_type: str,
+    session_path: str | None,
+    bot_token: str | None,
+):
+    """Start Telethon for a worker: bot token (in-memory session) or user session file copy."""
+    if account_type == "bot":
+        if not bot_token:
+            raise ValueError("Bot account is not connected")
+        return await start_bot_client(bot_token)
+    if not session_path:
+        raise ValueError("Account is not connected")
+    worker_session = _worker_session_path(session_path)
+    logger.debug("Using worker session copy: %s", worker_session)
+    return await start_user_client(worker_session)
+
+
+async def _load_account_row(db, user_id: int, telegram_account_id: int):
+    async with db.execute(
+        "SELECT type, session_path, bot_token, status FROM telegram_accounts "
+        "WHERE id = ? AND user_id = ?",
+        (telegram_account_id, user_id),
+    ) as cur:
+        return await cur.fetchone()
+
+
 async def run_worker(
     user_id: int,
-    session_path: str,
+    session_path: str | None = None,
     telegram_account_id: int | None = None,
 ) -> None:
     level = getattr(logging, settings.log_level.upper(), logging.INFO)
@@ -77,16 +105,29 @@ async def run_worker(
         )
 
         source_ids = sorted({m.source_chat_id for m in mappings})
+        account_type = "user"
+        bot_token = None
+        file_session = session_path
+        if telegram_account_id is not None:
+            acc_row = await _load_account_row(db, user_id, telegram_account_id)
+            if acc_row:
+                account_type, db_session, bot_token, _status = acc_row
+                if account_type == "user" and not file_session:
+                    file_session = db_session
+        if is_bot_registry_path(session_path) or account_type == "bot":
+            account_type = "bot"
         logger.info(
-            "Worker starting: user_id=%s account_id=%s mappings=%d source_chat_ids=%s",
-            user_id, telegram_account_id, len(mappings), source_ids,
+            "Worker starting: user_id=%s account_id=%s account_type=%s mappings=%d source_chat_ids=%s",
+            user_id, telegram_account_id, account_type, len(mappings), source_ids,
         )
         if not mappings:
             logger.warning("No mappings loaded - worker will not forward any messages")
 
-        worker_session = _worker_session_path(session_path)
-        logger.debug("Using worker session copy: %s", worker_session)
-        client = await start_user_client(worker_session)
+        client = await connect_worker_client(
+            account_type=account_type,
+            session_path=file_session,
+            bot_token=bot_token,
+        )
         logger.info("Connected to Telegram: user_id=%s account_id=%s", user_id, telegram_account_id)
         h_new, h_edit, h_del = build_message_handlers(
             user_id=user_id, mappings=mappings, db=db, mongo_db=mongo_db
@@ -130,7 +171,7 @@ async def run_worker(
 
 def run_worker_sync(
     user_id: int,
-    session_path: str,
+    session_path: str | None = None,
     telegram_account_id: int | None = None,
 ) -> None:
     asyncio.run(

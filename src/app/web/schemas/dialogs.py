@@ -14,3 +14,5 @@ class TelegramDialogResponse(BaseModel):
 
 class TelegramDialogListResponse(BaseModel):
     items: list[TelegramDialogResponse]
+    # True for bot accounts: Telegram forbids GetDialogs; UI should use manual IDs.
+    manual_required: bool = False

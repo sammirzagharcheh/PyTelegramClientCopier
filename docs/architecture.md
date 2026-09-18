@@ -78,7 +78,7 @@ flowchart TB
 | Tenancy admin | `routers/admin_users.py`, `admin_invites.py`, `admin_settings.py`, `admin_stats.py` | User CRUD, invites, global settings (including Mongo URI override in `app_settings`), cross-tenant analytics |
 | Accounts | `routers/accounts.py`, `accounts_login.py` | Telegram account records; phone-code login wizard writing session files |
 | Mappings & rules | `routers/mappings.py`, `filters.py`, `schedules.py`, `transforms.py`, `media_assets.py` | CRUD for copy configuration; filter/transform changes may restart affected workers |
-| Workers | `routers/workers.py` | Start/stop/list/restore; process spawn via CLI entry |
+| Workers | `routers/workers.py` | Start/stop/list/restore; process spawn via CLI entry (user session file or bot `--account-id` only) |
 | Observability APIs | `message_logs.py`, `worker_logs.py`, `webhook_logs.py`, `message_index.py`, `stats.py` | Query Mongo logs and SQLite reply index; user dashboard includes derived `setup` checklist; message logs support `status` filter (`copied`/`skipped`/`failed`) and skip reason fields |
 | Alerts / flags | `alert_webhooks.py`, `user_feature_flags.py` | Stale-worker notifications; per-user feature flags in `app_settings` |
 | Access control | `mapping_access.py` | Own-vs-admin scope for mapping-bound resources |
@@ -87,11 +87,13 @@ flowchart TB
 
 | Module | Responsibility |
 |--------|----------------|
-| `worker.py` | Process entry: copy session file to avoid SQLite locks, load enabled mappings, start Telethon, heartbeat `worker_registry`, attach handlers |
-| `telegram/client_manager.py` | Construct/start user client; register event handlers |
+| `worker.py` | Process entry: user session copy or bot token (`start_bot_client`); load enabled mappings; heartbeat `worker_registry`; attach handlers |
+| `telegram/client_manager.py` | Construct/start user/bot clients (bot uses in-memory `StringSession`); register event handlers |
 | `telegram/handlers.py` | New / edit / delete / album debounce; send to destination; write index + logs; fire copy webhooks |
 | `telegram/pipeline_preview.py` | Pure filter / schedule / transform evaluation shared with preview APIs |
-| `telegram/dialog_service.py` | List dialogs for UI chat pickers |
+| `telegram/dialog_service.py` | List dialogs for UI chat pickers (user sessions only; bots return empty + `manual_required`) |
+| `telegram/bot_token.py` | BotFather token shape validation |
+| `telegram/worker_account.py` | Bot registry sentinel `bot://{id}` and worker CLI argv (token never on argv) |
 | `telegram/chat_ids.py` | Normalize ± chat id forms for matching |
 
 ### 2.3 Domain services (`src/app/services`)
@@ -132,7 +134,7 @@ Entrypoint `app.main:run` (Typer):
 | `tg-copier api` | Uvicorn + `create_app` |
 | `tg-copier db init-db` | Schema + migrations |
 | `tg-copier db create-admin` | Bootstrap first admin |
-| `tg-copier db run-worker` | Worker process (also spawned by API) |
+| `tg-copier db run-worker` | Worker process (also spawned by API); user: session path + `--account-id`; bot: `--account-id` only |
 | `tg-copier db show-config` / `test-mongo` / `show-mappings` / `purge-message-index` | Ops / debug |
 
 ---
@@ -158,7 +160,7 @@ erDiagram
 | Concept | Meaning |
 |---------|---------|
 | **User** | Tenant principal with role `admin` \| `user` \| `viewer` |
-| **Telegram account** | Telethon session bound to a user; worker unit of scale |
+| **Telegram account** | Telethon **user session or bot token** bound to a tenant; worker unit of scale |
 | **Mapping** | Source chat → destination chat, optional account binding, delays, edit/delete sync, copy-webhook URL |
 | **Filter** | Message admission rules; same `or_group_id` → OR within group; distinct groups → AND across groups |
 | **Schedule** | Weekday UTC windows; mapping schedule falls back to user schedule |
@@ -322,6 +324,7 @@ Durable paths in containers typically map under `/app/data` (`SQLITE_PATH`, `SES
 |---------|-------------------|------------|
 | Mongo unreachable | Copy path continues; worker/message/webhook logging degrades with warnings | Soft-fail handlers; `tg-copier db test-mongo`; ops docs |
 | Session file locked / contended | Worker copies session to `*_worker_{pid}.session` before connect | Copy-on-start in `worker.py`; see [WORKER_TROUBLESHOOTING.md](WORKER_TROUBLESHOOTING.md) |
+| Bot not in source/dest / privacy on | Worker runs but copies nothing or send fails (`ChatAdminRequired`, not participant) | Mapping hint; message/worker logs; add bot as admin / disable BotFather privacy |
 | Worker process crash | Heartbeat stops; registry stale | API restore-on-boot; alert checker (~90s loop); manual start/stop in UI |
 | API restart | In-memory spawn map lost | Delayed `restore_workers_from_db` on lifespan |
 | Chat id invalid / migrated | Send may retry alternate ± id forms; exhausted → `message_logs` `failed` / `chat_id_invalid` | `chat_ids` helpers + handler fallbacks |

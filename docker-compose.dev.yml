@@ -1,5 +1,8 @@
 services:
   backend:
+    environment:
+      # Wheel is installed in site-packages; bind-mounted ./src must win for reload + worker spawn.
+      PYTHONPATH: /app/src
     command:
       [
         "sh",

@@ -34,6 +34,13 @@ export function MappingRouteFields({
   initialDestTitle,
 }: Props) {
   const { data: accounts = [], isLoading: accountsLoading } = useActiveAccounts();
+  const selectedAccount = useMemo(
+    () => accounts.find((a) => a.id === values.telegramAccountId) ?? null,
+    [accounts, values.telegramAccountId]
+  );
+  const isBotAccount = selectedAccount?.type === 'bot';
+  const effectiveManualIds = isBotAccount || values.useManualIds;
+
   const {
     data: dialogs = [],
     isLoading: dialogsLoading,
@@ -41,7 +48,7 @@ export function MappingRouteFields({
     error: dialogsQueryError,
     refetch: refetchDialogs,
     isFetching: dialogsFetching,
-  } = useAccountDialogs(values.telegramAccountId);
+  } = useAccountDialogs(values.telegramAccountId, { enabled: !isBotAccount });
 
   const [accountConfirmPending, setAccountConfirmPending] = useState<number | null>(null);
 
@@ -59,14 +66,14 @@ export function MappingRouteFields({
 
   const sourceStale =
     values.telegramAccountId != null &&
-    !values.useManualIds &&
+    !effectiveManualIds &&
     values.sourceChatId &&
     !dialogsLoading &&
     !dialogs.some((d) => String(d.chat_id) === values.sourceChatId);
 
   const destStale =
     values.telegramAccountId != null &&
-    !values.useManualIds &&
+    !effectiveManualIds &&
     values.destChatId &&
     !dialogsLoading &&
     !dialogs.some((d) => String(d.chat_id) === values.destChatId);
@@ -180,7 +187,28 @@ export function MappingRouteFields({
 
       {values.telegramAccountId != null && (
         <>
-          {dialogsError && dialogsErrorDetail && (
+          {isBotAccount && (
+            <div
+              className="p-3 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 text-sm space-y-1"
+              data-testid="bot-manual-ids-hint"
+            >
+              <p>
+                Telegram bots cannot list chats. Enter source and destination chat IDs
+                manually.
+              </p>
+              <p>
+                Add this bot as admin on the source channel (or as a member of a group with
+                BotFather privacy disabled), and give it permission to post in the
+                destination. Then start its worker on{' '}
+                <Link to="/workers" className="underline">
+                  Workers
+                </Link>
+                .
+              </p>
+            </div>
+          )}
+
+          {dialogsError && dialogsErrorDetail && !isBotAccount && (
             <div className="p-3 rounded bg-red-50 dark:bg-red-900/20 text-red-600 text-sm space-y-2">
               <p>{dialogsErrorDetail.detail}</p>
               {dialogsErrorDetail.status === 409 && (
@@ -202,7 +230,7 @@ export function MappingRouteFields({
             </div>
           )}
 
-          {!values.useManualIds ? (
+          {!effectiveManualIds ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="mapping-source-chat" className="block text-sm font-medium mb-1">
@@ -321,7 +349,7 @@ export function MappingRouteFields({
             </div>
           )}
 
-          {!values.useManualIds && (
+          {!isBotAccount && !values.useManualIds && (
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input
                 type="checkbox"
@@ -332,7 +360,7 @@ export function MappingRouteFields({
               Enter chat ID manually instead
             </label>
           )}
-          {values.useManualIds && (
+          {!isBotAccount && values.useManualIds && (
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input
                 type="checkbox"

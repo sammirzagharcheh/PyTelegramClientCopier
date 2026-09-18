@@ -4,6 +4,7 @@ import asyncio
 import sqlite3
 
 from telethon import TelegramClient, events
+from telethon.sessions import StringSession
 
 from app.config import settings
 
@@ -27,7 +28,8 @@ async def start_user_client(session_path: str) -> TelegramClient:
 async def start_bot_client(bot_token: str) -> TelegramClient:
     if settings.api_id is None or settings.api_hash is None:
         raise RuntimeError("API_ID and API_HASH must be configured for bot sessions.")
-    client = TelegramClient("bot_session", settings.api_id, settings.api_hash)
+    # In-memory session avoids a shared on-disk "bot_session" colliding across tokens.
+    client = TelegramClient(StringSession(), settings.api_id, settings.api_hash)
     await client.start(bot_token=bot_token)
     return client
 

@@ -13,6 +13,16 @@ export function isUsableActiveAccount(account: TelegramAccount): boolean {
   return false;
 }
 
+/** Accounts that can start a copy worker (user session file or bot token). */
+export function isStartableWorkerAccount(account: {
+  type: string;
+  session_path: string | null;
+}): boolean {
+  if (account.type === 'user') return Boolean(account.session_path);
+  if (account.type === 'bot') return true;
+  return false;
+}
+
 export function formatAccountLabel(account: TelegramAccount): string {
   return account.name?.trim() || account.phone?.trim() || `Account #${account.id}`;
 }

@@ -9,7 +9,7 @@ from typing import Any
 
 from telethon.tl.types import Channel, Chat, User
 
-from app.telegram.client_manager import start_bot_client, start_user_client
+from app.telegram.client_manager import start_user_client
 
 
 class SessionLockedError(Exception):
@@ -85,9 +85,18 @@ async def list_account_dialogs(
     limit: int = 500,
     use_cache: bool = True,
 ) -> list[TelegramDialog]:
-    """Fetch dialogs for a Telegram account. Disconnects client when done."""
+    """Fetch dialogs for a Telegram account. Disconnects client when done.
+
+    Bot accounts cannot call GetDialogsRequest; returns an empty list so the
+    UI can fall back to manual chat IDs.
+    """
     if account.status != "active":
         raise ValueError("Account must be active")
+
+    if account.account_type == "bot":
+        if not account.bot_token:
+            raise ValueError("Account is not connected")
+        return []
 
     cache_key = (account.account_id, account.user_id)
     if use_cache:
@@ -107,10 +116,6 @@ async def list_account_dialogs(
                 if "locked" in str(e).lower():
                     raise SessionLockedError(str(e)) from e
                 raise TelegramDialogsError(str(e)) from e
-        elif account.account_type == "bot":
-            if not account.bot_token:
-                raise ValueError("Account is not connected")
-            client = await start_bot_client(account.bot_token)
         else:
             raise ValueError(f"Unsupported account type: {account.account_type}")
 

@@ -2,9 +2,13 @@ import { Activity, Zap } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import { invalidateDashboardStats } from '../../lib/queryClient';
+import { errorMessage } from '../../lib/apiError';
 import { formatLocalDateTime } from '../../lib/formatDateTime';
 import { formatUptime } from '../../lib/formatUptime';
+import { formatWorkerSessionLabel } from '../../lib/workerLabel';
+import { isStartableWorkerAccount } from '../../hooks/useActiveAccounts';
 import { useAuth } from '../../store/AuthContext';
+import { useToast } from '../../components/Toast';
 import { PageHeader } from '../../components/PageHeader';
 import { CardSkeleton } from '../../components/Skeleton';
 import { Button } from '../../components/ui/Button';
@@ -25,6 +29,7 @@ type Worker = {
 
 export function UserWorkers() {
   const { user } = useAuth();
+  const { show: showToast } = useToast();
   const queryClient = useQueryClient();
   const { data: workers, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['workers'],
@@ -47,6 +52,10 @@ export function UserWorkers() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workers'] });
       invalidateDashboardStats(queryClient);
+      showToast('Worker started', 'success');
+    },
+    onError: (err: unknown) => {
+      showToast(errorMessage(err, 'Could not start the worker.'), 'error');
     },
   });
   const stopMutation = useMutation({
@@ -56,11 +65,15 @@ export function UserWorkers() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workers'] });
       invalidateDashboardStats(queryClient);
+      showToast('Worker stopped', 'success');
+    },
+    onError: (err: unknown) => {
+      showToast(errorMessage(err, 'Could not stop the worker.'), 'error');
     },
   });
 
   const userAccounts = accounts.filter(
-    (a: { type: string; session_path: string | null }) => a.type === 'user' && a.session_path
+    (a: { type: string; session_path: string | null }) => isStartableWorkerAccount(a)
   );
 
   const isAccountRunning = (accountId: number) =>
@@ -110,7 +123,7 @@ export function UserWorkers() {
                             aria-hidden
                           />
                           <span className="truncate font-mono text-xs text-ink" title={w.session_path}>
-                            {w.session_path}
+                            {formatWorkerSessionLabel(w.session_path, w.account_id)}
                           </span>
                         </div>
                         <div className="flex shrink-0 items-center gap-3">
@@ -151,11 +164,11 @@ export function UserWorkers() {
                   <EmptyState
                     icon={Zap}
                     title="No account is ready to run"
-                    description="Add a Telegram user account with an uploaded session file, then start it here."
+                    description="Add a Telegram user session or a bot token, then start it here."
                   />
                 ) : (
                   <ul className="divide-y divide-line">
-                    {userAccounts.map((a: { id: number; name: string }) => {
+                    {userAccounts.map((a: { id: number; name: string; type: string }) => {
                       const running = isAccountRunning(a.id);
                       return (
                         <li
@@ -164,6 +177,7 @@ export function UserWorkers() {
                         >
                           <span className="min-w-0 truncate text-sm text-ink">
                             {a.name || `Account ${a.id}`}
+                            {a.type === 'bot' ? ' (bot)' : ''}
                           </span>
                           <Button
                             size="sm"

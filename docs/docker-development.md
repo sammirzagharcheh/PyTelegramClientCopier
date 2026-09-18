@@ -105,6 +105,7 @@ What this overlay does (`docker-compose.dev.yml`):
 | Change | Effect |
 |--------|--------|
 | Backend command | `init-db` + uvicorn `--reload` |
+| `PYTHONPATH=/app/src` | Bind-mounted `./src` wins over the image’s installed wheel (API + spawned workers) |
 | `./src` mounted | Python code reloads on save |
 | `frontend-dev` | `npm ci` + `npm run dev` on **5173** |
 | `./frontend` mounted | Vite HMR for UI changes |

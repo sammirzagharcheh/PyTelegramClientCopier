@@ -5,12 +5,16 @@ type DialogListResponse = {
   items: TelegramDialog[];
 };
 
-export function useAccountDialogs(accountId: number | null) {
+export function useAccountDialogs(
+  accountId: number | null,
+  options?: { enabled?: boolean }
+) {
+  const enabled = accountId != null && options?.enabled !== false;
   return useQuery({
     queryKey: ['accounts', accountId, 'dialogs'],
     queryFn: async () =>
       (await api.get<DialogListResponse>(`/accounts/${accountId}/dialogs`)).data.items,
-    enabled: accountId != null,
+    enabled,
     staleTime: 60 * 1000,
     retry: (failureCount, error) => {
       const status =

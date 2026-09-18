@@ -1,9 +1,13 @@
 import { Activity, Zap } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
+import { errorMessage } from '../../lib/apiError';
 import { formatLocalDateTime } from '../../lib/formatDateTime';
 import { formatUptime } from '../../lib/formatUptime';
+import { formatWorkerSessionLabel } from '../../lib/workerLabel';
+import { isStartableWorkerAccount } from '../../hooks/useActiveAccounts';
 import { useAuth } from '../../store/AuthContext';
+import { useToast } from '../../components/Toast';
 import { PageHeader } from '../../components/PageHeader';
 import { CardSkeleton } from '../../components/Skeleton';
 import { Button } from '../../components/ui/Button';
@@ -23,6 +27,7 @@ type Worker = {
 
 export function Workers() {
   const { user } = useAuth();
+  const { show: showToast } = useToast();
   const queryClient = useQueryClient();
   const { data: workers, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['workers'],
@@ -46,13 +51,25 @@ export function Workers() {
       if (user_id !== undefined) params.set('user_id', String(user_id));
       return (await api.post(`/workers/start?${params}`)).data;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['workers'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workers'] });
+      showToast('Worker started', 'success');
+    },
+    onError: (err: unknown) => {
+      showToast(errorMessage(err, 'Could not start the worker.'), 'error');
+    },
   });
   const stopMutation = useMutation({
     mutationFn: async (workerId: string) => {
       await api.post(`/workers/${workerId}/stop`);
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['workers'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workers'] });
+      showToast('Worker stopped', 'success');
+    },
+    onError: (err: unknown) => {
+      showToast(errorMessage(err, 'Could not stop the worker.'), 'error');
+    },
   });
 
   const handleStart = (accountId: number, accountUserId?: number) => {
@@ -68,8 +85,8 @@ export function Workers() {
   const userAccounts = accounts.filter((a: { user_id: number }) =>
     user?.role === 'admin' ? true : a.user_id === user?.id
   );
-  const startable = userAccounts.filter(
-    (a: { type: string; session_path: string | null }) => a.type === 'user' && a.session_path
+  const startable = userAccounts.filter((a: { type: string; session_path: string | null }) =>
+    isStartableWorkerAccount(a)
   );
   const runningWorkers = workers ?? [];
 
@@ -118,7 +135,7 @@ export function Workers() {
                             User {w.user_id}
                           </span>
                           <span className="truncate font-mono text-xs text-ink" title={w.session_path}>
-                            {w.session_path}
+                            {formatWorkerSessionLabel(w.session_path, w.account_id)}
                           </span>
                         </div>
                         <div className="flex shrink-0 items-center gap-3">
@@ -158,18 +175,18 @@ export function Workers() {
                 <CardHeader
                   title="Start a worker"
                   icon={Zap}
-                  description="Select an account with a session file to start a worker."
+                  description="Select a user session or bot account to start a worker."
                   inset
                 />
                 {startable.length === 0 ? (
                   <EmptyState
                     icon={Zap}
                     title="No account is ready to run"
-                    description="User accounts need an uploaded session file before a worker can start."
+                    description="User accounts need a session file; bot accounts need a BotFather token."
                   />
                 ) : (
                   <ul className="divide-y divide-line">
-                    {startable.map((a: { id: number; name: string; user_id: number }) => {
+                    {startable.map((a: { id: number; name: string; user_id: number; type: string }) => {
                       const running = isAccountRunning(a.id);
                       return (
                         <li
@@ -178,6 +195,7 @@ export function Workers() {
                         >
                           <span className="min-w-0 truncate text-sm text-ink">
                             {a.name || `Account ${a.id}`}
+                            {a.type === 'bot' ? ' (bot)' : ''}
                             <span className="ml-2 text-xs tabular-nums text-ink-subtle">
                               user {a.user_id}
                             </span>

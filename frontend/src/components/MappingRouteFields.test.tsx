@@ -15,6 +15,16 @@ const accounts = [
     status: 'active',
     created_at: null,
   },
+  {
+    id: 2,
+    user_id: 1,
+    name: 'Botty',
+    type: 'bot',
+    session_path: null,
+    phone: null,
+    status: 'active',
+    created_at: null,
+  },
 ];
 
 const dialogs = [
@@ -88,5 +98,17 @@ describe('MappingRouteFields', () => {
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ useManualIds: true })
     );
+  });
+
+  it('forces manual chat IDs for bot accounts without dialog error', () => {
+    renderFields({ ...baseValues, telegramAccountId: 2 }, vi.fn());
+    expect(screen.getByTestId('bot-manual-ids-hint')).toBeInTheDocument();
+    expect(screen.getByText(/cannot list chats/i)).toBeInTheDocument();
+    expect(screen.getByText(/start its worker/i)).toBeInTheDocument();
+    expect(screen.queryByText(/cannot start workers yet/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/source chat id/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/destination chat id/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/enter chat id manually/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/could not load chats/i)).not.toBeInTheDocument();
   });
 });

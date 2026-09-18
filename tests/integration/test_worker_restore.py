@@ -81,3 +81,44 @@ async def test_restore_spawns_workers_for_dead_registry_entries(db_with_active_a
     assert w["started_at"] is not None
 
     await workers.terminate_all_workers(db)
+
+
+@pytest.mark.asyncio
+async def test_restore_spawns_bot_worker_from_sentinel_path(tmp_path):
+    from app.config import settings
+    from app.db.sqlite import get_sqlite, init_sqlite
+    from app.telegram.worker_account import bot_registry_path
+
+    settings.sqlite_path = str(tmp_path / "bot-restore.db")
+    await init_sqlite()
+    db = await get_sqlite()
+    await db.execute(
+        "INSERT INTO users (id, email, role, status) VALUES (?, ?, ?, ?)",
+        (1, "user@example.com", "user", "active"),
+    )
+    await db.execute(
+        "INSERT INTO telegram_accounts (id, user_id, type, bot_token, status, name) VALUES (?, ?, ?, ?, ?, ?)",
+        (8, 1, "bot", "123456:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw", "active", "Bot"),
+    )
+    await db.execute(
+        "INSERT INTO worker_registry (worker_id, user_id, account_id, session_path, pid) VALUES (?, ?, ?, ?, ?)",
+        ("w8", 1, 8, bot_registry_path(8), 99999),
+    )
+    await db.commit()
+
+    workers._workers.clear()
+    workers._worker_counter = 0
+    fake_proc = MagicMock()
+    fake_proc.pid = 555
+    fake_proc.poll.return_value = None
+
+    with patch("subprocess.Popen", return_value=fake_proc) as mock_popen:
+        await workers.restore_workers_from_db(db)
+
+    assert mock_popen.called
+    cmd = mock_popen.call_args[0][0]
+    joined = " ".join(str(x) for x in cmd)
+    assert "123456:" not in joined
+    assert "bot://" not in joined
+    assert "--account-id" in cmd
+    await db.close()

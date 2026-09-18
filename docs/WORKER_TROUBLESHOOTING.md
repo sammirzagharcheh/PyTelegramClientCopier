@@ -63,6 +63,23 @@ db.worker_logs.find({ account_id: YOUR_ACCOUNT_ID })
 
 ---
 
+## Bot workers
+
+Bot accounts start from a BotFather token (loaded from SQLite; **never** passed on the worker command line). Registry path is a sentinel `bot://{account_id}`, not a session file.
+
+Bots only copy chats they are allowed to see and post to:
+
+| Requirement | Notes |
+|-------------|--------|
+| Source **channel** | Bot must be an **admin** to receive posts |
+| Source **group** | Bot must be a member, and BotFather **Group Privacy** must be **disabled** (`/setprivacy` → Disable) or the bot will not see ordinary messages |
+| Destination | Bot must be allowed to post; edit/delete sync usually works only for messages **the bot sent** |
+| Chat picker | Telegram forbids `GetDialogs` for bots — enter source/dest IDs manually |
+
+If the worker is running but nothing copies, check Message Logs / worker logs for `ChatAdminRequired`, not a participant, or chat not found. The bot cannot join chats by itself.
+
+---
+
 ## File-based logs
 
 Workers also write to `data/worker.log` and per-worker stderr files:

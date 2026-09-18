@@ -105,3 +105,38 @@ async def test_list_account_dialogs_uses_cache():
         await list_account_dialogs(account, use_cache=True)
         await list_account_dialogs(account, use_cache=True)
     assert mock_start.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_list_account_dialogs_bot_skips_telethon():
+    account = AccountCredentials(
+        account_id=9,
+        user_id=1,
+        account_type="bot",
+        session_path=None,
+        bot_token="123456:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw",
+        status="active",
+    )
+
+    with patch(
+        "app.telegram.client_manager.start_bot_client",
+        new_callable=AsyncMock,
+    ) as mock_start:
+        result = await list_account_dialogs(account, use_cache=False)
+
+    assert result == []
+    mock_start.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_list_account_dialogs_bot_requires_token():
+    account = AccountCredentials(
+        account_id=9,
+        user_id=1,
+        account_type="bot",
+        session_path=None,
+        bot_token=None,
+        status="active",
+    )
+    with pytest.raises(ValueError, match="not connected"):
+        await list_account_dialogs(account, use_cache=False)

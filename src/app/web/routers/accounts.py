@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, 
 from fastapi import status as http_status
 
 from app.config import settings
+from app.telegram.bot_token import is_valid_bot_token, normalize_bot_token
 from app.telegram.dialog_service import (
     AccountCredentials,
     SessionLockedError,
@@ -203,6 +204,7 @@ async def list_account_dialogs_route(
             ).model_dump()
             for d in dialogs
         ],
+        "manual_required": acc_type == "bot",
     }
 
 
@@ -220,6 +222,13 @@ async def create_account(
         raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="type must be 'user' or 'bot'")
     if type == "bot" and not bot_token:
         raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="bot_token required for bot accounts")
+    if type == "bot":
+        bot_token = normalize_bot_token(bot_token or "")
+        if not is_valid_bot_token(bot_token):
+            raise HTTPException(
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                detail="bot_token must look like a BotFather token (digits:secret)",
+            )
     if type == "user" and not session_file:
         raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="session_file required for user accounts")
     now = datetime.now(timezone.utc).isoformat()

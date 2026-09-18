@@ -68,10 +68,12 @@ def test_mongo(
 @cli.command()
 def run_worker(
     user_id: int,
-    session_path: str,
-    account_id: int | None = typer.Option(None, help="Telegram account ID (filters mappings)"),
+    session_path: str | None = typer.Argument(None),
+    account_id: int | None = typer.Option(None, "--account-id", help="Telegram account ID (filters mappings)"),
 ) -> None:
-    """Run a Telegram sync worker for a user session."""
+    """Run a Telegram sync worker for a user session or bot account."""
+    if not session_path and account_id is None:
+        raise typer.BadParameter("Provide a session path or --account-id")
     from app.worker import run_worker_sync
 
     run_worker_sync(

@@ -154,3 +154,76 @@ def test_list_workers_reattaches_from_registry_when_missing_from_memory(api_clie
     assert w["running"] is True
     assert w["pid"] == alive_pid
     assert "w99" in workers._workers
+
+
+def _seed_bot_account(user_id: int = 1, token: str = "123456:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw"):
+    async def seed():
+        db = await get_sqlite()
+        await db.execute(
+            "INSERT INTO telegram_accounts (user_id, type, bot_token, status, name) "
+            "VALUES (?, 'bot', ?, 'active', ?)",
+            (user_id, token, "Test Bot"),
+        )
+        await db.commit()
+        async with db.execute(
+            "SELECT id FROM telegram_accounts WHERE type = 'bot' ORDER BY id DESC LIMIT 1"
+        ) as cur:
+            row = await cur.fetchone()
+        await db.close()
+        return row[0]
+
+    return _run_async(seed())
+
+
+def test_start_worker_bot_account_does_not_pass_token(api_client, user_token):
+    account_id = _seed_bot_account()
+    fake_proc = MagicMock()
+    fake_proc.pid = 4242
+    fake_proc.poll.return_value = None
+    token = "123456:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw"
+
+    with patch("app.web.routers.workers.subprocess.Popen", return_value=fake_proc) as popen_mock:
+        r = api_client.post(
+            "/api/workers/start",
+            params={"account_id": account_id},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["account_id"] == account_id
+    assert data["session_path"] == f"bot://{account_id}"
+    cmd = popen_mock.call_args[0][0]
+    joined = " ".join(str(x) for x in cmd)
+    assert token not in joined
+    assert "bot://" not in joined
+    assert "--account-id" in cmd
+    assert str(account_id) in cmd
+
+
+def test_start_worker_bot_invalid_token_400(api_client, user_token):
+    account_id = _seed_bot_account(token="not-a-token")
+    r = api_client.post(
+        "/api/workers/start",
+        params={"account_id": account_id},
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert r.status_code == 400
+    assert "token" in r.json()["detail"].lower()
+
+
+def test_start_worker_user_without_session_still_400(api_client, user_token):
+    async def clear_session():
+        db = await get_sqlite()
+        await db.execute("UPDATE telegram_accounts SET session_path = NULL WHERE id = 1")
+        await db.commit()
+        await db.close()
+
+    _run_async(clear_session())
+    r = api_client.post(
+        "/api/workers/start",
+        params={"account_id": 1},
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert r.status_code == 400
+    assert "session" in r.json()["detail"].lower() or "connected" in r.json()["detail"].lower()

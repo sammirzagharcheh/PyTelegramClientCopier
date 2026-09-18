@@ -14,8 +14,10 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 
+from app.telegram.bot_token import is_valid_bot_token
+from app.telegram.worker_account import bot_registry_path, build_run_worker_argv
 from app.web.deps import CurrentUser, Db, WriterUser
 from app.web.scope_deps import resource_scope_dependency
 
@@ -291,14 +293,13 @@ async def _spawn_worker_for_account(
             raise
 
     project_root = Path(__file__).resolve().parents[4]
-    session_abs = (project_root / session_path).resolve() if not Path(session_path).is_absolute() else Path(session_path)
-    cmd = [
-        sys.executable, "-m", "app.main",
-        "db", "run-worker",
-        str(user_id),
-        str(session_abs),
-        "--account-id", str(account_id),
-    ]
+    cmd = build_run_worker_argv(
+        user_id=user_id,
+        account_id=account_id,
+        session_path=session_path,
+        python_exe=sys.executable,
+        project_root=project_root,
+    )
     worker_log_dir = project_root / "data"
     worker_log_dir.mkdir(parents=True, exist_ok=True)
     stderr_path = worker_log_dir / f"worker_{account_id}_{worker_id}.log"
@@ -404,20 +405,30 @@ async def restart_workers_for_mapping(
         else:
             async with db.execute(
                 "SELECT id FROM telegram_accounts WHERE user_id = ? AND status = 'active' "
-                "AND session_path IS NOT NULL AND session_path != ''",
+                "AND ("
+                "(type = 'user' AND session_path IS NOT NULL AND session_path != '') "
+                "OR (type = 'bot' AND bot_token IS NOT NULL AND bot_token != '')"
+                ")",
                 (mapping_user_id,),
             ) as cur:
                 rows = await cur.fetchall()
             account_ids = [r[0] for r in rows]
         for account_id in account_ids:
             async with db.execute(
-                "SELECT user_id, session_path FROM telegram_accounts WHERE id = ? AND status = 'active'",
+                "SELECT user_id, session_path, type, bot_token FROM telegram_accounts "
+                "WHERE id = ? AND status = 'active'",
                 (account_id,),
             ) as cur:
                 acc_row = await cur.fetchone()
-            if not acc_row or not acc_row[1]:
+            if not acc_row:
                 continue
-            user_id, session_path = acc_row[0], acc_row[1]
+            user_id, session_path, acc_type, bot_token = acc_row
+            if acc_type == "bot":
+                if not bot_token:
+                    continue
+                session_path = bot_registry_path(account_id)
+            elif not session_path:
+                continue
             # Always stop first (registry-first stops workers from any API process); ensures
             # no overlap of old and new workers before spawn.
             await stop_workers_for_account(account_id, db)
@@ -473,7 +484,8 @@ async def start_worker(
             detail="Cannot start worker for another user",
         )
     async with db.execute(
-        "SELECT id, user_id, session_path, type FROM telegram_accounts WHERE id = ? AND status = 'active'",
+        "SELECT id, user_id, session_path, type, bot_token FROM telegram_accounts "
+        "WHERE id = ? AND status = 'active'",
         (account_id,),
     ) as cur:
         row = await cur.fetchone()
@@ -482,14 +494,23 @@ async def start_worker(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Account not found",
         )
-    if row[2] is None or row[2] == "":
+    acc_type = row[3]
+    bot_token = row[4]
+    session_path = row[2]
+    if acc_type == "bot":
+        if not bot_token or not is_valid_bot_token(bot_token):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="bot_token must look like a BotFather token (digits:secret)",
+            )
+        session_path = bot_registry_path(account_id)
+    elif session_path is None or session_path == "":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Account has no session path (bot accounts cannot run workers)",
+            detail="Account has no session path",
         )
     await _prune_dead_workers(db)
     await _prune_orphaned_registry_rows(db)
-    session_path = row[2]
     # Check in-memory registry
     if _account_has_running_worker(account_id):
         wid, mpid = _running_worker_info_for_account(account_id)
