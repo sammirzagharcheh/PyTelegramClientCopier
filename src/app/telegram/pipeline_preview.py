@@ -132,9 +132,79 @@ def single_filter_matches(
 
 
 def passes_filters(preview: MessagePreview, filters: Iterable[MappingFilter]) -> bool:
+    return first_filter_fail_detail(preview, filters) is None
+
+
+def _single_filter_fail_detail(
+    preview: MessagePreview,
+    filter_rule: MappingFilter,
+    *,
+    text: str,
+    media_type: str,
+) -> str | None:
+    """Return the first failing criterion for one rule, or None if it matches."""
+    if not mapping_filter_has_criteria(filter_rule):
+        return "empty_criteria"
+    if filter_rule.media_types:
+        allowed = {
+            part.strip().lower()
+            for part in filter_rule.media_types.split(",")
+            if part.strip()
+        }
+        if allowed and media_type not in allowed:
+            return "media_type"
+    if filter_rule.include_text and filter_rule.include_text not in text:
+        return "include_text"
+    if filter_rule.exclude_text and filter_rule.exclude_text in text:
+        return "exclude_text"
+    if filter_rule.regex_pattern:
+        compiled = compile_filter_regex(filter_rule.regex_pattern)
+        if compiled is None or not compiled.search(text):
+            return "regex"
+    if filter_rule.allowed_sender_ids and filter_rule.allowed_sender_ids.strip():
+        allowed_ids: set[int] = set()
+        for x in filter_rule.allowed_sender_ids.split(","):
+            x = x.strip()
+            if not x:
+                continue
+            try:
+                allowed_ids.add(int(x))
+            except ValueError:
+                continue
+        if allowed_ids and (preview.sender_id is None or preview.sender_id not in allowed_ids):
+            return "allowed_sender_ids"
+    if filter_rule.denied_usernames and filter_rule.denied_usernames.strip():
+        denied = {
+            u.strip().lower().lstrip("@")
+            for u in filter_rule.denied_usernames.split(",")
+            if u.strip()
+        }
+        su = (preview.sender_username or "").lower().lstrip("@")
+        if su and su in denied:
+            return "denied_usernames"
+    n_urls = _url_count(text)
+    if filter_rule.min_url_count is not None and n_urls < filter_rule.min_url_count:
+        return "url_count"
+    if filter_rule.max_url_count is not None and n_urls > filter_rule.max_url_count:
+        return "url_count"
+    if filter_rule.required_hashtags and filter_rule.required_hashtags.strip():
+        for tag in filter_rule.required_hashtags.split(","):
+            t = tag.strip()
+            if not t:
+                continue
+            if not hashtag_present(text, t):
+                return "required_hashtags"
+    return None
+
+
+def first_filter_fail_detail(
+    preview: MessagePreview,
+    filters: Iterable[MappingFilter],
+) -> str | None:
+    """Return a short detail for the first failing filter group, or None if admitted."""
     filter_list = list(filters)
     if not filter_list:
-        return True
+        return None
     text = preview.text or ""
     media_type = preview.media_type
     by_group: dict[int, list[MappingFilter]] = defaultdict(list)
@@ -142,12 +212,48 @@ def passes_filters(preview: MessagePreview, filters: Iterable[MappingFilter]) ->
         by_group[f.or_group_id].append(f)
     for gid in sorted(by_group.keys()):
         group_filters = by_group[gid]
-        if not any(
+        if any(
             single_filter_matches(preview, fr, text=text, media_type=media_type)
             for fr in group_filters
         ):
-            return False
-    return True
+            continue
+        # Whole OR-group failed: report first rule's first failing criterion.
+        detail = None
+        for fr in group_filters:
+            detail = _single_filter_fail_detail(
+                preview, fr, text=text, media_type=media_type
+            )
+            if detail is not None:
+                break
+        if detail is None:
+            detail = f"or_group:{gid}"
+        elif len(by_group) > 1 or len(group_filters) > 1:
+            detail = f"{detail}|or_group:{gid}"
+        return detail
+    return None
+
+
+@dataclass(frozen=True, slots=True)
+class AdmissionSkip:
+    """Why a message would not be copied (filter or schedule)."""
+
+    reason: str  # "filter" | "schedule"
+    detail: str | None = None
+
+
+def admission_skip(
+    preview: MessagePreview,
+    filters: Iterable[MappingFilter],
+    now_utc: datetime.datetime,
+    schedule: Schedule | None,
+) -> AdmissionSkip | None:
+    """Return skip info if filters/schedule reject; None if the message would copy."""
+    detail = first_filter_fail_detail(preview, filters)
+    if detail is not None:
+        return AdmissionSkip(reason="filter", detail=detail)
+    if not passes_schedule(now_utc, schedule):
+        return AdmissionSkip(reason="schedule", detail=None)
+    return None
 
 
 def rule_applies_to_media_type(rule: MappingTransform, media_type: str) -> bool:

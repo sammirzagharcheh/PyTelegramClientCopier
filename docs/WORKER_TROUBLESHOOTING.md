@@ -57,6 +57,7 @@ db.worker_logs.find({ account_id: YOUR_ACCOUNT_ID })
 | **Database is locked** | SQLite errors when copying/using the session. Check for `database is locked` or sqlite3 errors. |
 | **Session copy failed** | Fallback to shared session can cause conflicts. Look for `Could not copy session to worker path`. |
 | **Telegram disconnect** | Network issues, FloodWait, or server-side disconnect. Check for disconnect/connection errors. |
+| **Send FloodWait** | Worker sleeps up to `FLOOD_WAIT_MAX_SECONDS` (default 120) and retries (`FLOOD_WAIT_RETRIES`, default 1). Longer waits become Message Logs `status=failed`, `skip_reason=flood_wait`. Sleep blocks that account’s worker loop. |
 | **Unhandled exception** | Python tracebacks in ERROR-level logs. |
 | **OOM / process killed** | Worker process killed by OS. Last log may be normal; check system logs. |
 

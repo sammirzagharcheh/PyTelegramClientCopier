@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     testing: bool = False  # TESTING=1 skips slow startup (Mongo indexes, worker restore delay)
     # Built SPA directory (Docker sets /app/frontend_dist). Empty/missing = API-only.
     frontend_dist_dir: str = ""
+    # Worker FloodWait: sleep up to this many seconds, then retry; over cap → skip log.
+    flood_wait_max_seconds: int = 120
+    flood_wait_retries: int = 1
 
 
 settings = Settings()

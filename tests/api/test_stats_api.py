@@ -29,6 +29,16 @@ def test_stats_dashboard_200_schema(api_client, user_token):
     assert "webhook_by_day" in data
     assert "top_failing_mappings" in data
     assert "webhook_failure_reasons" in data
+    assert "setup" in data
+    assert set(data["setup"].keys()) == {"account", "mapping", "worker", "first_copy", "complete"}
+    assert isinstance(data["setup"]["account"], bool)
+    assert isinstance(data["setup"]["complete"], bool)
+    # Seeded user has an account + enabled mapping but no live worker / first copy
+    assert data["setup"]["account"] is True
+    assert data["setup"]["mapping"] is True
+    assert data["setup"]["worker"] is False
+    assert data["setup"]["first_copy"] is False
+    assert data["setup"]["complete"] is False
     assert isinstance(data["messages_last_7d"], int)
     assert isinstance(data["messages_prev_7d"], int)
     assert isinstance(data["messages_by_day"], list)

@@ -8,6 +8,9 @@ import {
   LayoutDashboard,
   Webhook,
   CircleX,
+  CheckCircle2,
+  Circle,
+  Activity,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -24,6 +27,14 @@ const AreaChartCard = lazy(() => import('../../components/dashboard/AreaChartCar
 const PieChartCard = lazy(() => import('../../components/dashboard/PieChartCard').then((m) => ({ default: m.PieChartCard })));
 const BarChartCard = lazy(() => import('../../components/dashboard/BarChartCard').then((m) => ({ default: m.BarChartCard })));
 const WebhookTrendChartCard = lazy(() => import('../../components/dashboard/WebhookTrendChartCard').then((m) => ({ default: m.WebhookTrendChartCard })));
+
+type SetupChecklist = {
+  account: boolean;
+  mapping: boolean;
+  worker: boolean;
+  first_copy: boolean;
+  complete: boolean;
+};
 
 type DashboardStats = {
   messages_last_7d: number;
@@ -42,7 +53,20 @@ type DashboardStats = {
   webhook_by_day: { date: string; success: number; failed: number }[];
   top_failing_mappings: { name: string; mapping_name?: string; count: number }[];
   webhook_failure_reasons: { name: string; count: number }[];
+  setup?: SetupChecklist;
 };
+
+const SETUP_STEPS: {
+  key: keyof Omit<SetupChecklist, 'complete'>;
+  label: string;
+  to: string;
+  icon: typeof Smartphone;
+}[] = [
+  { key: 'account', label: 'Connect a Telegram account', to: '/accounts', icon: Smartphone },
+  { key: 'mapping', label: 'Create and enable a mapping', to: '/mappings', icon: GitBranch },
+  { key: 'worker', label: 'Start a worker', to: '/workers', icon: Activity },
+  { key: 'first_copy', label: 'Confirm the first copied message', to: '/logs', icon: MessageSquare },
+];
 
 function ChartFallback() {
   return (
@@ -89,6 +113,10 @@ export function UserDashboard() {
     Other: 'other',
   };
 
+  const setup = stats?.setup;
+  const showSetup = Boolean(setup && !setup.complete);
+  const showWebhookCharts = Boolean(setup?.complete);
+
   return (
     <div>
       <PageHeader
@@ -116,6 +144,43 @@ export function UserDashboard() {
         />
       ) : (
         <>
+          {showSetup && setup ? (
+            <div
+              className="mb-4 rounded-surface border border-line bg-surface-raised p-5 shadow-surface"
+              data-testid="setup-checklist"
+            >
+              <h2 className="text-base font-semibold text-ink">Get copying</h2>
+              <p className="mt-1 text-sm text-ink-muted">
+                Finish these steps to start forwarding messages.
+              </p>
+              <ol className="mt-4 space-y-2">
+                {SETUP_STEPS.map((step) => {
+                  const done = setup[step.key];
+                  const Icon = step.icon;
+                  return (
+                    <li key={step.key}>
+                      <ButtonLink
+                        to={step.to}
+                        variant="secondary"
+                        className="flex w-full items-center justify-start gap-3 text-left"
+                      >
+                        {done ? (
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
+                        ) : (
+                          <Circle className="h-4 w-4 shrink-0 text-ink-subtle" aria-hidden />
+                        )}
+                        <Icon className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden />
+                        <span className={done ? 'text-ink-muted line-through' : 'text-ink'}>
+                          {step.label}
+                        </span>
+                      </ButtonLink>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+          ) : null}
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {isLoading ? (
               <>
@@ -123,9 +188,13 @@ export function UserDashboard() {
                 <StatCardSkeleton />
                 <StatCardSkeleton />
                 <StatCardSkeleton />
-                <StatCardSkeleton />
-                <StatCardSkeleton />
-                <StatCardSkeleton />
+                {showWebhookCharts ? (
+                  <>
+                    <StatCardSkeleton />
+                    <StatCardSkeleton />
+                    <StatCardSkeleton />
+                  </>
+                ) : null}
               </>
             ) : (
               <>
@@ -154,26 +223,30 @@ export function UserDashboard() {
                   value={stats?.mappings_enabled ?? 0}
                   icon={Link2}
                 />
-                <StatCard
-                  title="Webhook Attempts (7 days)"
-                  value={stats?.webhook_attempts_last_7d ?? 0}
-                  icon={Webhook}
-                  trend={
-                    webhookTrend != null
-                      ? { value: webhookTrend, label: 'prev 7d' }
-                      : undefined
-                  }
-                />
-                <StatCard
-                  title="Webhook Success Rate"
-                  value={`${stats?.webhook_success_rate ?? 0}%`}
-                  icon={Webhook}
-                />
-                <StatCard
-                  title="Webhook Failures (7 days)"
-                  value={stats?.webhook_failed_last_7d ?? 0}
-                  icon={CircleX}
-                />
+                {showWebhookCharts ? (
+                  <>
+                    <StatCard
+                      title="Webhook Attempts (7 days)"
+                      value={stats?.webhook_attempts_last_7d ?? 0}
+                      icon={Webhook}
+                      trend={
+                        webhookTrend != null
+                          ? { value: webhookTrend, label: 'prev 7d' }
+                          : undefined
+                      }
+                    />
+                    <StatCard
+                      title="Webhook Success Rate"
+                      value={`${stats?.webhook_success_rate ?? 0}%`}
+                      icon={Webhook}
+                    />
+                    <StatCard
+                      title="Webhook Failures (7 days)"
+                      value={stats?.webhook_failed_last_7d ?? 0}
+                      icon={CircleX}
+                    />
+                  </>
+                ) : null}
               </>
             )}
           </div>
@@ -199,30 +272,34 @@ export function UserDashboard() {
                 nameKey="name"
                 valueKey="value"
               />
-              <WebhookTrendChartCard
-                title="Webhook success vs failure trend (7 days)"
-                data={stats?.webhook_by_day ?? []}
-                isLoading={isLoading}
-              />
-              <BarChartCard
-                title="Top failing mappings"
-                data={stats?.top_failing_mappings ?? []}
-                isLoading={isLoading}
-                dataKey="count"
-                tooltipLabelKey="mapping_name"
-              />
-              <PieChartCard
-                title="Webhook failure reasons"
-                data={webhookFailureReasonData}
-                isLoading={isLoading}
-                nameKey="name"
-                valueKey="value"
-                onSliceClick={(point) => {
-                  const reason = reasonToParam[point.name];
-                  if (!reason) return;
-                  navigate(`/webhook-logs?success=false&failure_reason=${encodeURIComponent(reason)}`);
-                }}
-              />
+              {showWebhookCharts ? (
+                <>
+                  <WebhookTrendChartCard
+                    title="Webhook success vs failure trend (7 days)"
+                    data={stats?.webhook_by_day ?? []}
+                    isLoading={isLoading}
+                  />
+                  <BarChartCard
+                    title="Top failing mappings"
+                    data={stats?.top_failing_mappings ?? []}
+                    isLoading={isLoading}
+                    dataKey="count"
+                    tooltipLabelKey="mapping_name"
+                  />
+                  <PieChartCard
+                    title="Webhook failure reasons"
+                    data={webhookFailureReasonData}
+                    isLoading={isLoading}
+                    nameKey="name"
+                    valueKey="value"
+                    onSliceClick={(point) => {
+                      const reason = reasonToParam[point.name];
+                      if (!reason) return;
+                      navigate(`/webhook-logs?success=false&failure_reason=${encodeURIComponent(reason)}`);
+                    }}
+                  />
+                </>
+              ) : null}
             </Suspense>
           </div>
 

@@ -15,10 +15,13 @@ from telethon.errors import ChatIdInvalidError, FloodWaitError
 from telethon.tl.custom.message import Message
 from telethon.tl.types import MessageMediaWebPage
 
+from app.config import settings
 from app.services.mapping_service import ChannelMapping, MappingFilter, MappingTransform
 from app.telegram.chat_ids import alternate_chat_id
+from app.telegram.flood_wait import call_with_flood_retry, flood_skip_detail
 from app.telegram.pipeline_preview import (
     MessagePreview,
+    admission_skip,
     apply_transforms,
     media_type_for_telethon_message,
     passes_filters,
@@ -54,6 +57,14 @@ def _event_source_chat_id_for_sync(event: Any) -> int | None:
 _message_media_type = media_type_for_telethon_message
 _passes_schedule = passes_schedule
 _apply_transforms = apply_transforms
+
+
+async def _insert_message_log(mongo_db, doc: dict[str, Any]) -> None:
+    """Soft-fail write to Mongo message_logs."""
+    try:
+        await mongo_db.message_logs.insert_one(doc)
+    except Exception as e:
+        logger.warning("Failed to write message log (non-fatal): %s", e)
 
 
 def _mapping_needs_sender_info(filters: list[MappingFilter]) -> bool:
@@ -335,15 +346,37 @@ def build_message_handlers(
     ) -> None:
         for mapping in matched:
             preview = await _message_preview_for_filters(message, mapping)
-            if not passes_filters(preview, mapping.filters):
-                continue
             msg_time = message.date
             if msg_time.tzinfo is None:
                 msg_time = msg_time.replace(tzinfo=datetime.timezone.utc)
             else:
                 msg_time = msg_time.astimezone(datetime.timezone.utc)
-            if not passes_schedule(msg_time, mapping.schedule):
-                logger.debug("Skipped (outside schedule) msg_id=%s mapping_id=%s", message.id, mapping.id)
+            skip = admission_skip(preview, mapping.filters, msg_time, mapping.schedule)
+            if skip is not None:
+                logger.debug(
+                    "Skipped (%s) msg_id=%s mapping_id=%s detail=%s",
+                    skip.reason,
+                    message.id,
+                    mapping.id,
+                    skip.detail,
+                )
+                await _insert_message_log(
+                    mongo_db,
+                    {
+                        "user_id": user_id,
+                        "mapping_id": mapping.id,
+                        "source_chat_id": source_chat_id,
+                        "source_msg_id": message.id,
+                        "dest_chat_id": mapping.dest_chat_id,
+                        "dest_msg_id": None,
+                        "source_chat_title": mapping.source_chat_title or "",
+                        "dest_chat_title": mapping.dest_chat_title or "",
+                        "timestamp": message.date,
+                        "status": "skipped",
+                        "skip_reason": skip.reason,
+                        "skip_detail": skip.detail,
+                    },
+                )
                 continue
 
             source_chat_title = (
@@ -394,8 +427,9 @@ def build_message_handlers(
             if alt_dest is not None:
                 dest_ids.append(alt_dest)
             last_err: Exception | None = None
+            flood_exhausted = False
             for dest_id in dest_ids:
-                try:
+                async def _do_send(dest: int = dest_id):
                     incoming_supported_media = (
                         (message.photo or message.video or message.voice)
                         and message.media is not None
@@ -409,8 +443,8 @@ def build_message_handlers(
                                 if replacement_media_path is not None
                                 else message.media
                             )
-                            sent = await event.client.send_file(
-                                dest_id,
+                            return await event.client.send_file(
+                                dest,
                                 file_payload,
                                 caption=transformed_text,
                                 reply_to=reply_to_msg_id,
@@ -423,31 +457,36 @@ def build_message_handlers(
                                     replacement_media_path,
                                     e,
                                 )
-                                sent = await event.client.send_file(
-                                    dest_id,
+                                return await event.client.send_file(
+                                    dest,
                                     message.media,
                                     caption=transformed_text,
                                     reply_to=reply_to_msg_id,
                                 )
-                            else:
-                                use_file = False
+                            use_file = False
                         except TypeError:
                             use_file = False
                     if not use_file:
-                        sent = await event.client.send_message(
-                            dest_id,
+                        return await event.client.send_message(
+                            dest,
                             transformed_text,
                             reply_to=reply_to_msg_id,
                         )
-                    break
-                except FloodWaitError as fw:
-                    logger.warning(
-                        "FloodWait mapping_id=%s seconds=%s dest=%s",
-                        mapping.id,
-                        getattr(fw, "seconds", None),
-                        dest_id,
+                    return None
+
+                try:
+                    outcome = await call_with_flood_retry(
+                        _do_send,
+                        max_seconds=settings.flood_wait_max_seconds,
+                        retries=settings.flood_wait_retries,
+                        mapping_id=mapping.id,
+                        dest_id=dest_id,
                     )
-                    last_err = fw
+                    if outcome.exhausted:
+                        last_err = outcome.flood_error
+                        flood_exhausted = True
+                        break
+                    sent = outcome.value
                     break
                 except ChatIdInvalidError as e:
                     last_err = e
@@ -461,6 +500,34 @@ def build_message_handlers(
                     mapping.dest_chat_id,
                     dest_ids,
                     last_err,
+                )
+                if flood_exhausted:
+                    skip_reason = "flood_wait"
+                    skip_detail = flood_skip_detail(
+                        last_err if isinstance(last_err, FloodWaitError) else None
+                    )
+                elif isinstance(last_err, ChatIdInvalidError):
+                    skip_reason = "chat_id_invalid"
+                    skip_detail = str(last_err)[:200] or None
+                else:
+                    skip_reason = "send_failed"
+                    skip_detail = str(last_err)[:200] or None
+                await _insert_message_log(
+                    mongo_db,
+                    {
+                        "user_id": user_id,
+                        "mapping_id": mapping.id,
+                        "source_chat_id": source_chat_id,
+                        "source_msg_id": message.id,
+                        "dest_chat_id": mapping.dest_chat_id,
+                        "dest_msg_id": None,
+                        "source_chat_title": mapping.source_chat_title or "",
+                        "dest_chat_title": mapping.dest_chat_title or "",
+                        "timestamp": message.date,
+                        "status": "failed",
+                        "skip_reason": skip_reason,
+                        "skip_detail": skip_detail,
+                    },
                 )
 
             if sent:
@@ -494,9 +561,11 @@ def build_message_handlers(
                 except Exception:
                     source_title = ""
                     dest_title = ""
-                try:
-                    await mongo_db.message_logs.insert_one({
+                await _insert_message_log(
+                    mongo_db,
+                    {
                         "user_id": user_id,
+                        "mapping_id": mapping.id,
                         "source_chat_id": source_chat_id,
                         "source_msg_id": message.id,
                         "dest_chat_id": mapping.dest_chat_id,
@@ -505,9 +574,8 @@ def build_message_handlers(
                         "dest_chat_title": dest_title,
                         "timestamp": message.date,
                         "status": "ok",
-                    })
-                except Exception as e:
-                    logger.warning("Failed to write message log (non-fatal): %s", e)
+                    },
+                )
                 asyncio.create_task(
                     _fire_copy_webhook(
                         mapping,
@@ -548,14 +616,38 @@ def build_message_handlers(
             return
         for mapping in matched:
             previews = [await _message_preview_for_filters(m, mapping) for m in messages]
-            if not all(passes_filters(p, mapping.filters) for p in previews):
-                continue
             msg_time = messages[-1].date
             if msg_time.tzinfo is None:
                 msg_time = msg_time.replace(tzinfo=datetime.timezone.utc)
             else:
                 msg_time = msg_time.astimezone(datetime.timezone.utc)
-            if not passes_schedule(msg_time, mapping.schedule):
+            album_skip = None
+            for p in previews:
+                album_skip = admission_skip(p, mapping.filters, msg_time, mapping.schedule)
+                if album_skip is not None:
+                    break
+            if album_skip is not None:
+                await _insert_message_log(
+                    mongo_db,
+                    {
+                        "user_id": user_id,
+                        "mapping_id": mapping.id,
+                        "source_chat_id": source_chat_id,
+                        "source_msg_id": messages[0].id,
+                        "dest_chat_id": mapping.dest_chat_id,
+                        "dest_msg_id": None,
+                        "source_chat_title": mapping.source_chat_title or "",
+                        "dest_chat_title": mapping.dest_chat_title or "",
+                        "timestamp": messages[0].date,
+                        "status": "skipped",
+                        "skip_reason": album_skip.reason,
+                        "skip_detail": (
+                            f"{album_skip.detail}|album"
+                            if album_skip.detail
+                            else "album"
+                        ),
+                    },
+                )
                 continue
             medias = []
             captions: list[str] = []
@@ -613,25 +705,60 @@ def build_message_handlers(
             if alt_dest is not None:
                 dest_ids.append(alt_dest)
             sent = None
+            last_err: Exception | None = None
+            flood_exhausted = False
             for dest_id in dest_ids:
                 try:
-                    sent = await event.client.send_file(
-                        dest_id,
-                        medias,
-                        caption=transformed_text,
-                        reply_to=reply_to_msg_id,
+                    outcome = await call_with_flood_retry(
+                        lambda d=dest_id: event.client.send_file(
+                            d,
+                            medias,
+                            caption=transformed_text,
+                            reply_to=reply_to_msg_id,
+                        ),
+                        max_seconds=settings.flood_wait_max_seconds,
+                        retries=settings.flood_wait_retries,
+                        mapping_id=mapping.id,
+                        dest_id=dest_id,
                     )
+                    if outcome.exhausted:
+                        last_err = outcome.flood_error
+                        flood_exhausted = True
+                        break
+                    sent = outcome.value
                     break
-                except FloodWaitError as fw:
-                    logger.warning(
-                        "FloodWait (album) mapping_id=%s seconds=%s",
-                        mapping.id,
-                        getattr(fw, "seconds", None),
-                    )
-                    break
-                except ChatIdInvalidError:
+                except ChatIdInvalidError as e:
+                    last_err = e
                     continue
             if sent is None:
+                if flood_exhausted:
+                    skip_reason = "flood_wait"
+                    skip_detail = flood_skip_detail(
+                        last_err if isinstance(last_err, FloodWaitError) else None
+                    )
+                elif isinstance(last_err, ChatIdInvalidError):
+                    skip_reason = "chat_id_invalid"
+                    skip_detail = "album"
+                else:
+                    skip_reason = "send_failed"
+                    skip_detail = "album"
+                await _insert_message_log(
+                    mongo_db,
+                    {
+                        "user_id": user_id,
+                        "mapping_id": mapping.id,
+                        "source_chat_id": source_chat_id,
+                        "source_msg_id": messages[0].id,
+                        "dest_chat_id": mapping.dest_chat_id,
+                        "dest_msg_id": None,
+                        "source_chat_title": str(source_chat_title or ""),
+                        "dest_chat_title": str(mapping.dest_chat_title or ""),
+                        "timestamp": messages[0].date,
+                        "status": "failed",
+                        "skip_reason": skip_reason,
+                        "skip_detail": skip_detail,
+                    },
+                )
                 continue
             for m in messages:
                 await _save_dest_mapping(
@@ -642,9 +769,11 @@ def build_message_handlers(
                     dest_chat_id=mapping.dest_chat_id,
                     dest_msg_id=sent.id,
                 )
-            try:
-                await mongo_db.message_logs.insert_one({
+            await _insert_message_log(
+                mongo_db,
+                {
                     "user_id": user_id,
+                    "mapping_id": mapping.id,
                     "source_chat_id": source_chat_id,
                     "source_msg_id": messages[0].id,
                     "dest_chat_id": mapping.dest_chat_id,
@@ -653,9 +782,8 @@ def build_message_handlers(
                     "dest_chat_title": str(mapping.dest_chat_title or ""),
                     "timestamp": messages[0].date,
                     "status": "ok_album",
-                })
-            except Exception as e:
-                logger.warning("Failed to write message log (non-fatal): %s", e)
+                },
+            )
             asyncio.create_task(
                 _fire_copy_webhook(
                     mapping,

@@ -7,7 +7,7 @@ import io
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pymongo.errors import OperationFailure, ServerSelectionTimeoutError
 
@@ -36,6 +36,51 @@ def _mongo_error_message(e: Exception) -> str:
     return f"MongoDB error: {e}"
 
 
+def _apply_status_filter(match: dict, status_filter: str | None) -> None:
+    """Mutate match with copied/skipped/failed status semantics."""
+    if not status_filter:
+        return
+    key = status_filter.strip().lower()
+    if key == "copied":
+        and_clause = match.setdefault("$and", [])
+        and_clause.append(
+            {
+                "$or": [
+                    {"status": {"$in": ["ok", "ok_album"]}},
+                    {"status": {"$exists": False}},
+                    {"status": None},
+                ]
+            }
+        )
+    elif key == "skipped":
+        match["status"] = "skipped"
+    elif key == "failed":
+        match["status"] = "failed"
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="status must be one of: copied, skipped, failed",
+        )
+
+
+def _log_item_from_doc(doc: dict) -> dict:
+    ts = doc.get("timestamp")
+    return {
+        "user_id": doc.get("user_id"),
+        "mapping_id": doc.get("mapping_id"),
+        "source_chat_id": doc.get("source_chat_id"),
+        "source_msg_id": doc.get("source_msg_id"),
+        "dest_chat_id": doc.get("dest_chat_id"),
+        "dest_msg_id": doc.get("dest_msg_id"),
+        "source_chat_title": doc.get("source_chat_title") or None,
+        "dest_chat_title": doc.get("dest_chat_title") or None,
+        "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+        "status": doc.get("status"),
+        "skip_reason": doc.get("skip_reason"),
+        "skip_detail": doc.get("skip_detail"),
+    }
+
+
 @router.get("")
 async def list_message_logs(
     user: CurrentUser,
@@ -45,6 +90,7 @@ async def list_message_logs(
     dest_chat_id: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    status_filter: str | None = Query(None, alias="status"),
     page: int = 1,
     page_size: int = 50,
 ) -> dict:
@@ -69,6 +115,7 @@ async def list_message_logs(
                 match["timestamp"]["$gte"] = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
             if date_to:
                 match["timestamp"]["$lte"] = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+        _apply_status_filter(match, status_filter)
         pipeline = [{"$match": match}]
         count_cursor = mongo_db.message_logs.aggregate(
             pipeline + [{"$count": "total"}]
@@ -86,25 +133,15 @@ async def list_message_logs(
         items = []
         need_fallback: set[tuple[int, int, int]] = set()
         async for doc in cursor:
-            ts = doc.get("timestamp")
-            uid = doc.get("user_id")
-            src_id = doc.get("source_chat_id")
-            dest_id = doc.get("dest_chat_id")
-            src_title = doc.get("source_chat_title") or None
-            dest_title = doc.get("dest_chat_title") or None
+            item = _log_item_from_doc(doc)
+            uid = item.get("user_id")
+            src_id = item.get("source_chat_id")
+            dest_id = item.get("dest_chat_id")
+            src_title = item.get("source_chat_title")
+            dest_title = item.get("dest_chat_title")
             if (src_title is None or src_title == "" or dest_title is None or dest_title == "") and uid is not None and src_id is not None and dest_id is not None:
                 need_fallback.add((uid, src_id, dest_id))
-            items.append({
-                "user_id": uid,
-                "source_chat_id": src_id,
-                "source_msg_id": doc.get("source_msg_id"),
-                "dest_chat_id": dest_id,
-                "dest_msg_id": doc.get("dest_msg_id"),
-                "source_chat_title": src_title or None,
-                "dest_chat_title": dest_title or None,
-                "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
-                "status": doc.get("status"),
-            })
+            items.append(item)
         if need_fallback:
             title_map: dict[tuple[int, int, int], tuple[str | None, str | None]] = {}
             keys_list = list(need_fallback)
@@ -146,6 +183,8 @@ async def list_message_logs(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=_mongo_error_message(e),
         ) from e
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Unexpected message_logs error: %s", e)
         raise
@@ -163,6 +202,7 @@ async def export_message_logs_csv(
     dest_chat_id: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    status_filter: str | None = Query(None, alias="status"),
 ) -> StreamingResponse:
     """Stream up to MAX_EXPORT_ROWS message log rows as CSV (same filters as list)."""
     try:
@@ -183,13 +223,14 @@ async def export_message_logs_csv(
                 match["timestamp"]["$gte"] = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
             if date_to:
                 match["timestamp"]["$lte"] = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+        _apply_status_filter(match, status_filter)
 
         async def gen():
             buf = io.StringIO()
             w = csv.writer(buf)
             w.writerow([
-                "user_id", "source_chat_id", "source_msg_id", "dest_chat_id", "dest_msg_id",
-                "source_chat_title", "dest_chat_title", "timestamp", "status",
+                "user_id", "mapping_id", "source_chat_id", "source_msg_id", "dest_chat_id", "dest_msg_id",
+                "source_chat_title", "dest_chat_title", "timestamp", "status", "skip_reason", "skip_detail",
             ])
             yield buf.getvalue()
             buf.seek(0)
@@ -200,14 +241,17 @@ async def export_message_logs_csv(
                 ts = doc.get("timestamp")
                 w.writerow([
                     doc.get("user_id"),
+                    doc.get("mapping_id") or "",
                     doc.get("source_chat_id"),
                     doc.get("source_msg_id"),
                     doc.get("dest_chat_id"),
-                    doc.get("dest_msg_id"),
+                    doc.get("dest_msg_id") if doc.get("dest_msg_id") is not None else "",
                     doc.get("source_chat_title") or "",
                     doc.get("dest_chat_title") or "",
                     ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
                     doc.get("status") or "",
+                    doc.get("skip_reason") or "",
+                    doc.get("skip_detail") or "",
                 ])
                 n += 1
                 if n % 500 == 0:
@@ -221,6 +265,8 @@ async def export_message_logs_csv(
             media_type="text/csv",
             headers={"Content-Disposition": 'attachment; filename="message_logs.csv"'},
         )
+    except HTTPException:
+        raise
     except (OperationFailure, ServerSelectionTimeoutError) as e:
         logger.warning("Mongo message_logs export failed: %s", e)
         raise HTTPException(

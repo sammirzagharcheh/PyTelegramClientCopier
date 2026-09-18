@@ -79,7 +79,7 @@ flowchart TB
 | Accounts | `routers/accounts.py`, `accounts_login.py` | Telegram account records; phone-code login wizard writing session files |
 | Mappings & rules | `routers/mappings.py`, `filters.py`, `schedules.py`, `transforms.py`, `media_assets.py` | CRUD for copy configuration; filter/transform changes may restart affected workers |
 | Workers | `routers/workers.py` | Start/stop/list/restore; process spawn via CLI entry |
-| Observability APIs | `message_logs.py`, `worker_logs.py`, `webhook_logs.py`, `message_index.py`, `stats.py` | Query Mongo logs and SQLite reply index |
+| Observability APIs | `message_logs.py`, `worker_logs.py`, `webhook_logs.py`, `message_index.py`, `stats.py` | Query Mongo logs and SQLite reply index; user dashboard includes derived `setup` checklist; message logs support `status` filter (`copied`/`skipped`/`failed`) and skip reason fields |
 | Alerts / flags | `alert_webhooks.py`, `user_feature_flags.py` | Stale-worker notifications; per-user feature flags in `app_settings` |
 | Access control | `mapping_access.py` | Own-vs-admin scope for mapping-bound resources |
 
@@ -187,19 +187,30 @@ sequenceDiagram
     W->>W: Build MessagePreview
     W->>W: passes_filters (OR groups / AND across)
     W->>W: passes_schedule (UTC windows)
-    W->>W: apply_transforms (+ optional media asset)
-    W->>SQ: Resolve reply_to via dest_message_index
-    W->>W: optional send_delay_ms
-    W->>TG: send_message / send_file (dest)
-    W->>SQ: INSERT dest_message_index
-    W->>MG: INSERT message_logs
-    W->>WH: async notify → webhook_logs
+    alt Filter or schedule reject
+      W->>MG: INSERT message_logs status=skipped + skip_reason
+    else Admitted
+      W->>W: apply_transforms (+ optional media asset)
+      W->>SQ: Resolve reply_to via dest_message_index
+      W->>W: optional send_delay_ms
+      opt FloodWait within cap
+        W->>W: sleep fw.seconds then retry same dest
+      end
+      alt Send ok
+        W->>TG: send_message / send_file (dest)
+        W->>SQ: INSERT dest_message_index
+        W->>MG: INSERT message_logs status=ok + mapping_id
+        W->>WH: async notify → webhook_logs
+      else FloodWait exhausted / dest invalid
+        W->>MG: INSERT message_logs status=failed + skip_reason
+      end
+    end
   end
 ```
 
 **Edits and deletes** follow the same mapping match when `sync_edits` / `sync_deletes` are enabled: re-evaluate filter/schedule/transform as needed, then edit or delete destination messages using the index.
 
-**Preview path:** API mapping preview endpoints call the same pure pipeline functions without Telethon send, keeping UI “would this copy?” aligned with workers.
+**Preview path:** API mapping preview endpoints call the same pure pipeline functions without Telethon send, keeping UI “would this copy?” aligned with workers. Preview may return `skip_reason` / `skip_detail` when filters or schedule would reject.
 
 ---
 
@@ -313,8 +324,9 @@ Durable paths in containers typically map under `/app/data` (`SQLITE_PATH`, `SES
 | Session file locked / contended | Worker copies session to `*_worker_{pid}.session` before connect | Copy-on-start in `worker.py`; see [WORKER_TROUBLESHOOTING.md](WORKER_TROUBLESHOOTING.md) |
 | Worker process crash | Heartbeat stops; registry stale | API restore-on-boot; alert checker (~90s loop); manual start/stop in UI |
 | API restart | In-memory spawn map lost | Delayed `restore_workers_from_db` on lifespan |
-| Chat id invalid / migrated | Send may retry alternate ± id forms | `chat_ids` helpers + handler fallbacks |
-| Filter/schedule reject | Message skipped (no send) | Preview API for debugging |
+| Chat id invalid / migrated | Send may retry alternate ± id forms; exhausted → `message_logs` `failed` / `chat_id_invalid` | `chat_ids` helpers + handler fallbacks |
+| FloodWait on send | Sleep up to `FLOOD_WAIT_MAX_SECONDS`, retry `FLOOD_WAIT_RETRIES` times; else `failed` / `flood_wait` log (no index/webhook) | Caps in `config`; helper `telegram/flood_wait.py` |
+| Filter/schedule reject | Message skipped (no send); `message_logs` row with `status=skipped` and `skip_reason` (`filter` / `schedule`) | Preview API + Message Logs filter; same pure helpers as workers |
 | Transform / media asset missing | Rule may no-op or skip media replacement | Validate assets in UI; check worker logs |
 | SQLite migration failure | App should not run on inconsistent schema | `init-db` + `tests/unit/test_migrations.py` |
 | Auth secret default | Insecure tokens if `JWT_SECRET` left as default | Require strong secret in production env examples |
@@ -349,6 +361,8 @@ Durable paths in containers typically map under `/app/data` (`SQLITE_PATH`, `SES
 | `MONGO_URI`, `MONGO_DB` | Log store; runtime override via SQLite `app_settings` |
 | `FRONTEND_DIST_DIR` | Empty → API-only; set in Docker unified image |
 | `TESTING` | Skip Mongo index ensure / delayed worker restore |
+| `FLOOD_WAIT_MAX_SECONDS` | Max seconds to sleep on FloodWait before giving up (default `120`) |
+| `FLOOD_WAIT_RETRIES` | Extra send attempts after a FloodWait sleep (default `1`) |
 | `BOT_TOKEN`, `TELEGRAM_TEST_CHAT_ID` | Live integration tests only |
 
 Secrets must not be committed (`docker.env`, `deploy/env/docker.env.*`, `.env`). Examples stay in sync with docs when variables change.

@@ -28,9 +28,9 @@ function getVariant(status: string, field?: 'status' | 'role' | 'type' | 'enable
     if (s === 'admin') return 'role-admin';
     return 'neutral';
   }
-  if (s === 'active' || s === 'enabled' || s === 'ok' || s === 'success') return 'success';
+  if (s === 'active' || s === 'enabled' || s === 'ok' || s === 'ok_album' || s === 'success') return 'success';
   if (s === 'inactive') return 'warning';
-  if (s === 'failed' || s === 'error') return 'error';
+  if (s === 'failed' || s === 'error' || s === 'flood_wait') return 'error';
   if (s === 'disabled' || s === 'skipped') return 'neutral';
   return 'neutral';
 }

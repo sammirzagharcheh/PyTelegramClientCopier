@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
 from app.db.mongo import get_mongo_db
 from app.web.deps import CurrentUser, Db
@@ -15,6 +16,29 @@ router = APIRouter(
     tags=["stats"],
     dependencies=[read_only_scope_dependency("stats:read")],
 )
+
+# Copied outcomes only (legacy rows may omit status).
+_COPIED_STATUS_CLAUSE = {
+    "$or": [
+        {"status": {"$in": ["ok", "ok_album"]}},
+        {"status": {"$exists": False}},
+        {"status": None},
+    ]
+}
+
+
+def _pid_alive(pid: int | None) -> bool:
+    if pid is None:
+        return False
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except OSError:
+        return False
+
+
+def _with_copied_filter(match: dict) -> dict:
+    return {"$and": [match, _COPIED_STATUS_CLAUSE]}
 
 
 @router.get("/dashboard")
@@ -38,6 +62,8 @@ async def get_dashboard_stats(user: CurrentUser, db: Db) -> dict:
         async for row in cur:
             account_status[row[0] or "unknown"] = row[1]
 
+    accounts_total = sum(account_status.values())
+
     # SQLite: mappings total and enabled
     mappings_total = 0
     mappings_enabled = 0
@@ -51,6 +77,16 @@ async def get_dashboard_stats(user: CurrentUser, db: Db) -> dict:
             mappings_total = row[0] or 0
             mappings_enabled = row[1] or 0
 
+    has_live_worker = False
+    async with db.execute(
+        "SELECT pid FROM worker_registry WHERE user_id = ?",
+        (current_user_id,),
+    ) as cur:
+        async for row in cur:
+            if _pid_alive(row[0]):
+                has_live_worker = True
+                break
+
     # MongoDB: message stats (graceful fallback if Mongo unavailable)
     messages_last_7d = 0
     messages_prev_7d = 0
@@ -63,25 +99,35 @@ async def get_dashboard_stats(user: CurrentUser, db: Db) -> dict:
     webhook_by_day: list[dict[str, str | int]] = []
     top_failing_mappings: list[dict[str, str | int]] = []
     webhook_failure_reasons: list[dict[str, str | int]] = []
+    has_first_copy = False
 
     try:
         mongo_db = get_mongo_db()
         match = {"user_id": current_user_id, "timestamp": {"$gte": start_7d_ts, "$lte": today_end}}
         match_prev = {"user_id": current_user_id, "timestamp": {"$gte": start_14d_ts, "$lt": start_prev_end}}
+        match_copied = _with_copied_filter(match)
+        match_prev_copied = _with_copied_filter(match_prev)
 
-        messages_last_7d = await mongo_db.message_logs.count_documents(match)
-        messages_prev_7d = await mongo_db.message_logs.count_documents(match_prev)
+        messages_last_7d = await mongo_db.message_logs.count_documents(match_copied)
+        messages_prev_7d = await mongo_db.message_logs.count_documents(match_prev_copied)
+        has_first_copy = (
+            await mongo_db.message_logs.count_documents(
+                _with_copied_filter({"user_id": current_user_id})
+            )
+            > 0
+        )
         match_webhook = {"user_id": current_user_id, "timestamp": {"$gte": start_7d_ts, "$lte": today_end}}
         match_webhook_prev = {"user_id": current_user_id, "timestamp": {"$gte": start_14d_ts, "$lt": start_prev_end}}
         webhook_attempts_last_7d = await mongo_db.webhook_logs.count_documents(match_webhook)
         webhook_attempts_prev_7d = await mongo_db.webhook_logs.count_documents(match_webhook_prev)
 
-        # Single $facet aggregation for by_day + status_breakdown
+        # by_day counts copied only; status_breakdown includes skips/failures
         pipeline = [
             {"$match": match},
             {
                 "$facet": {
                     "by_day": [
+                        {"$match": _COPIED_STATUS_CLAUSE},
                         {
                             "$group": {
                                 "_id": {
@@ -248,6 +294,12 @@ async def get_dashboard_stats(user: CurrentUser, db: Db) -> dict:
             d = (now - timedelta(days=6 - i)).strftime("%Y-%m-%d")
             webhook_by_day.append({"date": d, "success": 0, "failed": 0})
 
+    setup_account = accounts_total > 0
+    setup_mapping = mappings_enabled > 0
+    setup_worker = has_live_worker
+    setup_first_copy = has_first_copy
+    setup_complete = setup_account and setup_mapping and setup_worker and setup_first_copy
+
     return {
         "messages_last_7d": messages_last_7d,
         "messages_prev_7d": messages_prev_7d,
@@ -256,7 +308,7 @@ async def get_dashboard_stats(user: CurrentUser, db: Db) -> dict:
         "account_status": account_status,
         "mappings_total": mappings_total,
         "mappings_enabled": mappings_enabled,
-        "accounts_total": sum(account_status.values()),
+        "accounts_total": accounts_total,
         "webhook_attempts_last_7d": webhook_attempts_last_7d,
         "webhook_attempts_prev_7d": webhook_attempts_prev_7d,
         "webhook_success_last_7d": webhook_success_last_7d,
@@ -269,4 +321,11 @@ async def get_dashboard_stats(user: CurrentUser, db: Db) -> dict:
         "webhook_by_day": webhook_by_day,
         "top_failing_mappings": top_failing_mappings,
         "webhook_failure_reasons": webhook_failure_reasons,
+        "setup": {
+            "account": setup_account,
+            "mapping": setup_mapping,
+            "worker": setup_worker,
+            "first_copy": setup_first_copy,
+            "complete": setup_complete,
+        },
     }

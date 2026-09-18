@@ -953,6 +953,15 @@ export function MappingDetail() {
                   <dt className="text-ink-subtle">Passes schedule</dt>
                   <dd className="font-medium text-ink">{previewResult.passes_schedule ? 'Yes' : 'No'}</dd>
                 </div>
+                {previewResult.skip_reason ? (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-ink-subtle">Skip reason</dt>
+                    <dd className="font-medium text-ink">
+                      {previewResult.skip_reason}
+                      {previewResult.skip_detail ? ` (${previewResult.skip_detail})` : ''}
+                    </dd>
+                  </div>
+                ) : null}
                 <div>
                   <dt className="mb-1 text-ink-subtle">Transformed text</dt>
                   <dd className="whitespace-pre-wrap break-words rounded-control bg-surface-raised p-2 font-mono text-xs text-ink">

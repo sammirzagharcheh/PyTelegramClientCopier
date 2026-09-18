@@ -143,3 +143,62 @@ def test_message_logs_batch_title_fallback(
     # Batch fallback should have filled titles from channel_mappings
     assert item["source_chat_title"] == "Source Channel"
     assert item["dest_chat_title"] == "Dest Channel"
+
+
+def test_message_logs_skip_fields_and_status_filter(api_client, user_token):
+    """List returns skip fields; status=skipped filters the match."""
+    ts = datetime.now(timezone.utc)
+    docs = [
+        {
+            "user_id": 1,
+            "mapping_id": 3,
+            "source_chat_id": 10,
+            "dest_chat_id": 20,
+            "source_msg_id": 100,
+            "dest_msg_id": None,
+            "source_chat_title": "S",
+            "dest_chat_title": "D",
+            "timestamp": ts,
+            "status": "skipped",
+            "skip_reason": "filter",
+            "skip_detail": "exclude_text",
+        }
+    ]
+    captured_match: dict = {}
+
+    def mock_aggregate(pipeline):
+        if pipeline and isinstance(pipeline[0], dict) and "$match" in pipeline[0]:
+            captured_match.clear()
+            captured_match.update(pipeline[0]["$match"])
+        has_count = any(
+            isinstance(s, dict) and s.get("$count") == "total"
+            for s in pipeline
+        )
+        if has_count:
+            async def count_gen():
+                yield {"total": 1}
+            return count_gen()
+
+        async def list_gen():
+            for d in docs:
+                yield d
+        return list_gen()
+
+    mock_coll = AsyncMock()
+    mock_coll.aggregate = mock_aggregate
+    mock_coll.count_documents = AsyncMock(return_value=1)
+    mock_db = AsyncMock()
+    mock_db.message_logs = mock_coll
+
+    with patch("app.web.routers.message_logs.get_mongo_db", return_value=mock_db):
+        r = api_client.get(
+            "/api/message-logs?status=skipped",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+    assert r.status_code == 200
+    assert captured_match.get("status") == "skipped"
+    item = r.json()["items"][0]
+    assert item["skip_reason"] == "filter"
+    assert item["skip_detail"] == "exclude_text"
+    assert item["mapping_id"] == 3
+    assert item["status"] == "skipped"

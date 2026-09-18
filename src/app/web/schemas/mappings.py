@@ -188,3 +188,5 @@ class MappingPreviewResponse(BaseModel):
     passes_filters: bool
     passes_schedule: bool
     transformed_text: str
+    skip_reason: str | None = None
+    skip_detail: str | None = None

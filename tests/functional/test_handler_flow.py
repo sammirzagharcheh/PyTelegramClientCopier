@@ -135,6 +135,8 @@ async def test_handler_flow_replies_and_media(tmp_path):
     assert mongo.logs[-1]["source_msg_id"] == 56
     assert mongo.logs[-1].get("source_chat_title") == "Test Channel"
     assert mongo.logs[-1].get("dest_chat_title") == "Dest Channel"
+    assert mongo.logs[-1].get("mapping_id") == 1
+    assert mongo.logs[-1].get("status") == "ok"
 
     # Incoming photo message (allowed by filter)
     event2 = DummyEvent(
@@ -175,7 +177,11 @@ async def test_handler_rejected_by_include_text(tmp_path):
     await handler(event)
 
     assert len(client.sent_messages) == 0
-    assert len(mongo.logs) == 0
+    assert len(mongo.logs) == 1
+    assert mongo.logs[0]["status"] == "skipped"
+    assert mongo.logs[0]["skip_reason"] == "filter"
+    assert mongo.logs[0]["mapping_id"] == 1
+    assert mongo.logs[0]["dest_msg_id"] is None
 
 
 @pytest.mark.asyncio
@@ -205,7 +211,10 @@ async def test_handler_rejected_by_exclude_text(tmp_path):
     await handler(event)
 
     assert len(client.sent_messages) == 0
-    assert len(mongo.logs) == 0
+    assert len(mongo.logs) == 1
+    assert mongo.logs[0]["status"] == "skipped"
+    assert mongo.logs[0]["skip_reason"] == "filter"
+    assert mongo.logs[0].get("skip_detail") == "exclude_text"
 
 
 @pytest.mark.asyncio
@@ -235,7 +244,9 @@ async def test_handler_rejected_by_media_types(tmp_path):
     await handler(event)
 
     assert len(client.sent_files) == 0
-    assert len(mongo.logs) == 0
+    assert len(mongo.logs) == 1
+    assert mongo.logs[0]["status"] == "skipped"
+    assert mongo.logs[0]["skip_reason"] == "filter"
 
 
 @pytest.mark.asyncio
@@ -265,7 +276,9 @@ async def test_handler_rejected_by_regex(tmp_path):
     await handler(event)
 
     assert len(client.sent_messages) == 0
-    assert len(mongo.logs) == 0
+    assert len(mongo.logs) == 1
+    assert mongo.logs[0]["status"] == "skipped"
+    assert mongo.logs[0]["skip_reason"] == "filter"
 
 
 @pytest.mark.asyncio
@@ -298,7 +311,8 @@ async def test_handler_multiple_filters_second_fails(tmp_path):
     await handler(event)
 
     assert len(client.sent_messages) == 0
-    assert len(mongo.logs) == 0
+    assert len(mongo.logs) == 1
+    assert mongo.logs[0]["status"] == "skipped"
 
 
 @pytest.mark.asyncio
@@ -567,4 +581,97 @@ async def test_handler_forwards_even_if_mongo_log_write_fails(tmp_path):
 
     assert len(client.sent_messages) == 1
     assert client.sent_messages[0][1] == "hello"
+
+
+class FloodThenOkClient(DummyClient):
+    def __init__(self):
+        super().__init__()
+        self._flooded = False
+
+    async def send_message(self, chat_id, text, reply_to=None):
+        from telethon.errors import FloodWaitError
+
+        if not self._flooded:
+            self._flooded = True
+            raise FloodWaitError(request=None, capture=1)
+        return await super().send_message(chat_id, text, reply_to=reply_to)
+
+
+class AlwaysFloodClient(DummyClient):
+    async def send_message(self, chat_id, text, reply_to=None):
+        from telethon.errors import FloodWaitError
+
+        raise FloodWaitError(request=None, capture=999)
+
+
+@pytest.mark.asyncio
+async def test_handler_flood_wait_retry_then_ok(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    from app.config import settings
+    from unittest.mock import AsyncMock
+
+    settings.sqlite_path = str(db_path)
+    settings.flood_wait_max_seconds = 120
+    settings.flood_wait_retries = 1
+    await init_sqlite()
+    db = await get_sqlite()
+
+    mapping = ChannelMapping(
+        id=7,
+        user_id=1,
+        source_chat_id=10,
+        dest_chat_id=20,
+        enabled=True,
+        filters=[],
+        source_chat_title=None,
+        dest_chat_title=None,
+    )
+    mongo = DummyMongo()
+    client = FloodThenOkClient()
+    handler = build_message_handler(user_id=1, mappings=[mapping], db=db, mongo_db=mongo)
+
+    monkeypatch.setattr("app.telegram.flood_wait.asyncio.sleep", AsyncMock())
+    event = DummyEvent(chat_id=10, message=DummyMessage(11, "after flood"), client=client)
+    await handler(event)
+
+    assert len(client.sent_messages) == 1
+    assert mongo.logs[-1]["status"] == "ok"
+    assert mongo.logs[-1]["mapping_id"] == 7
+
+
+@pytest.mark.asyncio
+async def test_handler_flood_wait_over_cap_logs_failed(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    from app.config import settings
+    from unittest.mock import AsyncMock
+
+    settings.sqlite_path = str(db_path)
+    settings.flood_wait_max_seconds = 120
+    settings.flood_wait_retries = 1
+    await init_sqlite()
+    db = await get_sqlite()
+
+    mapping = ChannelMapping(
+        id=8,
+        user_id=1,
+        source_chat_id=10,
+        dest_chat_id=20,
+        enabled=True,
+        filters=[],
+        source_chat_title=None,
+        dest_chat_title=None,
+    )
+    mongo = DummyMongo()
+    client = AlwaysFloodClient()
+    handler = build_message_handler(user_id=1, mappings=[mapping], db=db, mongo_db=mongo)
+
+    monkeypatch.setattr("app.telegram.flood_wait.asyncio.sleep", AsyncMock())
+    event = DummyEvent(chat_id=10, message=DummyMessage(12, "too long flood"), client=client)
+    await handler(event)
+
+    assert len(client.sent_messages) == 0
+    assert len(mongo.logs) == 1
+    assert mongo.logs[0]["status"] == "failed"
+    assert mongo.logs[0]["skip_reason"] == "flood_wait"
+    assert "seconds=999" in (mongo.logs[0].get("skip_detail") or "")
 

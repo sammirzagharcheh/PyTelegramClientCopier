@@ -166,4 +166,6 @@ export type MappingPreviewResponse = {
   passes_filters: boolean;
   passes_schedule: boolean;
   transformed_text: string;
+  skip_reason?: string | null;
+  skip_detail?: string | null;
 };

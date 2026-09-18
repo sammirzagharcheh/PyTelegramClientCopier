@@ -15,14 +15,17 @@ import { TableShell, Tbody, Td, Th, Thead, Tr } from '../../components/ui/TableS
 
 type Log = {
   user_id: number;
+  mapping_id?: number | null;
   source_chat_id: number;
   source_msg_id: number;
   dest_chat_id: number;
-  dest_msg_id: number;
+  dest_msg_id: number | null;
   source_chat_title?: string | null;
   dest_chat_title?: string | null;
   timestamp: string;
   status: string;
+  skip_reason?: string | null;
+  skip_detail?: string | null;
 };
 
 type User = { id: number; email: string; name: string | null };
@@ -58,7 +61,7 @@ export function AdminLogs() {
       <PageHeader
         title="All Message Logs"
         icon={MessageSquare}
-        subtitle="Forwarded message history across all users"
+        subtitle="Copied and skipped message history across all users"
       />
 
       <UserFilterSelect
@@ -78,7 +81,7 @@ export function AdminLogs() {
           onRetry={() => refetch()}
         />
       ) : isLoading ? (
-        <TableSkeleton columns={5} rows={8} />
+        <TableSkeleton columns={6} rows={8} />
       ) : (
         <TableShell
           caption="Message logs for all users"
@@ -86,11 +89,11 @@ export function AdminLogs() {
             items.length === 0 ? (
               <EmptyState
                 icon={MessageSquare}
-                title={userId != null ? 'This user has no message logs' : 'No messages copied yet'}
+                title={userId != null ? 'This user has no message logs' : 'No messages yet'}
                 description={
                   userId != null
                     ? 'Switch the filter back to all users to see the rest.'
-                    : 'Copied messages from every mapping will appear here. If this stays empty, check that MongoDB is configured in Settings.'
+                    : 'Copied and skipped messages from every mapping will appear here. If this stays empty, check that MongoDB is configured in Settings.'
                 }
               />
             ) : (
@@ -117,6 +120,7 @@ export function AdminLogs() {
               <Th>Destination</Th>
               <Th>Time</Th>
               <Th>Status</Th>
+              <Th>Reason</Th>
             </tr>
           </Thead>
           <Tbody>
@@ -144,6 +148,11 @@ export function AdminLogs() {
                 </Td>
                 <Td>
                   <StatusBadge status={log.status ?? ''} variant="status" />
+                </Td>
+                <Td className="max-w-48 text-sm text-ink-muted">
+                  {log.skip_reason
+                    ? `${log.skip_reason}${log.skip_detail ? ` · ${log.skip_detail}` : ''}`
+                    : '—'}
                 </Td>
               </Tr>
             ))}

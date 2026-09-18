@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.auth.password import hash_password
-from app.db.sqlite import get_sqlite, init_sqlite
+from app.db.sqlite import get_sqlite
 
 
 @pytest.fixture
@@ -68,6 +68,34 @@ def test_mapping_preview(roadmap_client, writer_token):
     data = r.json()
     assert "passes_filters" in data
     assert "transformed_text" in data
+    assert "skip_reason" in data
+    assert "skip_detail" in data
+    # Empty filters admit everything
+    assert data["passes_filters"] is True
+    assert data["skip_reason"] is None
+
+
+def test_mapping_preview_skip_reason_on_filter_fail(roadmap_client, writer_token):
+    async def add_filter():
+        db = await get_sqlite()
+        await db.execute(
+            "INSERT INTO mapping_filters (mapping_id, exclude_text, or_group_id) VALUES (?, ?, ?)",
+            (1, "blocked", 1),
+        )
+        await db.commit()
+        await db.close()
+
+    asyncio.run(add_filter())
+    r = roadmap_client.post(
+        "/api/mappings/1/preview",
+        headers={"Authorization": f"Bearer {writer_token}"},
+        json={"sample_text": "this is blocked", "media_type": "text"},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["passes_filters"] is False
+    assert data["skip_reason"] == "filter"
+    assert data["skip_detail"] == "exclude_text"
 
 
 def test_mapping_clone(roadmap_client, writer_token):

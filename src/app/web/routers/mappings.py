@@ -11,6 +11,7 @@ from app.db.message_index_cleanup import delete_dest_message_index_for_mapping
 from app.services.mapping_service import WEEKDAY_COLS, load_mapping_by_id
 from app.telegram.pipeline_preview import (
     MessagePreview,
+    admission_skip,
     apply_transforms,
     passes_filters,
     passes_schedule,
@@ -554,6 +555,7 @@ async def preview_mapping(
     ok_f = passes_filters(preview, cm.filters)
     now_utc = datetime.now(timezone.utc)
     ok_s = passes_schedule(now_utc, cm.schedule)
+    skip = admission_skip(preview, cm.filters, now_utc, cm.schedule)
     template_context: dict[str, object] = {
         "original_text": data.sample_text,
         "source_chat_id": cm.source_chat_id,
@@ -574,6 +576,8 @@ async def preview_mapping(
         "passes_filters": ok_f,
         "passes_schedule": ok_s,
         "transformed_text": out_text,
+        "skip_reason": skip.reason if skip else None,
+        "skip_detail": skip.detail if skip else None,
     }
 
 
