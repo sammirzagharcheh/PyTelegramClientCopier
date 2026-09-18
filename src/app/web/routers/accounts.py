@@ -17,8 +17,13 @@ from app.telegram.dialog_service import (
     TelegramDialogsError,
     list_account_dialogs,
 )
+from app.telegram.peer_resolve import InvalidPeerQuery, resolve_peer
 from app.web.schemas.accounts import TelegramAccountUpdate
-from app.web.schemas.dialogs import TelegramDialogListResponse, TelegramDialogResponse
+from app.web.schemas.dialogs import (
+    ResolvePeerRequest,
+    TelegramDialogListResponse,
+    TelegramDialogResponse,
+)
 from app.web.deps import AdminUser, CurrentUser, Db, WriterUser
 from app.web.routers.workers import stop_workers_for_account
 from app.web.scope_deps import resource_scope_dependency
@@ -139,14 +144,24 @@ async def _fetch_account_credentials(db: Db, account_id: int) -> tuple | None:
         return await cur.fetchone()
 
 
-@router.get("/{account_id}/dialogs", response_model=TelegramDialogListResponse)
-async def list_account_dialogs_route(
-    account_id: int,
+def _credentials_from_row(row: tuple) -> AccountCredentials:
+    return AccountCredentials(
+        account_id=row[0],
+        user_id=row[1],
+        account_type=row[2],
+        session_path=row[3],
+        bot_token=row[4],
+        status=row[5],
+    )
+
+
+async def _require_connected_account(
     db: Db,
+    account_id: int,
     user: CurrentUser,
-    limit: int = 500,
-) -> dict:
-    """List Telegram chats/channels for an active account."""
+    *,
+    inactive_detail: str,
+) -> AccountCredentials:
     row = await _fetch_account_credentials(db, account_id)
     if not row:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Account not found")
@@ -155,29 +170,34 @@ async def list_account_dialogs_route(
     if row[5] != "active":
         raise HTTPException(
             status_code=http_status.HTTP_400_BAD_REQUEST,
-            detail="Account must be active to list chats",
+            detail=inactive_detail,
         )
-    acc_type = row[2]
-    session_path = row[3]
-    bot_token = row[4]
-    if acc_type == "user" and not session_path:
+    if row[2] == "user" and not row[3]:
         raise HTTPException(
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="Account is not connected",
         )
-    if acc_type == "bot" and not bot_token:
+    if row[2] == "bot" and not row[4]:
         raise HTTPException(
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="Account is not connected",
         )
+    return _credentials_from_row(row)
 
-    account = AccountCredentials(
-        account_id=row[0],
-        user_id=row[1],
-        account_type=acc_type,
-        session_path=session_path,
-        bot_token=bot_token,
-        status=row[5],
+
+@router.get("/{account_id}/dialogs", response_model=TelegramDialogListResponse)
+async def list_account_dialogs_route(
+    account_id: int,
+    db: Db,
+    user: CurrentUser,
+    limit: int = 500,
+) -> dict:
+    """List Telegram chats/channels for an active account."""
+    account = await _require_connected_account(
+        db,
+        account_id,
+        user,
+        inactive_detail="Account must be active to list chats",
     )
     try:
         dialogs = await list_account_dialogs(account, limit=limit)
@@ -204,8 +224,48 @@ async def list_account_dialogs_route(
             ).model_dump()
             for d in dialogs
         ],
-        "manual_required": acc_type == "bot",
+        "manual_required": account.account_type == "bot",
     }
+
+
+@router.post("/{account_id}/resolve-peer", response_model=TelegramDialogResponse)
+async def resolve_account_peer_route(
+    account_id: int,
+    body: ResolvePeerRequest,
+    db: Db,
+    user: CurrentUser,
+) -> dict:
+    """Resolve @username, t.me link, or numeric ID to a chat the account can see."""
+    account = await _require_connected_account(
+        db,
+        account_id,
+        user,
+        inactive_detail="Account must be active to resolve chats",
+    )
+    try:
+        dialog = await resolve_peer(account, body.query)
+    except InvalidPeerQuery as e:
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except SessionLockedError:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail="Account session is in use; stop the worker and retry",
+        ) from None
+    except ValueError as e:
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except TelegramDialogsError:
+        raise HTTPException(
+            status_code=http_status.HTTP_502_BAD_GATEWAY,
+            detail="Could not resolve that chat for this account. "
+            "Use a public @username or add the account to the chat first.",
+        ) from None
+
+    return TelegramDialogResponse(
+        chat_id=dialog.chat_id,
+        title=dialog.title,
+        username=dialog.username,
+        dialog_type=dialog.dialog_type,
+    ).model_dump()
 
 
 @router.post("", status_code=http_status.HTTP_201_CREATED)

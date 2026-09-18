@@ -67,8 +67,60 @@ describe('AddMappingDialog', () => {
     fireEvent.change(screen.getByLabelText(/telegram account/i), { target: { value: '1' } });
     fireEvent.click(screen.getByRole('button', { name: /create/i }));
     await waitFor(() => {
-      expect(screen.getByText(/valid source chat/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/chat id, @username, or t\.me link/i).length).toBeGreaterThan(0);
     });
     expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('resolves @username then posts integer chat ids', async () => {
+    vi.mocked(api.post).mockImplementation(async (url, body) => {
+      if (String(url).includes('resolve-peer')) {
+        const query = (body as { query: string }).query;
+        if (query === '@srcchan') {
+          return {
+            data: {
+              chat_id: -100111,
+              title: 'Src',
+              username: 'srcchan',
+              dialog_type: 'channel',
+            },
+          };
+        }
+        return {
+          data: {
+            chat_id: -100222,
+            title: 'Dst',
+            username: 'dstchan',
+            dialog_type: 'channel',
+          },
+        };
+      }
+      if (url === '/mappings') {
+        return { data: { id: 9 } };
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderDialog();
+    fireEvent.change(screen.getByLabelText(/telegram account/i), { target: { value: '1' } });
+    fireEvent.click(screen.getByLabelText(/enter chat id manually/i));
+    fireEvent.change(screen.getByLabelText(/source chat id/i), { target: { value: '@srcchan' } });
+    fireEvent.change(screen.getByLabelText(/destination chat id/i), { target: { value: '@dstchan' } });
+    fireEvent.click(screen.getByRole('button', { name: /create/i }));
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith(
+        '/mappings',
+        expect.objectContaining({
+          source_chat_id: -100111,
+          dest_chat_id: -100222,
+          telegram_account_id: 1,
+          source_chat_title: 'Src',
+          dest_chat_title: 'Dst',
+        })
+      );
+    });
+    expect(api.post).toHaveBeenCalledWith('/accounts/1/resolve-peer', { query: '@srcchan' });
+    expect(api.post).toHaveBeenCalledWith('/accounts/1/resolve-peer', { query: '@dstchan' });
   });
 });

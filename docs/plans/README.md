@@ -10,6 +10,7 @@ Durable planning notes for non-trivial work. The agent writes a plan here **befo
 
 | Date | Plan | Status |
 |------|------|--------|
+| 2026-09-18 | [Resolve @username / chat ID for mapping routes](2026-09-18-resolve-peer-mapping.md) | Done |
 | 2026-09-18 | [Docker dev overlay ignores bind-mounted src](2026-09-18-docker-dev-pythonpath.md) | Done |
 | 2026-09-18 | [Bot workers alongside user-session workers](2026-09-18-bot-workers.md) | Done |
 | 2026-09-18 | [Bot accounts fail to load chats in Add mapping](2026-09-18-bot-dialogs-manual-ids.md) | Done |

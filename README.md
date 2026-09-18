@@ -64,7 +64,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ## Web Panel
 
 - **Admin panel** (`/admin/*`): Manage users, view all mappings, logs, workers.
-- **User panel** (`/dashboard`, `/accounts`, `/mappings`, `/api-keys`, `/alert-webhooks`, etc.): Manage Telegram accounts, channel mappings (including clone), filters, workers, API keys, and stale-worker alert webhooks. The dashboard shows a **setup checklist** until the tenant has an account, enabled mapping, live worker, and first successful copy. **Message Logs** list copied, skipped, and failed outcomes with skip reasons. Copy workers run per Telegram account: **user sessions** (phone / `.session` file) or **bots** (BotFather token). Bots cannot list chats—use manual chat IDs—and must be added to source/destination (channel: admin; group: BotFather privacy disabled). See [worker troubleshooting](docs/WORKER_TROUBLESHOOTING.md).
+- **User panel** (`/dashboard`, `/accounts`, `/mappings`, `/api-keys`, `/alert-webhooks`, etc.): Manage Telegram accounts, channel mappings (including clone), filters, workers, API keys, and stale-worker alert webhooks. The dashboard shows a **setup checklist** until the tenant has an account, enabled mapping, live worker, and first successful copy. **Message Logs** list copied, skipped, and failed outcomes with skip reasons. Copy workers run per Telegram account: **user sessions** (phone / `.session` file) or **bots** (BotFather token). Bots cannot list chats—paste `@username`, a `t.me` link, or `-100…` (resolved on save)—and must be added to source/destination (channel: admin; group: BotFather privacy disabled). See [worker troubleshooting](docs/WORKER_TROUBLESHOOTING.md).
 
 ### API keys (`X-Api-Key`)
 

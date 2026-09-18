@@ -108,6 +108,8 @@ describe('MappingRouteFields', () => {
     expect(screen.queryByText(/cannot start workers yet/i)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/source chat id/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/destination chat id/i)).toBeInTheDocument();
+    expect(screen.getAllByPlaceholderText('@channel or -100…').length).toBe(2);
+    expect(screen.getByText(/@username, a t\.me link, or a numeric chat ID/i)).toBeInTheDocument();
     expect(screen.queryByLabelText(/enter chat id manually/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/could not load chats/i)).not.toBeInTheDocument();
   });

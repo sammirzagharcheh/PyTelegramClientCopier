@@ -190,12 +190,12 @@ Do not implement until this plan is approved.
 
 ## Suggested later phases (not this change)
 
-| Phase | Work |
-|-------|------|
-| 2 | `get_entity` resolve of `@username` / numeric ID on mapping save (bot must already see the chat) |
-| 3 | Preflight: “can this bot access source/dest?” with a clear 400 before save |
-| 4 | Optional persist bot StringSession to `sessions/{user}/{id}.bot.session` for faster reconnect |
-| 5 | Token-at-rest encryption if we encrypt session files |
+| Phase | Work | Status |
+|-------|------|--------|
+| 2 | `get_entity` resolve of `@username` / numeric ID on mapping save (bot must already see the chat) | **Done** — [2026-09-18-resolve-peer-mapping.md](2026-09-18-resolve-peer-mapping.md) |
+| 3 | Preflight: “can this bot access source/dest?” with a clear 400 before save | Not started |
+| 4 | Optional persist bot StringSession to `sessions/{user}/{id}.bot.session` for faster reconnect | Not started |
+| 5 | Token-at-rest encryption if we encrypt session files | Not started |
 
 ---
 

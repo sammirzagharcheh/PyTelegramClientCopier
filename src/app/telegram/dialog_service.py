@@ -9,7 +9,7 @@ from typing import Any
 
 from telethon.tl.types import Channel, Chat, User
 
-from app.telegram.client_manager import start_user_client
+from app.telegram.client_manager import start_bot_client, start_user_client
 
 
 class SessionLockedError(Exception):
@@ -47,7 +47,7 @@ def clear_dialog_cache() -> None:
     _CACHE.clear()
 
 
-def _entity_dialog_type(entity: Any) -> str:
+def entity_dialog_type(entity: Any) -> str:
     if isinstance(entity, User):
         return "bot" if getattr(entity, "bot", False) else "user"
     if isinstance(entity, Channel):
@@ -74,9 +74,29 @@ def _dialog_title(dialog: Any) -> str:
     return getattr(entity, "title", None) or f"Chat {dialog.id}"
 
 
-def _entity_username(entity: Any) -> str | None:
+def entity_username(entity: Any) -> str | None:
     username = getattr(entity, "username", None)
     return str(username) if username else None
+
+
+async def start_account_client(account: AccountCredentials):
+    """Start a short-lived Telethon client for API-side lookups. Caller must disconnect."""
+    if account.status != "active":
+        raise ValueError("Account must be active")
+    if account.account_type == "user":
+        if not account.session_path:
+            raise ValueError("Account is not connected")
+        try:
+            return await start_user_client(account.session_path)
+        except sqlite3.OperationalError as e:
+            if "locked" in str(e).lower():
+                raise SessionLockedError(str(e)) from e
+            raise TelegramDialogsError(str(e)) from e
+    if account.account_type == "bot":
+        if not account.bot_token:
+            raise ValueError("Account is not connected")
+        return await start_bot_client(account.bot_token)
+    raise ValueError(f"Unsupported account type: {account.account_type}")
 
 
 async def list_account_dialogs(
@@ -107,18 +127,7 @@ async def list_account_dialogs(
     limit = min(max(1, limit), 500)
     client = None
     try:
-        if account.account_type == "user":
-            if not account.session_path:
-                raise ValueError("Account is not connected")
-            try:
-                client = await start_user_client(account.session_path)
-            except sqlite3.OperationalError as e:
-                if "locked" in str(e).lower():
-                    raise SessionLockedError(str(e)) from e
-                raise TelegramDialogsError(str(e)) from e
-        else:
-            raise ValueError(f"Unsupported account type: {account.account_type}")
-
+        client = await start_account_client(account)
         items: list[TelegramDialog] = []
         async for dialog in client.iter_dialogs(limit=limit):
             entity = dialog.entity
@@ -126,14 +135,14 @@ async def list_account_dialogs(
                 TelegramDialog(
                     chat_id=int(dialog.id),
                     title=_dialog_title(dialog),
-                    username=_entity_username(entity),
-                    dialog_type=_entity_dialog_type(entity),
+                    username=entity_username(entity),
+                    dialog_type=entity_dialog_type(entity),
                 )
             )
         if use_cache:
             _CACHE[cache_key] = (time.monotonic() + _CACHE_TTL_SEC, items)
         return items
-    except (SessionLockedError, ValueError):
+    except (SessionLockedError, ValueError, TelegramDialogsError):
         raise
     except Exception as e:
         raise TelegramDialogsError(str(e)) from e

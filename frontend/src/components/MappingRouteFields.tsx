@@ -193,8 +193,8 @@ export function MappingRouteFields({
               data-testid="bot-manual-ids-hint"
             >
               <p>
-                Telegram bots cannot list chats. Enter source and destination chat IDs
-                manually.
+                Telegram bots cannot list chats. Paste @username, a t.me link, or a numeric
+                chat ID. We resolve it when you save.
               </p>
               <p>
                 Add this bot as admin on the source channel (or as a member of a group with
@@ -301,52 +301,57 @@ export function MappingRouteFields({
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="mapping-source-id-manual" className="block text-sm font-medium mb-1">
-                  Source Chat ID
-                </label>
-                <input
-                  id="mapping-source-id-manual"
-                  type="text"
-                  value={values.sourceChatId}
-                  onChange={(e) =>
-                    onChange({
-                      ...values,
-                      sourceChatId: e.target.value,
-                    })
-                  }
-                  className={inputClass}
-                  placeholder="-1001234567890"
-                  aria-invalid={!!errors.sourceChatId}
-                />
-                {errors.sourceChatId && (
-                  <p className="text-xs text-red-600 mt-1">{errors.sourceChatId}</p>
-                )}
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="mapping-source-id-manual" className="block text-sm font-medium mb-1">
+                    Source Chat ID
+                  </label>
+                  <input
+                    id="mapping-source-id-manual"
+                    type="text"
+                    value={values.sourceChatId}
+                    onChange={(e) =>
+                      onChange({
+                        ...values,
+                        sourceChatId: e.target.value,
+                      })
+                    }
+                    className={inputClass}
+                    placeholder="@channel or -100…"
+                    aria-invalid={!!errors.sourceChatId}
+                  />
+                  {errors.sourceChatId && (
+                    <p className="text-xs text-red-600 mt-1">{errors.sourceChatId}</p>
+                  )}
+                </div>
+                <div>
+                  <label htmlFor="mapping-dest-id-manual" className="block text-sm font-medium mb-1">
+                    Destination Chat ID
+                  </label>
+                  <input
+                    id="mapping-dest-id-manual"
+                    type="text"
+                    value={values.destChatId}
+                    onChange={(e) =>
+                      onChange({
+                        ...values,
+                        destChatId: e.target.value,
+                      })
+                    }
+                    className={inputClass}
+                    placeholder="@channel or -100…"
+                    aria-invalid={!!errors.destChatId}
+                  />
+                  {errors.destChatId && (
+                    <p className="text-xs text-red-600 mt-1">{errors.destChatId}</p>
+                  )}
+                </div>
               </div>
-              <div>
-                <label htmlFor="mapping-dest-id-manual" className="block text-sm font-medium mb-1">
-                  Destination Chat ID
-                </label>
-                <input
-                  id="mapping-dest-id-manual"
-                  type="text"
-                  value={values.destChatId}
-                  onChange={(e) =>
-                    onChange({
-                      ...values,
-                      destChatId: e.target.value,
-                    })
-                  }
-                  className={inputClass}
-                  placeholder="-1009876543210"
-                  aria-invalid={!!errors.destChatId}
-                />
-                {errors.destChatId && (
-                  <p className="text-xs text-red-600 mt-1">{errors.destChatId}</p>
-                )}
-              </div>
-            </div>
+              <p className="text-xs text-gray-600 dark:text-gray-400">
+                Paste @username, a t.me/name link, or -100…. Invite links cannot be resolved.
+              </p>
+            </>
           )}
 
           {!isBotAccount && !values.useManualIds && (

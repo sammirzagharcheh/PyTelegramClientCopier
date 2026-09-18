@@ -200,6 +200,107 @@ def test_create_bot_account_rejects_invalid_token(api_client, user_token):
     assert "botfather" in r.json()["detail"].lower() or "token" in r.json()["detail"].lower()
 
 
+def test_resolve_peer_400_bad_query(api_client, user_token):
+    r = api_client.post(
+        "/api/accounts/1/resolve-peer",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"query": "https://t.me/+invite"},
+    )
+    assert r.status_code == 400
+    assert "invite" in r.json()["detail"].lower()
+
+
+def test_resolve_peer_200_mocked(api_client, user_token):
+    sample = TelegramDialog(
+        chat_id=-100777,
+        title="Public Chan",
+        username="pubchan",
+        dialog_type="channel",
+    )
+    with patch(
+        "app.web.routers.accounts.resolve_peer",
+        new_callable=AsyncMock,
+        return_value=sample,
+    ):
+        r = api_client.post(
+            "/api/accounts/1/resolve-peer",
+            headers={"Authorization": f"Bearer {user_token}"},
+            json={"query": "@pubchan"},
+        )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["chat_id"] == -100777
+    assert data["title"] == "Public Chan"
+    assert data["username"] == "pubchan"
+
+
+def test_resolve_peer_409_session_locked(api_client, user_token):
+    with patch(
+        "app.web.routers.accounts.resolve_peer",
+        new_callable=AsyncMock,
+        side_effect=SessionLockedError("locked"),
+    ):
+        r = api_client.post(
+            "/api/accounts/1/resolve-peer",
+            headers={"Authorization": f"Bearer {user_token}"},
+            json={"query": "@pubchan"},
+        )
+    assert r.status_code == 409
+
+
+def test_resolve_peer_502_telegram_failure(api_client, user_token):
+    with patch(
+        "app.web.routers.accounts.resolve_peer",
+        new_callable=AsyncMock,
+        side_effect=TelegramDialogsError("not found"),
+    ):
+        r = api_client.post(
+            "/api/accounts/1/resolve-peer",
+            headers={"Authorization": f"Bearer {user_token}"},
+            json={"query": "@missing"},
+        )
+    assert r.status_code == 502
+    assert "public @username" in r.json()["detail"].lower()
+
+
+def test_resolve_peer_403_other_user_account(api_client, user_token):
+    import asyncio
+
+    async def seed_other_account():
+        from app.db.sqlite import get_sqlite
+
+        db = await get_sqlite()
+        await db.execute(
+            "INSERT INTO telegram_accounts (user_id, type, session_path, status) VALUES (?, ?, ?, ?)",
+            (3, "user", "/tmp/other-resolve.session", "active"),
+        )
+        await db.commit()
+        async with db.execute(
+            "SELECT id FROM telegram_accounts WHERE session_path = ?",
+            ("/tmp/other-resolve.session",),
+        ) as cur:
+            row = await cur.fetchone()
+        await db.close()
+        return row[0]
+
+    account_id = asyncio.run(seed_other_account())
+    r = api_client.post(
+        f"/api/accounts/{account_id}/resolve-peer",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"query": "@pubchan"},
+    )
+    assert r.status_code == 403
+
+
+def test_resolve_peer_404_unknown_account(api_client, user_token):
+    r = api_client.post(
+        "/api/accounts/999/resolve-peer",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"query": "@pubchan"},
+    )
+    assert r.status_code == 404
+
+
 def test_list_accounts_status_active_filter(api_client, user_token):
     import asyncio
 

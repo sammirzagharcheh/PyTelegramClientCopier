@@ -92,6 +92,7 @@ flowchart TB
 | `telegram/handlers.py` | New / edit / delete / album debounce; send to destination; write index + logs; fire copy webhooks |
 | `telegram/pipeline_preview.py` | Pure filter / schedule / transform evaluation shared with preview APIs |
 | `telegram/dialog_service.py` | List dialogs for UI chat pickers (user sessions only; bots return empty + `manual_required`) |
+| `telegram/peer_resolve.py` | Resolve `@username` / `t.me` / numeric ID via `get_entity` for mapping save (`POST /accounts/{id}/resolve-peer`) |
 | `telegram/bot_token.py` | BotFather token shape validation |
 | `telegram/worker_account.py` | Bot registry sentinel `bot://{id}` and worker CLI argv (token never on argv) |
 | `telegram/chat_ids.py` | Normalize ± chat id forms for matching |

@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { ChannelMapping } from '../lib/api';
 import { errorMessage } from '../lib/apiError';
+import { resolveMappingRouteChats } from '../lib/peerResolve';
 import { MappingRouteFields } from './MappingRouteFields';
 import { useToast } from './Toast';
 import { Button } from './ui/Button';
@@ -12,7 +13,6 @@ import { FormError } from './ui/FormError';
 import { Modal } from './ui/Modal';
 import {
   hasRouteErrors,
-  parseChatId,
   validateMappingRoute,
   type MappingRouteFieldErrors,
   type MappingRouteValues,
@@ -104,15 +104,24 @@ export function EditMappingDialog({ mapping, onClose }: Props) {
       const body: Record<string, unknown> = {};
       const nextName = name.trim() || null;
       if (nextName !== (mapping.name ?? null)) body.name = nextName;
-      const src = parseChatId(route.sourceChatId);
-      const dst = parseChatId(route.destChatId);
-      if (src == null || dst == null) {
-        throw new Error('Invalid chat IDs');
+      if (route.telegramAccountId == null) {
+        throw new Error('Select a Telegram account');
       }
-      if (src !== mapping.source_chat_id) body.source_chat_id = src;
-      if (dst !== mapping.dest_chat_id) body.dest_chat_id = dst;
-      const srcTitle = route.sourceChatTitle.trim();
-      const dstTitle = route.destChatTitle.trim();
+      const resolved = await resolveMappingRouteChats(
+        route.telegramAccountId,
+        route.sourceChatId,
+        route.destChatId,
+        route.sourceChatTitle,
+        route.destChatTitle
+      );
+      if (resolved.source_chat_id !== mapping.source_chat_id) {
+        body.source_chat_id = resolved.source_chat_id;
+      }
+      if (resolved.dest_chat_id !== mapping.dest_chat_id) {
+        body.dest_chat_id = resolved.dest_chat_id;
+      }
+      const srcTitle = resolved.source_chat_title.trim();
+      const dstTitle = resolved.dest_chat_title.trim();
       if (srcTitle !== (mapping.source_chat_title ?? '')) body.source_chat_title = srcTitle || null;
       if (dstTitle !== (mapping.dest_chat_title ?? '')) body.dest_chat_title = dstTitle || null;
       if (

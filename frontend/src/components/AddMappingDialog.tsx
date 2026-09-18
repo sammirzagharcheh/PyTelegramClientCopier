@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { invalidateDashboardStats } from '../lib/queryClient';
 import { errorMessage } from '../lib/apiError';
+import { resolveMappingRouteChats } from '../lib/peerResolve';
 import { MappingRouteFields } from './MappingRouteFields';
 import { useToast } from './Toast';
 import { Button } from './ui/Button';
@@ -11,7 +12,6 @@ import { FormError } from './ui/FormError';
 import { Modal } from './ui/Modal';
 import {
   hasRouteErrors,
-  parseChatId,
   validateMappingRoute,
   type MappingRouteFieldErrors,
   type MappingRouteValues,
@@ -40,16 +40,21 @@ export function AddMappingDialog({ onClose }: Props) {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const src = parseChatId(route.sourceChatId)!;
-      const dst = parseChatId(route.destChatId)!;
+      const resolved = await resolveMappingRouteChats(
+        route.telegramAccountId!,
+        route.sourceChatId,
+        route.destChatId,
+        route.sourceChatTitle,
+        route.destChatTitle
+      );
       return (
         await api.post('/mappings', {
           name: name.trim() || undefined,
-          source_chat_id: src,
-          dest_chat_id: dst,
+          source_chat_id: resolved.source_chat_id,
+          dest_chat_id: resolved.dest_chat_id,
           telegram_account_id: route.telegramAccountId,
-          source_chat_title: route.sourceChatTitle || undefined,
-          dest_chat_title: route.destChatTitle || undefined,
+          source_chat_title: resolved.source_chat_title || undefined,
+          dest_chat_title: resolved.dest_chat_title || undefined,
         })
       ).data;
     },
